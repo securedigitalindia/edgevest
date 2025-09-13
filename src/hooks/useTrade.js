@@ -3,10 +3,12 @@ import tradeService from '../services/tradeService';
 
 export const useTrade = () => {
   const [segments, setSegments] = useState([]);
+  const [allStrategies, setAllStrategies] = useState([]);
   const [strategies, setStrategies] = useState([]);
   const [marketData, setMarketData] = useState(null);
-  const [selectedSegment, setSelectedSegment] = useState('equity');
+  const [selectedSegment, setSelectedSegment] = useState(null);
   const [selectedStrategy, setSelectedStrategy] = useState(null);
+  const [tradeStatus, setTradeStatus] = useState('active');
   const [livePrices, setLivePrices] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -31,7 +33,10 @@ export const useTrade = () => {
     try {
       setLoading(true);
       const data = await tradeService.getStrategiesBySegment(segment);
-      setStrategies(data);
+      setAllStrategies(data);
+      // Filter by status
+      const filteredData = data.filter(strategy => strategy.status === tradeStatus);
+      setStrategies(filteredData);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -39,7 +44,14 @@ export const useTrade = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tradeStatus]);
+
+  // Filter strategies by status
+  const filterStrategiesByStatus = useCallback((status) => {
+    setTradeStatus(status);
+    const filteredData = allStrategies.filter(strategy => strategy.status === status);
+    setStrategies(filteredData);
+  }, [allStrategies]);
 
   // Fetch market data
   const fetchMarketData = useCallback(async () => {
@@ -92,9 +104,10 @@ export const useTrade = () => {
 
   // Handle segment change
   const handleSegmentChange = useCallback((segment) => {
-    setSelectedSegment(segment);
+    const segmentId = typeof segment === 'object' ? segment.id : segment;
+    setSelectedSegment(segmentId);
     setSelectedStrategy(null);
-    fetchStrategies(segment);
+    fetchStrategies(segmentId);
   }, [fetchStrategies]);
 
   // Handle strategy selection
@@ -156,9 +169,11 @@ export const useTrade = () => {
     executeTrade,
     getRiskAnalysis,
     refreshData,
+    filterStrategiesByStatus,
     
     // Utilities
     setSelectedSegment,
     setSelectedStrategy,
+    tradeStatus,
   };
 };

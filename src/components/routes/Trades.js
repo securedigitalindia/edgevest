@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTrade } from '../../hooks/useTrade';
 import SegmentSelector from './components/SegmentSelector';
+import StatusToggle from './components/StatusToggle';
 import StrategyCards from './components/StrategyCards';
 import StrategyDetails from './components/StrategyDetails';
 
@@ -10,11 +11,12 @@ const Trades = () => {
     strategies,
     selectedSegment,
     selectedStrategy,
-    livePrices,
     loading,
     error,
+    tradeStatus,
     handleSegmentChange,
     handleStrategySelect,
+    filterStrategiesByStatus,
     refreshData,
   } = useTrade();
 
@@ -64,13 +66,19 @@ const Trades = () => {
       )}
 
       {/* Segment Selector */}
-      <div className="px-4 pb-4">
-        <SegmentSelector
-          segments={segments}
-          selectedSegment={selectedSegment}
-          onSegmentChange={handleSegmentChange}
+      <SegmentSelector
+        segments={segments}
+        selectedSegment={segments.find(s => s.id === selectedSegment)}
+        onSegmentChange={handleSegmentChange}
+      />
+
+      {/* Status Toggle */}
+      {selectedSegment && (
+        <StatusToggle
+          activeStatus={tradeStatus}
+          onStatusChange={filterStrategiesByStatus}
         />
-      </div>
+      )}
 
       {/* Main Content */}
       <div className="px-4 space-y-6">
@@ -79,15 +87,17 @@ const Trades = () => {
           strategies={strategies}
           selectedStrategy={selectedStrategy}
           onStrategySelect={handleStrategySelect}
-          livePrices={livePrices}
-          loading={loading}
+          onAddToPortfolio={(strategy) => {
+            console.log('Adding strategy to portfolio:', strategy);
+            // TODO: Implement portfolio addition logic
+          }}
         />
 
         {/* Strategy Details */}
         {selectedStrategy && (
           <StrategyDetails
             strategy={selectedStrategy}
-            livePrice={livePrices[selectedStrategy.symbol]}
+            onClose={() => handleStrategySelect(null)}
           />
         )}
       </div>

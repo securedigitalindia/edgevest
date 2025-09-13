@@ -1,236 +1,390 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  Shield, 
+  Target, 
+  DollarSign, 
+  BarChart3, 
+  Clock, 
+  AlertCircle,
+  Layers,
+  X
+} from 'lucide-react';
 
-const StrategyDetails = ({ strategy, livePrice }) => {
-  const [activeTab, setActiveTab] = useState('overview');
+const StrategyDetails = ({ strategy, onClose }) => {
+
+  if (!strategy) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center">
+          <p className="text-gray-600">No strategy selected</p>
+          <button 
+            onClick={onClose}
+            className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const formatCurrencyDetailed = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount);
   };
 
-  const tabs = [
-    { id: 'overview', label: 'Overview', icon: '📊' },
-    { id: 'technical', label: 'Technical', icon: '📈' },
-    { id: 'risk', label: 'Risk', icon: '⚠️' },
-  ];
-
-  const getRiskColor = (riskLevel) => {
-    switch (riskLevel) {
-      case 'low': return 'text-success-600 bg-success-100';
-      case 'medium': return 'text-warning-600 bg-warning-100';
-      case 'high': return 'text-danger-600 bg-danger-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
+  const getSegmentColor = (segment) => {
+    const colors = {
+      'Equity': '#10b981',
+      'Futures': '#3b82f6',
+      'Options': '#8b5cf6',
+      'F&O': '#8b5cf6'
+    };
+    return colors[segment] || '#6b7280';
   };
 
+
+  const getActionColor = (action) => {
+    return action === 'buy' ? '#10b981' : '#ef4444';
+  };
+
+  const calculateCurrentPnL = (legs) => {
+    if (!legs) return 0;
+    return legs.reduce((total, leg) => {
+      const pnl = (leg.currentPrice - leg.entryPrice) * leg.quantity * (leg.action === 'buy' ? 1 : -1);
+      return total + pnl;
+    }, 0);
+  };
+
+
+  const currentPnL = calculateCurrentPnL(strategy.legs);
+
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900">Selected Strategy: {strategy.symbol}</h2>
-          <p className="text-gray-600">{strategy.name} - {strategy.strategy}</p>
-        </div>
-        <div className="text-right">
-          {livePrice ? (
-            <div>
-              <p className="text-2xl font-bold text-gray-900">
-                ₹{livePrice.price.toFixed(2)}
-              </p>
-              <p className={`text-sm ${
-                livePrice.change >= 0 ? 'text-success-600' : 'text-danger-600'
-              }`}>
-                {livePrice.change >= 0 ? '+' : ''}{livePrice.change.toFixed(2)} 
-                ({livePrice.changePercent >= 0 ? '+' : ''}{livePrice.changePercent.toFixed(2)}%)
-              </p>
-            </div>
-          ) : (
-            <div className="text-gray-400">
-              <p className="text-2xl font-bold">₹{strategy.entryPrice}</p>
-              <p className="text-sm">Entry Price</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex space-x-1 mb-6 bg-gray-100 rounded-lg p-1">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 flex items-center justify-center space-x-2 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-              activeTab === tab.id
-                ? 'bg-white text-primary-600 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <span>{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Content */}
-      <div className="space-y-6">
-        {activeTab === 'overview' && (
-          <div className="space-y-6">
-            {/* Strategy Info */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">Strategy</p>
-                <p className="font-semibold text-gray-900">{strategy.strategy}</p>
-              </div>
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">Risk Level</p>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRiskColor(strategy.riskLevel)}`}>
-                  {strategy.riskLevel} risk
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="px-6 py-6 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 flex justify-between items-start">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <h2 className="text-2xl font-bold text-gray-900">
+                {strategy.strategy}
+              </h2>
+              <span 
+                className="px-3 py-1 rounded-lg text-xs font-semibold"
+                style={{ 
+                  background: getSegmentColor(strategy.segment) + '20',
+                  color: getSegmentColor(strategy.segment)
+                }}
+              >
+                {strategy.strategyType || strategy.segment}
+              </span>
+              {strategy.legs && strategy.legs.length > 1 && (
+                <span className="px-3 py-1 bg-indigo-100 text-indigo-600 rounded-lg text-xs font-medium flex items-center gap-1">
+                  <Layers size={12} />
+                  {strategy.legs.length} Legs
                 </span>
-              </div>
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">Confidence</p>
-                <p className="font-semibold text-gray-900">{strategy.confidence}%</p>
-              </div>
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">Holding Period</p>
-                <p className="font-semibold text-gray-900">{strategy.holdingPeriod}</p>
-              </div>
+              )}
             </div>
-
-            {/* Price Levels */}
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Price Levels</h3>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Entry Price</p>
-                  <p className="text-xl font-bold text-blue-600">{formatCurrency(strategy.entryPrice)}</p>
-                  <p className="text-xs text-gray-500 capitalize">{strategy.entryType} order</p>
-                </div>
-                <div className="text-center p-4 bg-success-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Target Price</p>
-                  <p className="text-xl font-bold text-success-600">{formatCurrency(strategy.targetPrice)}</p>
-                  <p className="text-xs text-gray-500">
-                    +{(((strategy.targetPrice - strategy.entryPrice) / strategy.entryPrice) * 100).toFixed(1)}%
-                  </p>
-                </div>
-                <div className="text-center p-4 bg-danger-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Stop Loss</p>
-                  <p className="text-xl font-bold text-danger-600">{formatCurrency(strategy.stopLoss)}</p>
-                  <p className="text-xs text-gray-500">
-                    {(((strategy.stopLoss - strategy.entryPrice) / strategy.entryPrice) * 100).toFixed(1)}%
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Reasoning */}
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Strategy Reasoning</h3>
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-gray-700">{strategy.reasoning}</p>
-              </div>
-            </div>
+            <p className="text-gray-600 text-sm leading-relaxed">
+              {strategy.reasoning || `${strategy.segment} strategy with ${strategy.expectedReturn}% expected return`}
+            </p>
           </div>
-        )}
+          
+          <button 
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X size={20} />
+          </button>
+        </div>
 
-        {activeTab === 'technical' && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Technical Indicators</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {strategy.technicalIndicators?.map((indicator, index) => (
-                  <div key={index} className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm font-medium text-gray-900">{indicator}</p>
+        {/* Strategy Details - Only for Options with Legs */}
+        {strategy.legs && strategy.legs.length > 0 && (
+          <div className="px-6 py-6 border-b border-gray-200">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
+              Strategy Legs
+            </h3>
+            <div className="space-y-3">
+              {strategy.legs.map((leg, index) => (
+                <div key={index} className="flex items-center p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  <div 
+                    className="w-8 h-8 rounded-lg flex items-center justify-center mr-4"
+                    style={{ background: getActionColor(leg.action) + '20' }}
+                  >
+                    {leg.action === 'buy' ? 
+                      <TrendingUp size={16} color={getActionColor(leg.action)} /> :
+                      <TrendingDown size={16} color={getActionColor(leg.action)} />
+                    }
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Additional Info */}
-            <div className="grid grid-cols-2 gap-4">
-              {strategy.marketCap && (
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Market Cap</p>
-                  <p className="font-semibold text-gray-900">{strategy.marketCap}</p>
-                </div>
-              )}
-              {strategy.sector && (
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Sector</p>
-                  <p className="font-semibold text-gray-900">{strategy.sector}</p>
-                </div>
-              )}
-              {strategy.contractSize && (
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Contract Size</p>
-                  <p className="font-semibold text-gray-900">{strategy.contractSize}</p>
-                </div>
-              )}
-              {strategy.expiry && (
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Expiry</p>
-                  <p className="font-semibold text-gray-900">{new Date(strategy.expiry).toLocaleDateString()}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Options Legs */}
-            {strategy.legs && strategy.legs.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Options Legs</h3>
-                <div className="space-y-3">
-                  {strategy.legs.map((leg, index) => (
-                    <div key={index} className="p-4 bg-gray-50 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            leg.action === 'buy' ? 'bg-success-100 text-success-800' : 'bg-danger-100 text-danger-800'
-                          }`}>
-                            {leg.action.toUpperCase()}
-                          </span>
-                          <span className="font-medium">Strike: ₹{leg.strike}</span>
-                        </div>
-                        <span className="font-semibold">Premium: ₹{leg.premium}</span>
-                      </div>
+                  
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-semibold text-gray-900 text-base">
+                        {leg.action.toUpperCase()} {strategy.symbol || 'INSTRUMENT'}
+                      </span>
+                      <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded">
+                        Qty: {leg.quantity || 1}
+                      </span>
                     </div>
-                  ))}
+                    <div className="flex gap-5 text-sm">
+                      <span className="text-gray-600">
+                        Entry: <span className="font-semibold text-gray-900">{formatCurrencyDetailed(leg.entryPrice || strategy.entryPrice)}</span>
+                      </span>
+                      <span className="text-gray-600">
+                        Current: <span className={`font-semibold ${
+                          (leg.currentPrice || strategy.currentPrice) >= (leg.entryPrice || strategy.entryPrice) 
+                            ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {formatCurrencyDetailed(leg.currentPrice || strategy.currentPrice)}
+                        </span>
+                      </span>
+                      <span className="text-gray-600">
+                        P&L: <span className={`font-semibold ${
+                          currentPnL >= 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {currentPnL >= 0 ? '+' : ''}{formatCurrency(Math.abs(currentPnL))}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
           </div>
         )}
 
-        {activeTab === 'risk' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">Risk Level</p>
-                <p className="text-xl font-bold text-gray-900 capitalize">{strategy.riskLevel}</p>
-              </div>
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">Capital Required</p>
-                <p className="text-xl font-bold text-gray-900">{formatCurrency(strategy.capitalRequired)}</p>
-              </div>
-            </div>
-
-            <div className="p-4 bg-warning-50 rounded-lg border border-warning-200">
-              <div className="flex items-start space-x-3">
-                <svg className="w-5 h-5 text-warning-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                </svg>
+        {/* Trade Details - For Equity and Futures */}
+        {(!strategy.legs || strategy.legs.length === 0) && (
+          <div className="px-6 py-6 border-b border-gray-200">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
+              Trade Details
+            </h3>
+            <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+              <div className="flex items-center gap-3 mb-3">
+                <div 
+                  className="w-8 h-8 rounded-lg flex items-center justify-center"
+                  style={{ background: getSegmentColor(strategy.segment) + '20' }}
+                >
+                  <TrendingUp size={16} color={getSegmentColor(strategy.segment)} />
+                </div>
                 <div>
-                  <h4 className="font-medium text-warning-800">Risk Disclaimer</h4>
-                  <p className="text-sm text-warning-700 mt-1">
-                    Trading involves risk. Past performance is not indicative of future results. 
-                    Please ensure you understand the risks before executing any trades.
-                  </p>
+                  <div className="font-semibold text-gray-900 text-base">
+                    {strategy.id.includes('eq_') ? 'BUY' : strategy.id.includes('ft_') ? 'BUY FUT' : 'BUY OPT'} {strategy.symbol}
+                  </div>
+                  <div className="text-sm text-gray-600">{strategy.name}</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-600">Entry Price:</span>
+                  <div className="font-semibold text-gray-900">{formatCurrencyDetailed(strategy.entryPrice)}</div>
+                </div>
+                <div>
+                  <span className="text-gray-600">Current Price:</span>
+                  <div className={`font-semibold ${
+                    strategy.currentPrice >= strategy.entryPrice ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {formatCurrencyDetailed(strategy.currentPrice)}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-gray-600">Change:</span>
+                  <div className={`font-semibold ${
+                    strategy.currentPrice >= strategy.entryPrice ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {strategy.currentPrice >= strategy.entryPrice ? '+' : ''}{formatCurrencyDetailed(strategy.currentPrice - strategy.entryPrice)}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-gray-600">Change %:</span>
+                  <div className={`font-semibold ${
+                    strategy.currentPrice >= strategy.entryPrice ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {strategy.currentPrice >= strategy.entryPrice ? '+' : ''}{(((strategy.currentPrice - strategy.entryPrice) / strategy.entryPrice) * 100).toFixed(2)}%
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         )}
+
+        {/* Capital & Risk and Targets Section */}
+        <div className="px-6 py-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Capital and Risk Info */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
+              Capital & Risk
+            </h3>
+            
+            <div className="space-y-3">
+              <div 
+                className="p-4 rounded-xl border"
+                style={{ 
+                  background: 'linear-gradient(135deg, #6366f110 0%, #6366f105 100%)',
+                  borderColor: '#6366f120'
+                }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign size={16} color="#6366f1" />
+                  <span className="text-xs text-gray-600 font-medium">Capital Required</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">
+                  {strategy.id.includes('eq_') ? 'Flexible' : formatCurrency(Math.abs(strategy.capitalRequired))}
+                </div>
+                <div className="text-xs text-gray-600 mt-1">
+                  Current P&L: <span className={`font-semibold ${
+                    currentPnL >= 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {currentPnL >= 0 ? '+' : ''}{formatCurrency(Math.abs(currentPnL))}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                  <div className="text-xs text-gray-600 mb-1">Max Profit</div>
+                  <div className="text-lg font-bold text-green-600">
+                    +{formatCurrency(strategy.maxProfit || strategy.expectedReturn * 1000)}
+                  </div>
+                </div>
+                
+                <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                  <div className="text-xs text-gray-600 mb-1">Max Loss</div>
+                  <div className="text-lg font-bold text-red-600">
+                    -{formatCurrency(strategy.maxLoss || strategy.capitalRequired * 0.5)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <div className="text-xs text-gray-600 mb-1 flex items-center gap-1">
+                    <BarChart3 size={12} />
+                    Risk:Reward
+                  </div>
+                  <div className="text-lg font-bold text-yellow-600">
+                    {strategy.riskReward || '1:2'}
+                  </div>
+                </div>
+                
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="text-xs text-gray-600 mb-1 flex items-center gap-1">
+                    <Clock size={12} />
+                    Holding
+                  </div>
+                  <div className="text-lg font-bold text-gray-900">
+                    {strategy.holdingPeriod}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Targets Section */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
+              Targets & Stop Loss
+            </h3>
+            
+            <div className="space-y-2">
+
+              {/* Selected Target Details */}
+              <div 
+                className="p-4 rounded-xl border"
+                style={{ 
+                  background: 'linear-gradient(135deg, #10b98110 0%, #10b98105 100%)',
+                  borderColor: '#10b98120'
+                }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Target size={16} color="#10b981" />
+                      <span className="text-sm font-semibold text-gray-900">
+                        Target Price
+                      </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-xs text-gray-600">Level</div>
+                    <div className="text-lg font-bold text-gray-900">
+                      {formatCurrencyDetailed(strategy.targetPrice)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600">Profit</div>
+                        <div className="text-lg font-bold text-green-600">
+                          +{formatCurrency((strategy.targetPrice - strategy.entryPrice) * 50)}
+                        </div>
+                  </div>
+                </div>
+                <div className="mt-2 p-2 bg-green-50 rounded-md">
+                      <span className="text-xs text-gray-600">
+                        Expected Return: <span className="font-semibold text-green-600">{strategy.expectedReturn}%</span>
+                      </span>
+                </div>
+              </div>
+
+              {/* Stop Loss */}
+              <div 
+                className="p-4 rounded-xl border"
+                style={{ 
+                  background: 'linear-gradient(135deg, #ef444410 0%, #ef444405 100%)',
+                  borderColor: '#ef444420'
+                }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield size={16} color="#ef4444" />
+                  <span className="text-sm font-semibold text-gray-900">Stop Loss</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-xs text-gray-600">Level</div>
+                    <div className="text-lg font-bold text-gray-900">
+                      {formatCurrencyDetailed(strategy.stopLoss)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600">Max Loss</div>
+                    <div className="text-lg font-bold text-red-600">
+                      -{formatCurrency(strategy.capitalRequired * 0.3)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Footer */}
+        <div className="px-6 py-5 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
+          <div className="flex gap-3">
+            <button className="flex items-center gap-2 px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors">
+              <AlertCircle size={14} />
+              <span className="text-sm font-medium">View Analysis</span>
+            </button>
+          </div>
+          
+          <button
+            onClick={onClose}
+            className="px-6 py-3 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-lg font-semibold text-sm hover:from-gray-700 hover:to-gray-800 transition-all shadow-md"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
