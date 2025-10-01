@@ -12,24 +12,89 @@ const TradeSuggestions = () => {
       confidence: 85,
       capitalRequired: 50000,
       expectedReturn: 12.5,
-      riskLevel: 'medium',
+      riskLevel: 'MID',
       holdingPeriod: '7-10 days',
       reasoning: 'Strong quarterly results, technical breakout above resistance',
+      shares: 100,
+      entryPrice: 1580.00,
     },
     {
       id: 's2',
-      symbol: 'BANKNIFTY',
-      name: 'Bank Nifty',
-      segment: 'arbitrage',
+      symbol: 'NIFTY',
+      name: 'Nifty Bull Call Spread',
+      segment: 'fno',
       recommendation: 'buy',
-      confidence: 92,
+      confidence: 88,
+      capitalRequired: 25000,
+      expectedReturn: 25.0,
+      riskLevel: 'MID',
+      holdingPeriod: '3-5 days',
+      reasoning: 'Bullish momentum with limited downside risk using options spread',
+      lots: 1,
+      lotSize: 50,
+    },
+    {
+      id: 's3',
+      symbol: 'BANKNIFTY',
+      name: 'Bank Nifty Protective Put',
+      segment: 'fno',
+      recommendation: 'buy',
+      confidence: 72,
+      capitalRequired: 15000,
+      expectedReturn: 18.5,
+      riskLevel: 'VERY_LOW',
+      holdingPeriod: '3-5 days',
+      reasoning: 'Downside protection strategy with insurance against market decline',
+      lots: 1,
+      lotSize: 25,
+    },
+    {
+      id: 's4',
+      symbol: 'NIFTY50',
+      name: 'Nifty Calendar Spread',
+      segment: 'fno',
+      recommendation: 'buy',
+      confidence: 88,
+      capitalRequired: 50000,
+      expectedReturn: 8.0,
+      riskLevel: 'LOW',
+      holdingPeriod: '10-15 days',
+      reasoning: 'Time decay strategy exploiting volatility differences across expiry',
+      lots: 2,
+      lotSize: 50,
+    },
+    {
+      id: 's5',
+      symbol: 'NIFTY50-JAN',
+      name: 'Nifty 50-Jan Future',
+      segment: 'fno',
+      recommendation: 'buy',
+      confidence: 82,
       capitalRequired: 100000,
-      expectedReturn: 8.5,
-      riskLevel: 'low',
-      holdingPeriod: '1-2 days',
-      reasoning: 'Arbitrage opportunity between spot and futures',
+      expectedReturn: 15.0,
+      riskLevel: 'HIGH',
+      holdingPeriod: '3-5 days',
+      reasoning: 'Strong uptrend with increasing volume, momentum indicators bullish',
+      lots: 1,
+      lotSize: 50,
+    },
+    {
+      id: 's6',
+      symbol: 'RELIANCE',
+      name: 'Reliance Industries Ltd',
+      segment: 'equity',
+      recommendation: 'buy',
+      confidence: 82,
+      capitalRequired: 75000,
+      expectedReturn: 15.0,
+      riskLevel: 'HIGH',
+      holdingPeriod: '5-7 days',
+      reasoning: 'Trend following strategy with strong momentum indicators',
+      shares: 150,
+      entryPrice: 2520.75,
     },
   ];
+
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
@@ -41,9 +106,11 @@ const TradeSuggestions = () => {
 
   const getRiskColor = (riskLevel) => {
     switch (riskLevel) {
-      case 'low': return 'bg-success-100 text-success-800';
-      case 'medium': return 'bg-warning-100 text-warning-800';
-      case 'high': return 'bg-danger-100 text-danger-800';
+      case 'VERY_LOW': return 'bg-green-100 text-green-800';
+      case 'LOW': return 'bg-green-100 text-green-700';
+      case 'MID': return 'bg-yellow-100 text-yellow-800';
+      case 'HIGH': return 'bg-red-100 text-red-700';
+      case 'VERY_HIGH': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -51,7 +118,7 @@ const TradeSuggestions = () => {
   const getSegmentColor = (segment) => {
     switch (segment) {
       case 'equity': return 'bg-blue-100 text-blue-800';
-      case 'fn0': return 'bg-green-100 text-green-800';
+      case 'fno': return 'bg-green-100 text-green-800';
       case 'arbitrage': return 'bg-purple-100 text-purple-800';
       case 'equity + options': return 'bg-orange-100 text-orange-800';
       default: return 'bg-gray-100 text-gray-800';
@@ -71,16 +138,32 @@ const TradeSuggestions = () => {
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-gray-900">Smart Trade Suggestions</h2>
-        <span className="text-sm text-gray-600">{suggestions.length} suggestions</span>
+        <div className="text-sm text-gray-600">
+          <span>{suggestions.length} suggestions</span>
+          <span className="ml-2 text-green-600">
+            ({suggestions.filter(s => s.segment === 'fno').length} F&O)
+          </span>
+        </div>
       </div>
 
       <div className="space-y-4">
         {suggestions.map((suggestion) => (
-          <div key={suggestion.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+          <div key={suggestion.id} className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${
+            suggestion.segment === 'fno' 
+              ? 'border-green-200 bg-green-50' 
+              : 'border-gray-200'
+          }`}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center space-x-3">
                 <div>
-                  <h3 className="font-semibold text-gray-900">{suggestion.symbol}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-gray-900">{suggestion.symbol}</h3>
+                    {suggestion.segment === 'fno' && (
+                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded">
+                        F&O
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm text-gray-600">{suggestion.name}</p>
                 </div>
                 <div className="flex space-x-2">
@@ -88,7 +171,7 @@ const TradeSuggestions = () => {
                     {suggestion.segment}
                   </span>
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRiskColor(suggestion.riskLevel)}`}>
-                    {suggestion.riskLevel} risk
+                    {suggestion.riskLevel.replace('_', ' ')} risk
                   </span>
                 </div>
               </div>
@@ -116,6 +199,51 @@ const TradeSuggestions = () => {
                 <p className="font-medium">{suggestion.holdingPeriod}</p>
               </div>
             </div>
+
+            {/* F&O Lot Information */}
+            {suggestion.segment === 'fno' && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-green-600 font-medium text-sm">🎯 F&O Details</span>
+                </div>
+                
+
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-600">Lots</p>
+                    <p className="font-medium text-green-700">{suggestion.lots || 'N/A'} lot{(suggestion.lots && suggestion.lots > 1) ? 's' : ''}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600">Lot Size</p>
+                    <p className="font-medium text-green-700">{suggestion.lotSize || 'N/A'} units</p>
+                  </div>
+                </div>
+                {suggestion.lots && suggestion.lotSize && (
+                  <div className="mt-2 text-xs text-green-600">
+                    Total Units: {suggestion.lots * suggestion.lotSize} ({suggestion.lots} × {suggestion.lotSize})
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Equity Shares Information */}
+            {suggestion.segment === 'equity' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-blue-600 font-medium text-sm">📊 Equity Details</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-600">Shares</p>
+                    <p className="font-medium text-blue-700">{suggestion.shares || 'N/A'} share{(suggestion.shares && suggestion.shares > 1) ? 's' : ''}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600">Entry Price</p>
+                    <p className="font-medium text-blue-700">{suggestion.entryPrice ? formatCurrency(suggestion.entryPrice) : 'N/A'}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="mb-3">
               <p className="text-sm text-gray-600 mb-1">Reasoning</p>

@@ -24,7 +24,7 @@ class TradeService {
     }
   }
 
-  // Get strategies for a specific segment
+  // Get strategies for a specific segment (returns all statuses for local filtering)
   async getStrategiesBySegment(segment) {
     if (this.useMock) {
       return new Promise((resolve) => {

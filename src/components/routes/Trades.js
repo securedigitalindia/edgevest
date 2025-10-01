@@ -1,7 +1,6 @@
 import React from 'react';
 import { useTrade } from '../../hooks/useTrade';
-import SegmentSelector from './components/SegmentSelector';
-import StatusToggle from './components/StatusToggle';
+import StrategyFilters from './components/StrategyFilters';
 import StrategyCards from './components/StrategyCards';
 import StrategyDetails from './components/StrategyDetails';
 
@@ -14,10 +13,13 @@ const Trades = () => {
     loading,
     error,
     tradeStatus,
+    activeFilters,
+    showPopup,
     handleSegmentChange,
     handleStrategySelect,
     filterStrategiesByStatus,
-    refreshData,
+    updateFilters,
+    generateTradeUrl,
   } = useTrade();
 
   if (loading && !strategies.length) {
@@ -33,68 +35,101 @@ const Trades = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-200 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">Trade Advisory</h1>
-            <p className="text-sm text-gray-600">Smart trading strategies across all segments</p>
+      {/* Header with Trade Segments */}
+      <div className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200 px-6 py-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-8">
+              <div>
+                <h1 className="text-lg font-medium text-gray-600 mb-2">Trade Segments</h1>
+                <div className="flex gap-2">
+                  {segments.map((segment) => (
+                    <button
+                      key={segment.id}
+                      onClick={() => handleSegmentChange(segment)}
+                      className={`relative px-8 py-3 rounded-full font-medium text-sm transition-all duration-300 ${
+                        selectedSegment === segment.id
+                          ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-200 transform scale-105'
+                          : 'bg-white text-gray-600 hover:text-blue-600 hover:shadow-md border border-gray-200 hover:border-blue-200'
+                      }`}
+                    >
+                      {segment.id === 'fno' ? 'F&O' : segment.name}
+                      {selectedSegment === segment.id && (
+                        <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-blue-500 rounded-full opacity-20 animate-pulse"></div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-          <button
-            onClick={refreshData}
-            className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
         </div>
       </div>
 
+      {/* Strategy Filters - Between header and content */}
+      {selectedSegment && (
+        <StrategyFilters
+          selectedSegment={selectedSegment}
+          activeFilters={activeFilters}
+          onFilterChange={updateFilters}
+          onToggleChange={filterStrategiesByStatus}
+          activeStatus={tradeStatus}
+        />
+      )}
+
       {/* Error Display */}
       {error && (
-        <div className="mx-4 mt-4 p-4 bg-danger-50 border border-danger-200 rounded-lg">
-          <div className="flex">
-            <svg className="w-5 h-5 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div className="ml-3">
-              <p className="text-sm text-danger-800">{error}</p>
+        <div className="max-w-7xl mx-auto px-6 mt-6">
+          <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+            <div className="flex">
+              <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div className="ml-3">
+                <p className="text-sm text-red-800">{error}</p>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Segment Selector */}
-      <SegmentSelector
-        segments={segments}
-        selectedSegment={segments.find(s => s.id === selectedSegment)}
-        onSegmentChange={handleSegmentChange}
-      />
-
-      {/* Status Toggle */}
-      {selectedSegment && (
-        <StatusToggle
-          activeStatus={tradeStatus}
-          onStatusChange={filterStrategiesByStatus}
-        />
-      )}
-
       {/* Main Content */}
-      <div className="px-4 space-y-6">
+      <div className="max-w-7xl mx-auto px-6 pt-6 space-y-6">
         {/* Strategy Cards */}
         <StrategyCards
           strategies={strategies}
           selectedStrategy={selectedStrategy}
           onStrategySelect={handleStrategySelect}
-          onAddToPortfolio={(strategy) => {
-            console.log('Adding strategy to portfolio:', strategy);
-            // TODO: Implement portfolio addition logic
+          onAddToPortfolio={(portfolioItem) => {
+            console.log('Adding strategy to portfolio:', portfolioItem);
+            console.log('Portfolio item keys:', Object.keys(portfolioItem));
+            
+            // Save to localStorage
+            const existingPortfolio = JSON.parse(localStorage.getItem('userPortfolio') || '[]');
+            console.log('Existing portfolio before:', existingPortfolio);
+            
+            const updatedPortfolio = [...existingPortfolio, portfolioItem];
+            console.log('Updated portfolio after:', updatedPortfolio);
+            
+            localStorage.setItem('userPortfolio', JSON.stringify(updatedPortfolio));
+            
+            // Verify what was saved
+            const savedPortfolio = JSON.parse(localStorage.getItem('userPortfolio') || '[]');
+            console.log('Verified saved portfolio:', savedPortfolio);
+            
+            // Trigger a custom event to notify other components
+            window.dispatchEvent(new CustomEvent('portfolioUpdated', { 
+              detail: { portfolio: updatedPortfolio } 
+            }));
+            
+            // Show success message (you can replace with toast notification)
+            alert(`Added ${portfolioItem.quantity} ${portfolioItem.segment === 'equity' ? 'shares' : 'lots'} of ${portfolioItem.symbol} to portfolio!`);
           }}
+          generateTradeUrl={generateTradeUrl}
         />
 
         {/* Strategy Details */}
-        {selectedStrategy && (
+        {showPopup && selectedStrategy && (
           <StrategyDetails
             strategy={selectedStrategy}
             onClose={() => handleStrategySelect(null)}
