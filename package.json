@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "EdgeVest - Trade Advisory Platform",
   "private": true,
-  "homepage": "https://your-github-username.github.io/edgevest",
+  "homepage": "https://amankumarjain.github.io/edgevest",
   "dependencies": {
     "@heroicons/react": "^2.0.16",
     "axios": "^1.3.4",
