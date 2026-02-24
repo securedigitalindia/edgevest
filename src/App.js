@@ -27,7 +27,7 @@ const Profile = () => (
 function App() {
   return (
     <AppProvider>
-      <Router>
+      <Router basename={process.env.PUBLIC_URL}>
         <div className="App">
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
