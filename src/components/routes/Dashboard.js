@@ -38,7 +38,7 @@ const Dashboard = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold text-gray-900">EdgeVest</h1>
-            <p className="text-sm text-gray-600">Smart Investment Dashboard</p>
+            <p className="text-sm text-gray-600">Smart Investment Dashboard testing gh-pages</p>
           </div>
           <button
             onClick={refreshData}
