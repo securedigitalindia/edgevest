@@ -4,9 +4,17 @@
     <meta charset="UTF-8" />
     <title>Redirecting...</title>
     <script>
-      // Redirect all unknown paths back to index.html
-      const path = window.location.pathname;
-      window.location.href = window.location.origin + '/?redirect=' + path;
+      const repo = "/edgevest";
+      const path = window.location.pathname.replace(repo, "");
+      const search = window.location.search;
+      const hash = window.location.hash;
+
+      window.location.replace(
+        window.location.origin +
+          repo +
+          "/?redirect=" +
+          encodeURIComponent(path + search + hash)
+      );
     </script>
   </head>
   <body></body>
