@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import requests; print\\('requests ok'\\)\")",
+      "WebSearch",
+      "WebFetch(domain:upstox.com)",
+      "WebFetch(domain:upstox.github.io)",
+      "WebFetch(domain:community.upstox.com)"
+    ]
+  }
+}
