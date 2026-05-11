@@ -37,6 +37,7 @@ class BaseTrigger:
         self._trades_cfg   = cfg.get("trades", [])          # list; empty = basic alert
         self._cooldown_sec = cfg.get("cooldown_minutes", 0) * 60
         self._last_fired: float | None = None
+        self._last_ltp:   float | None = None   # last seen live price; used by refresh()
 
     def refresh(self):
         """Reload indicator from DB. Override in subclasses."""
@@ -79,23 +80,23 @@ class BaseTrigger:
 class SupertrendCrossTrigger(BaseTrigger):
     def __init__(self, cfg: dict, symbol: str):
         super().__init__(cfg, symbol)
-        self.period     = cfg["period"]
-        self.multiplier = cfg["multiplier"]
+        self.period       = cfg["period"]
+        self.multiplier   = cfg["multiplier"]
         self._st_val: float | None = None
         self._st_dir: int   | None = None
-        self._st_ts               = None
-        self._prev_above: bool | None = None
+        self._st_ts                = None
+        self._last_close: float | None = None
+        self._prev_above: bool  | None = None
 
     def refresh(self):
-        self._st_val, self._st_dir, self._st_ts, last_close = compute_supertrend(
+        self._st_val, self._st_dir, self._st_ts, self._last_close = compute_supertrend(
             self.symbol, self.timeframe, self.period, self.multiplier
         )
-        # Baseline from last closed candle's close vs ST.
-        # This means a gap-down/up that crosses ST on the first live tick
-        # will fire an alert immediately rather than being silently missed.
-        self._prev_above = last_close > self._st_val
+        baseline = self._last_ltp if self._last_ltp is not None else self._last_close
+        self._prev_above = baseline > self._st_val
 
     def check(self, ltp: float) -> dict | None:
+        self._last_ltp = ltp
         if self._st_val is None:
             return None
         curr_above = ltp > self._st_val
@@ -106,7 +107,7 @@ class SupertrendCrossTrigger(BaseTrigger):
             ltp, self._st_val,
             event="CROSS UP" if curr_above else "CROSS DOWN",
             candle_ts=self._st_ts,
-            extra={"st_dir": self._st_dir},
+            extra={"st_dir": self._st_dir, "prev_close": self._last_close},
         )
 
     def summary(self) -> str:
@@ -123,20 +124,22 @@ class SupertrendCrossTrigger(BaseTrigger):
 class EmaCrossTrigger(BaseTrigger):
     def __init__(self, cfg: dict, symbol: str):
         super().__init__(cfg, symbol)
-        self.period      = cfg["period"]
-        self.direction   = cfg.get("direction")  # "UP", "DOWN", or None (both)
+        self.period        = cfg["period"]
+        self.direction     = cfg.get("direction")  # "UP", "DOWN", or None (both)
         self._ema_val: float | None = None
-        self._ema_ts              = None
-        self._prev_above: bool | None = None
+        self._ema_ts                = None
+        self._last_close: float | None = None
+        self._prev_above: bool  | None = None
 
     def refresh(self):
-        self._ema_val, self._ema_ts, last_close = compute_ema(
+        self._ema_val, self._ema_ts, self._last_close = compute_ema(
             self.symbol, self.timeframe, self.period
         )
-        # Baseline from last closed candle — catches gap scenarios on first tick
-        self._prev_above = last_close > self._ema_val
+        baseline = self._last_ltp if self._last_ltp is not None else self._last_close
+        self._prev_above = baseline > self._ema_val
 
     def check(self, ltp: float) -> dict | None:
+        self._last_ltp = ltp
         if self._ema_val is None:
             return None
         curr_above = ltp > self._ema_val
@@ -156,6 +159,7 @@ class EmaCrossTrigger(BaseTrigger):
             ltp, self._ema_val,
             event="CROSS UP" if curr_above else "CROSS DOWN",
             candle_ts=self._ema_ts,
+            extra={"prev_close": self._last_close},
         )
 
     def summary(self) -> str:
