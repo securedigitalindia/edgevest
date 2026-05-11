@@ -229,6 +229,26 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
             elif c["indicator"] == "supertrend":
                 signal_df = _add_supertrend(signal_df, c["period"], c["multiplier"])
 
+    # Confluence exit conditions derived from trigger confirm list.
+    # price_above_day_low  → exit LONG  when close drops below running day low
+    # price_below_day_high → exit SHORT when close rises above running day high
+    confirms        = (trigger_cfg or {}).get("confirm", [])
+    conf_types      = {c["type"] for c in confirms}
+    check_day_low   = "price_above_day_low"  in conf_types
+    check_day_high  = "price_below_day_high" in conf_types
+    if check_day_low or check_day_high:
+        # Use cummin/cummax of CLOSES (shifted) so the comparison is:
+        # LONG  exit: current close < lowest close seen so far today  (bearish breakdown)
+        # SHORT exit: current close > highest close seen so far today (bullish breakout)
+        if check_day_low:
+            signal_df["_day_low"]  = signal_df.groupby("_ist_date")["close"].transform(
+                lambda x: x.shift(1).cummin()
+            )
+        if check_day_high:
+            signal_df["_day_high"] = signal_df.groupby("_ist_date")["close"].transform(
+                lambda x: x.shift(1).cummax()
+            )
+
     exit_df = exit_df.copy()
     exit_df["_ist_date"] = exit_df["ts"].dt.tz_convert(IST).dt.date
     exit_df = exit_df.reset_index(drop=True)
@@ -236,7 +256,11 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
     if entry_5m_df is not None:
         entry_5m_df = entry_5m_df.reset_index(drop=True)
 
-    results = []
+    _ENTRY_OPEN_M  = 9 * 60 + 30   # 09:30 IST — no entries before this
+    _ENTRY_CLOSE_M = 15 * 60        # 15:00 IST — no entries at or after this
+
+    results     = []
+    last_exit_ts = pd.Timestamp.min.tz_localize("UTC")   # tracks when last trade closed
 
     for sig_idx, sig_row in signals.iterrows():
         is_long  = sig_row["signal_dir"] == "DOWN"
@@ -244,32 +268,48 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
         pos      = signal_df.index.get_loc(sig_idx)
 
         # --- Entry ---
+        entry_ts = sig_row["ts"]   # default: signal candle (overwritten when granular found)
+
         if entry_mode == "5m_cross" and entry_5m_df is not None:
-            # Find the first fine candle inside the 15m window where cross_val was touched
             window_start = sig_row["ts"]
             window_end   = window_start + pd.Timedelta(minutes=tf_minutes)
-            window_5m    = entry_5m_df[
+            window_fine  = entry_5m_df[
                 (entry_5m_df["ts"] >= window_start) &
                 (entry_5m_df["ts"] <  window_end)
             ]
-            # Infer candle interval from entry df (1m or 5m)
             if len(entry_5m_df) >= 2:
                 _delta = (entry_5m_df["ts"].iloc[1] - entry_5m_df["ts"].iloc[0]).total_seconds()
                 entry_interval_min = max(1, int(round(_delta / 60)))
             else:
                 entry_interval_min = 5
+
             cross_val    = float(sig_row["cross_val"])
-            entry_price  = float(sig_row["close"])   # fallback to 15m close
+            entry_price  = None
             scan_from_ts = window_end
-            for _, frow in window_5m.iterrows():
+
+            for _, frow in window_fine.iterrows():
                 touched = (
                     (sig_row["signal_dir"] == "UP"   and frow["high"] >= cross_val) or
                     (sig_row["signal_dir"] == "DOWN" and frow["low"]  <= cross_val)
                 )
                 if touched:
-                    entry_price  = cross_val   # enter at the crossing level, not candle close
+                    entry_price  = cross_val
+                    entry_ts     = frow["ts"]
                     scan_from_ts = frow["ts"] + pd.Timedelta(minutes=entry_interval_min)
                     break
+
+            # Fallback: cross detected on 15m but no granular candle touched cross_val
+            # (data gap or small tick discrepancy). Enter at open of first available
+            # granular candle in the window rather than the stale 15m close.
+            if entry_price is None:
+                if not window_fine.empty:
+                    first = window_fine.iloc[0]
+                    entry_price  = float(first["open"])
+                    entry_ts     = first["ts"]
+                    scan_from_ts = first["ts"] + pd.Timedelta(minutes=entry_interval_min)
+                else:
+                    # No granular data at all for this window — skip trade
+                    continue
 
         elif entry_mode == "next_open":
             if pos + 1 >= len(signal_df):
@@ -278,11 +318,23 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
             if next_row["_ist_date"] != sig_date:
                 continue
             entry_price  = float(next_row["open"])
+            entry_ts     = next_row["ts"]
             scan_from_ts = next_row["ts"]
 
         else:   # "close"
             entry_price  = float(sig_row["close"])
-            scan_from_ts = sig_row["ts"] + pd.Timedelta(minutes=tf_minutes)
+            entry_ts     = sig_row["ts"] + pd.Timedelta(minutes=tf_minutes)
+            scan_from_ts = entry_ts
+
+        # --- Entry time filter: 09:30–15:00 IST only ---
+        entry_ist = entry_ts.astimezone(IST)
+        entry_min = entry_ist.hour * 60 + entry_ist.minute
+        if entry_min < _ENTRY_OPEN_M or entry_min >= _ENTRY_CLOSE_M:
+            continue
+
+        # --- One trade at a time: skip if previous trade still open ---
+        if entry_ts <= last_exit_ts:
+            continue
 
         eod_label  = "EOD" if mode == "intraday" else "EXPIRED"
         outcome    = eod_label
@@ -336,7 +388,9 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
 
             fives_ev   = fives[["ts", "high", "low", "close"]].copy()
             fives_ev["_ev"] = "5m"
-            fifteen_ev = fifteens[["ts", "close", ind_col]].copy()
+
+            conf_cols  = [c for c in ("_day_low", "_day_high") if c in signal_df.columns]
+            fifteen_ev = fifteens[["ts", "close", ind_col] + conf_cols].copy()
             fifteen_ev["_ev"] = "15m"
 
             events = pd.concat(
@@ -370,25 +424,42 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
                             outcome, exit_price, exit_ts = "TRAIL_SL", trail_sl, ev["ts"]
                             break
 
-                else:  # 15m close — indicator check
+                else:  # 15m close — indicator + confluence exit checks
                     c       = float(ev["close"])
                     ind_val = ev.get(ind_col)
                     if pd.isna(ind_val):
                         continue
                     ind_val = float(ind_val)
+
+                    # Indicator exit
                     if is_long and c < ind_val:
                         outcome, exit_price, exit_ts = ind_exit_label, c, ev["ts"]
                         break
                     if not is_long and c > ind_val:
                         outcome, exit_price, exit_ts = ind_exit_label, c, ev["ts"]
                         break
+
+                    # Confluence exit: day low/high condition violated on close
+                    if is_long and "_day_low" in ev:
+                        dlow = ev["_day_low"]
+                        if not pd.isna(dlow) and c < float(dlow):
+                            outcome, exit_price, exit_ts = "CONF_EXIT", c, ev["ts"]
+                            break
+                    if not is_long and "_day_high" in ev:
+                        dhigh = ev["_day_high"]
+                        if not pd.isna(dhigh) and c > float(dhigh):
+                            outcome, exit_price, exit_ts = "CONF_EXIT", c, ev["ts"]
+                            break
                     exit_price = c
                     exit_ts    = ev["ts"]
 
         pnl = (exit_price - entry_price) if is_long else (entry_price - exit_price)
 
+        last_exit_ts = exit_ts
+
         results.append({
             "signal_ts":   sig_row["ts"],
+            "entry_ts":    entry_ts,
             "signal_dir":  sig_row["signal_dir"],
             "side":        "LONG" if is_long else "SHORT",
             "entry_price": round(entry_price, 2),
@@ -426,26 +497,28 @@ def print_report(results: list[dict], trigger_name: str, symbol: str,
             parts.append(f"SL=-{sl_pts:.0f}")
         params_str = "  ".join(parts) if parts else "pure indicator"
 
-    print(f"\n{'='*76}")
+    print(f"\n{'='*86}")
     print(f"  {symbol}  ·  {trigger_name}  [{mode}]  [{exit_mode}]"
           f"   {params_str}"
           f"  ({len(results)} trade{'s' if len(results) != 1 else ''})")
-    print(f"{'='*76}")
-    print(f"  {'Entry':<17} {'Side':<6} {'Entry Px':>9}  "
+    print(f"{'='*86}")
+    print(f"  {'Signal':<17} {'Entry':<17} {'Side':<6} {'Entry Px':>9}  "
           f"{'Exit':<17} {'Exit Px':>9}  {'P&L':>8}  Out")
-    print(f"  {'-'*73}")
+    print(f"  {'-'*83}")
 
     for r in results:
-        entry_str = pd.Timestamp(r["signal_ts"]).tz_convert(IST).strftime("%d %b  %H:%M")
-        exit_str  = pd.Timestamp(r["exit_ts"]).tz_convert(IST).strftime(fmt)
+        signal_str = pd.Timestamp(r["signal_ts"]).tz_convert(IST).strftime("%d %b  %H:%M")
+        entry_str  = pd.Timestamp(r["entry_ts"]).tz_convert(IST).strftime("%d %b  %H:%M")
+        exit_str   = pd.Timestamp(r["exit_ts"]).tz_convert(IST).strftime(fmt)
         pnl_str   = f"{r['pnl']:+.1f}"
-        print(f"  {entry_str:<17} {r['side']:<6} {r['entry_price']:>9,.1f}  "
+        print(f"  {signal_str:<17} {entry_str:<17} {r['side']:<6} {r['entry_price']:>9,.1f}  "
               f"{exit_str:<17} {r['exit_price']:>9,.1f}  {pnl_str:>8}  {r['outcome']}")
 
     total      = len(results)
     tp_cnt     = sum(1 for r in results if r["outcome"] == "TP")
     sl_cnt     = sum(1 for r in results if r["outcome"] in ("SL", "TRAIL_SL"))
     ind_cnt    = sum(1 for r in results if r["outcome"] in ("EMA_CLOSE", "IND_EXIT"))
+    conf_cnt   = sum(1 for r in results if r["outcome"] == "CONF_EXIT")
     forced_cnt = sum(1 for r in results if r["outcome"] == forced_label)
     net_pnl    = sum(r["pnl"] for r in results)
     win_rate   = sum(1 for r in results if r["pnl"] > 0) / total * 100
@@ -456,6 +529,8 @@ def print_report(results: list[dict], trigger_name: str, symbol: str,
     if ind_cnt:
         ind_label = "EMA_CLOSE" if exit_mode == "trail_ema" else "IND_EXIT"
         summary += f"   {ind_label}: {ind_cnt}"
+    if conf_cnt:
+        summary += f"   CONF_EXIT: {conf_cnt}"
     print(f"\n  {summary}   Win rate: {win_rate:.0f}%   Net P&L: {net_pnl:+.1f} pts")
     print()
 
@@ -489,17 +564,18 @@ def run_backtest(trigger_names: list[str], symbol_filter: list[str],
             symbols = [s for s in symbols if s in symbol_filter]
 
         for symbol in symbols:
-            # Signal detection candles (trigger timeframe)
-            df = get_candles(symbol, cfg["timeframe"], limit=10000)
-            if df.empty:
+            # Fetch full history so indicators (EMA, ST) are computed on stable data,
+            # then slice to the backtest window. Computing on a short slice shifts EMA
+            # values and produces different signals for the same --days value.
+            df_full = get_candles(symbol, cfg["timeframe"], limit=10000)
+            if df_full.empty:
                 print(f"  No candle data for {symbol} [{cfg['timeframe']}]")
                 continue
-            df = df[df["ts"] >= cutoff].reset_index(drop=True)
-            if len(df) < 50:
+            df = df_full[df_full["ts"] >= cutoff].reset_index(drop=True)
+            if len(df) < 5:
                 print(f"  Insufficient data: {symbol} [{cfg['timeframe']}] — {len(df)} rows")
                 continue
 
-            # 1m candles for entry detection (most accurate); fall back to 5m if not built yet
             df_1m = get_candles(symbol, "1m", limit=50000)
             if not df_1m.empty:
                 df_1m = df_1m[df_1m["ts"] >= cutoff].reset_index(drop=True)
@@ -508,15 +584,27 @@ def run_backtest(trigger_names: list[str], symbol_filter: list[str],
             if not df_5m.empty:
                 df_5m = df_5m[df_5m["ts"] >= cutoff].reset_index(drop=True)
 
-            # Entry discovery: 1m preferred (find exact cross within 15m window),
-            # fall back to 5m. 1m only has 7 days from yfinance but grows from live ticks.
-            entry_df = df_1m if not df_1m.empty else (df_5m if not df_5m.empty else None)
-            entry_res = "1m" if not df_1m.empty else ("5m" if not df_5m.empty else "none")
+            # Build finest_df: 1m for dates where 1m data exists, 5m for older dates.
+            # This gives maximum precision for recent data and full 60-day coverage via 5m.
+            if not df_1m.empty and not df_5m.empty:
+                dates_1m  = set(df_1m["ts"].dt.tz_convert(IST).dt.date)
+                df_5m_old = df_5m[~df_5m["ts"].dt.tz_convert(IST).dt.date.isin(dates_1m)]
+                finest_df = pd.concat([df_5m_old, df_1m]).sort_values("ts").reset_index(drop=True)
+                finest_res = "1m+5m"
+            elif not df_1m.empty:
+                finest_df  = df_1m
+                finest_res = "1m"
+            elif not df_5m.empty:
+                finest_df  = df_5m
+                finest_res = "5m"
+            else:
+                finest_df  = None
+                finest_res = "none"
 
-            # Exit scanning: 5m for intraday (60-day history covers full backtest window),
-            # 1d for positional. 1m exit scanning deferred until enough history builds up.
+            entry_df = finest_df
+
             if mode == "intraday":
-                exit_df = df_5m
+                exit_df = finest_df
             else:
                 exit_df = get_candles(symbol, "1d", limit=10000)
                 if not exit_df.empty:
@@ -524,18 +612,20 @@ def run_backtest(trigger_names: list[str], symbol_filter: list[str],
 
             if exit_df is None or exit_df.empty:
                 print(f"  Warning: no exit data for {symbol}, falling back to {cfg['timeframe']}")
-                exit_df = df
+                exit_df = df_full
 
-            print(f"  [{symbol}]  entry: {entry_res}  exit: "
-                  f"{'5m' if mode == 'intraday' else '1d'}")
+            print(f"  [{symbol}]  entry+exit: {finest_res}")
 
             try:
-                signals = detect_signals(df, cfg)
+                # Detect on full history so EMA/ST values are stable, then keep only
+                # signals within the backtest window
+                signals_full = detect_signals(df_full, cfg)
+                signals = signals_full[signals_full["ts"] >= cutoff].copy()
             except Exception as e:
                 print(f"  Signal detection failed [{symbol} / {cfg['name']}]: {e}")
                 continue
 
-            results  = simulate_trades(df, signals, exit_df, tp_pts, sl_pts,
+            results  = simulate_trades(df_full, signals, exit_df, tp_pts, sl_pts,
                                        entry_df, entry_mode, tf_minutes,
                                        mode, max_hold_days, exit_mode,
                                        trigger_cfg=cfg)
