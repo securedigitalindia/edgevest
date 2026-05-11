@@ -99,11 +99,14 @@ def _detect_confluence_cross(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         df["day_high"]  = df.groupby("_ist_date")["high"].cummax()
         df["day_low"]   = df.groupby("_ist_date")["low"].cummin()
 
-    # --- Detect raw crosses using the same "> indicator" logic as the live trigger ---
+    # --- Detect raw crosses using high/low, not close ---
+    # Previous candle's close sets the prior state (was price above or below indicator?).
+    # Current candle uses high/low to check if the indicator level was touched this candle —
+    # consistent with entry detection: we can't rely on close since the touch can happen
+    # intra-candle and close can bounce back (as the live trigger fires on LTP, not close).
     prev_above = df["close"].shift(1) > df[cross_col].shift(1)
-    curr_above = df["close"] > df[cross_col]
-    df["_cross_up"]   = (~prev_above) & curr_above
-    df["_cross_down"] = prev_above & (~curr_above)
+    df["_cross_up"]   = (~prev_above) & (df["high"] >= df[cross_col])
+    df["_cross_down"] = prev_above    & (df["low"]  <= df[cross_col])
 
     if direction == "UP":
         mask = df["_cross_up"]
