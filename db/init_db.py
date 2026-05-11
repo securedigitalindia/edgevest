@@ -28,6 +28,7 @@ def table_name(tf_key: str) -> str:
 
 # Simpler, readable table names
 TF_TABLE = {
+    "1m":  "candles_1m",
     "5m":  "candles_5m",
     "15m": "candles_15m",
     "1h":  "candles_1h",

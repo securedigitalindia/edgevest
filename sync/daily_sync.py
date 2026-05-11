@@ -26,6 +26,7 @@ from bootstrap.yfinance_loader import fetch_historical
 # Used to fetch "recent enough" data to catch today's candles
 # -----------------------------------------------------------
 SYNC_PERIODS = {
+    "1m":  "7d",     # yfinance max for 1m
     "5m":  "60d",    # yfinance max for 5m
     "15m": "60d",    # yfinance max for 15m
     "1h":  "30d",
@@ -39,6 +40,7 @@ SYNC_PERIODS = {
 #             (volume=NULL) get overwritten with proper yfinance OHLCV.
 # Others: a few days/weeks to catch any late yfinance corrections.
 SYNC_LOOKBACK = {
+    "1m":  pd.Timedelta(hours=8),
     "5m":  pd.Timedelta(hours=8),
     "15m": pd.Timedelta(hours=8),
     "1h":  pd.Timedelta(hours=12),
@@ -147,8 +149,8 @@ def run_daily_sync(symbols=None):
     print(f"\n{'='*55}")
     print(f"  Sync complete in {elapsed:.1f}s")
     print(f"{'='*55}")
-    print(f"\n  {'Symbol':<14} {'5m':>6} {'15m':>6} {'1h':>6} {'1d':>6} {'1wk':>6} {'1mo':>6}")
-    print(f"  {'-'*54}")
+    print(f"\n  {'Symbol':<14} {'1m':>6} {'5m':>6} {'15m':>6} {'1h':>6} {'1d':>6} {'1wk':>6} {'1mo':>6}")
+    print(f"  {'-'*60}")
     for s in all_summaries:
         tfs = s["timeframes"]
         def fmt(tf_key):
@@ -161,7 +163,7 @@ def run_daily_sync(symbols=None):
                 return " ---"
             else:
                 return "  ?"
-        print(f"  {s['symbol']:<14} {fmt('5m'):>6} {fmt('15m'):>6} {fmt('1h'):>6} {fmt('1d'):>6} {fmt('1wk'):>6} {fmt('1mo'):>6}")
+        print(f"  {s['symbol']:<14} {fmt('1m'):>6} {fmt('5m'):>6} {fmt('15m'):>6} {fmt('1h'):>6} {fmt('1d'):>6} {fmt('1wk'):>6} {fmt('1mo'):>6}")
     print()
 
 

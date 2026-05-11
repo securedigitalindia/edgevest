@@ -386,14 +386,25 @@ def run_backtest(trigger_names: list[str], symbol_filter: list[str],
                 print(f"  Insufficient data: {symbol} [{cfg['timeframe']}] — {len(df)} rows")
                 continue
 
-            # 5m candles — used for both entry detection and intraday exit scanning
+            # 1m candles for entry detection (most accurate); fall back to 5m if not built yet
+            df_1m = get_candles(symbol, "1m", limit=50000)
+            if not df_1m.empty:
+                df_1m = df_1m[df_1m["ts"] >= cutoff].reset_index(drop=True)
+
             df_5m = get_candles(symbol, "5m", limit=10000)
             if not df_5m.empty:
                 df_5m = df_5m[df_5m["ts"] >= cutoff].reset_index(drop=True)
 
+            entry_df = df_1m if not df_1m.empty else (df_5m if not df_5m.empty else None)
+            if not df_1m.empty:
+                print(f"  [{symbol}]  using 1m candles for entry detection "
+                      f"({len(df_1m)} rows)")
+            elif not df_5m.empty:
+                print(f"  [{symbol}]  no 1m data yet — using 5m for entry detection")
+
             # Exit scanning candles — 5m for intraday, 1d for positional
             if mode == "intraday":
-                exit_df = df_5m
+                exit_df = df_5m if not df_5m.empty else df_1m
             else:
                 exit_df = get_candles(symbol, "1d", limit=10000)
                 if not exit_df.empty:
@@ -410,9 +421,8 @@ def run_backtest(trigger_names: list[str], symbol_filter: list[str],
                 print(f"  Signal detection failed [{symbol} / {cfg['name']}]: {e}")
                 continue
 
-            entry_5m = df_5m if not df_5m.empty else None
             results  = simulate_trades(df, signals, exit_df, tp_pts, sl_pts,
-                                       entry_5m, entry_mode, tf_minutes,
+                                       entry_df, entry_mode, tf_minutes,
                                        mode, max_hold_days)
             print_report(results, cfg["name"], symbol, tp_pts, sl_pts, mode)
 

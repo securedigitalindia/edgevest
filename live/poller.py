@@ -207,7 +207,7 @@ def run_live(force: bool = False):
     ikey_triggers, ikeys, ikey_to_name = _build_all_triggers()
 
     # One watcher per intraday timeframe — fires once at each candle close
-    _INTRADAY_TF = [("5m", 5), ("15m", 15), ("1h", 60)]
+    _INTRADAY_TF = [("1m", 1), ("5m", 5), ("15m", 15), ("1h", 60)]
     watchers = {key: CandleWatcher(mins) for key, mins in _INTRADAY_TF}
     for w in watchers.values():
         w.mark_startup()

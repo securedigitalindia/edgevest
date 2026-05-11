@@ -1,10 +1,11 @@
 """
 Builds intraday OHLCV candles from stored LTP ticks.
 
-Supports 5m, 15m, and 1h timeframes. Called at each candle close boundary:
-  5m  → every :00/:05/:10/... past market open (09:20, 09:25, ..., 15:30)
-  15m → every :00/:15/:30/... past market open (09:30, 09:45, ..., 15:30)
-  1h  → every :15 past each hour              (10:15, 11:15, ..., 15:15)
+Supports 1m, 5m, 15m, and 1h timeframes. Called at each candle close boundary:
+  1m  → every minute past market open          (09:16, 09:17, ..., 15:30)
+  5m  → every 5 min past market open           (09:20, 09:25, ..., 15:30)
+  15m → every 15 min past market open          (09:30, 09:45, ..., 15:30)
+  1h  → every :15 past each hour               (10:15, 11:15, ..., 15:15)
 
 All boundaries are counted from NSE market open at 09:15 IST.
 """
@@ -22,6 +23,7 @@ MIN_COVERAGE = 0.5
 
 # Minutes per candle for each supported intraday timeframe
 TF_MINUTES = {
+    "1m":  1,
     "5m":  5,
     "15m": 15,
     "1h":  60,
