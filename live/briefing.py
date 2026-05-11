@@ -45,19 +45,17 @@ def _pick_quote(quotes: list, offset: int = 0) -> tuple[str, str]:
     return quotes[idx]
 
 
-def _tomorrow_line() -> str:
+def _tomorrow_holiday_line() -> str | None:
+    """Return a holiday warning line if tomorrow is not a trading day, else None."""
     tomorrow = date.today() + timedelta(days=1)
-    label    = tomorrow.strftime("%A, %d %b %Y")
     if is_trading_day(tomorrow):
-        return f"✅ <b>{label}</b> — Trading Day"
-    else:
-        # Keep looking ahead to find the next trading day
-        nxt = tomorrow + timedelta(days=1)
-        while not is_trading_day(nxt) and (nxt - tomorrow).days < 10:
-            nxt += timedelta(days=1)
-        nxt_label = nxt.strftime("%d %b")
-        return (f"⚠️ <b>{label}</b> — NSE Market Holiday\n"
-                f"         Next trading day: <b>{nxt_label}</b>")
+        return None
+    label = tomorrow.strftime("%A, %d %b %Y")
+    nxt   = tomorrow + timedelta(days=1)
+    while not is_trading_day(nxt) and (nxt - tomorrow).days < 10:
+        nxt += timedelta(days=1)
+    return (f"⚠️ <b>{label}</b> — NSE Market Holiday\n"
+            f"         Next trading day: <b>{nxt.strftime('%d %b')}</b>")
 
 
 def send_morning_brief(trigger_count: int):
@@ -65,6 +63,7 @@ def send_morning_brief(trigger_count: int):
     now  = datetime.now(timezone.utc).astimezone(IST)
     q, a = _pick_quote(MORNING_QUOTES)
 
+    holiday_line = _tomorrow_holiday_line()
     lines = [
         f"🌅 <b>Good Morning — Market Brief</b>",
         _DIV,
@@ -74,8 +73,10 @@ def send_morning_brief(trigger_count: int):
         f"   — <i>{a}</i>",
         "",
         _DIV,
-        f"📆 Tomorrow:  {_tomorrow_line()}",
-        "",
+    ]
+    if holiday_line:
+        lines += [f"📆 Tomorrow:  {holiday_line}", ""]
+    lines += [
         f"🎯 <b>{trigger_count}</b> trigger(s) active — watching from 09:15 IST",
         _DIV,
         "Have a great trading session! 📈",
@@ -103,6 +104,7 @@ def send_eod_brief(alerts: list[dict]):
     else:
         alert_block = "📊 No triggers fired today — quiet session."
 
+    holiday_line = _tomorrow_holiday_line()
     lines = [
         f"🌆 <b>Market Closed — {now.strftime('%d %b %Y')}</b>",
         _DIV,
@@ -112,9 +114,8 @@ def send_eod_brief(alerts: list[dict]):
         f'💡 <i>"{q}"</i>',
         f"   — <i>{a}</i>",
         "",
-        _DIV,
-        f"📆 Tomorrow:  {_tomorrow_line()}",
-        "",
-        "Good night! Rest well. 🌙",
     ]
+    if holiday_line:
+        lines += [_DIV, f"📆 Tomorrow:  {holiday_line}", ""]
+    lines.append("Good night! Rest well. 🌙")
     send_telegram("\n".join(lines))

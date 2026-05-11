@@ -37,12 +37,21 @@ def _row(label: str, value: str, bold_value: bool = True) -> str:
 # Message builders
 # ---------------------------------------------------------------------------
 
-def _format_signal(signal: dict) -> str:
-    now_ist  = datetime.now(timezone.utc).astimezone(IST)
-    time_str = now_ist.strftime("%d %b %Y  %H:%M IST")
-    event    = signal["event"]
+def _fmt_candle_ts(candle_ts, timeframe: str) -> str:
+    """Convert candle timestamp to IST. 1h → HH:MM IST (DD Mon), others → DD Mon YYYY."""
+    if candle_ts is None:
+        return "—"
+    import pandas as pd
+    ts = pd.Timestamp(candle_ts).tz_convert("Asia/Kolkata")
+    if timeframe == "1h":
+        return ts.strftime("%H:%M IST  (%d %b)")
+    return ts.strftime("%d %b %Y  IST")
+
+
+def _format_signal(signal: dict, alert_str: str) -> str:
+    event     = signal["event"]
     icon, description = _EVENT_META.get(event, ("•", event))
-    tf       = signal["timeframe"].upper()
+    tf        = signal["timeframe"].upper()
 
     ind_label = {
         "supertrend_cross": "Supertrend",
@@ -50,13 +59,23 @@ def _format_signal(signal: dict) -> str:
         "rsi_threshold":    "RSI",
     }.get(signal.get("trigger_type", ""), "Indicator")
 
+    ltp        = signal["ltp"]
+    ind        = signal["indicator_val"]
+    diff       = ltp - ind
+    prev_close = signal.get("prev_close")
+
     lines = [
         f'🔔 <b>{_h(signal["symbol"])}</b>  •  {_h(tf)}  •  {icon} <b>{_h(event)}</b>',
         _DIV,
-        f"<i>{_h(description)}</i>",
+        f"<i>{_h(description)} {_h(ind_label)}</i>",
         "",
-        _row("LTP",        f"{signal['ltp']:,.2f}"),
-        _row(ind_label,    f"{signal['indicator_val']:,.2f}"),
+        _row("CMP",        f"{ltp:,.2f}"),
+    ]
+    if prev_close is not None:
+        lines.append(_row("Prev Close", f"{prev_close:,.2f}", bold_value=False))
+    lines += [
+        _row(ind_label,  f"{ind:,.2f}"),
+        _row("Diff",     f"{diff:+,.2f}", bold_value=False),
     ]
 
     if "st_dir" in signal:
@@ -68,12 +87,10 @@ def _format_signal(signal: dict) -> str:
 
     lines += [
         "",
-        _row("Trigger",  signal["trigger_name"],  bold_value=False),
-        _row("Time",     time_str,                 bold_value=False),
+        _row("Trigger",   signal["trigger_name"],                                  bold_value=False),
+        _row("Candle",    _fmt_candle_ts(signal.get("candle_ts"), signal["timeframe"]), bold_value=False),
+        _row("Alert at",  alert_str,                                                bold_value=False),
     ]
-
-    if signal.get("candle_ts") is not None:
-        lines.append(_row("Candle", str(signal["candle_ts"])[:16] + " UTC", bold_value=False))
 
     trade_count = len(signal.get("trades", []))
     if trade_count:
@@ -83,7 +100,7 @@ def _format_signal(signal: dict) -> str:
     return "\n".join(lines)
 
 
-def _format_trade(trade: dict, idx: int, total: int, symbol: str) -> str:
+def _format_trade(trade: dict, idx: int, total: int, symbol: str, alert_str: str) -> str:
     header = (
         f'📋 <b>TRADE IDEA {idx}/{total}</b>  •  <b>{_h(symbol)}</b>'
         if total > 1 else
@@ -107,6 +124,8 @@ def _format_trade(trade: dict, idx: int, total: int, symbol: str) -> str:
     lines += [
         _DIV,
         f'💡 <i>{_h(trade["rationale"])}</i>',
+        "",
+        _row("Alert at", alert_str, bold_value=False),
     ]
 
     return "\n".join(lines)
@@ -124,20 +143,24 @@ def _ema_period(signal: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def send_alert(signal: dict):
-    trades = signal.get("trades", [])
+    trades     = signal.get("trades", [])
+    alert_str  = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
+    sig_text   = _format_signal(signal, alert_str)
+    trade_texts = [_format_trade(t, i, len(trades), signal["symbol"], alert_str)
+                   for i, t in enumerate(trades, 1)]
 
     # Console
     print(f"\n{'='*54}")
-    print(_format_signal(signal))
-    for i, trade in enumerate(trades, 1):
+    print(sig_text)
+    for text in trade_texts:
         print(f"\n{_DIV}")
-        print(_format_trade(trade, i, len(trades), signal["symbol"]))
+        print(text)
     print(f"\n{'='*54}\n", flush=True)
 
     # Telegram — signal first, then one message per trade
-    send_telegram(_format_signal(signal))
-    for i, trade in enumerate(trades, 1):
-        send_telegram(_format_trade(trade, i, len(trades), signal["symbol"]))
+    send_telegram(sig_text)
+    for text in trade_texts:
+        send_telegram(text)
 
 
 def send_telegram(text: str):

@@ -50,12 +50,10 @@ def _build(title: str, ltp: float, symbol: str,
             {
                 "action":     "SELL",
                 "instrument": f"NIFTY {near_str} {strike:,} PE",
-                "note":       f"{near_label} ({near_str}) — sell premium",
             },
             {
                 "action":     "BUY",
                 "instrument": f"NIFTY {far_str} {strike:,} PE",
-                "note":       f"{far_label} ({far_str}) — buy time value",
             },
         ],
         "rationale": (
