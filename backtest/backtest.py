@@ -386,12 +386,12 @@ if __name__ == "__main__":
                              "(default: all confluence_cross)")
     parser.add_argument("--symbol",  nargs="*", default=[], metavar="SYM",
                         help="Symbol name(s) (default: from trigger config)")
-    parser.add_argument("--days",    type=int,   default=30,
-                        help="Lookback in calendar days (default: 30)")
-    parser.add_argument("--tp",      type=float, default=100,
-                        help="Take-profit in points (default: 100)")
-    parser.add_argument("--sl",      type=float, default=20,
-                        help="Stop-loss in points (default: 20)")
+    parser.add_argument("--days",    type=int,   required=True,
+                        help="Lookback in calendar days  e.g. 30")
+    parser.add_argument("--tp",      type=float, required=True,
+                        help="Take-profit in points  e.g. 100 for NIFTY, 20 for RELIANCE")
+    parser.add_argument("--sl",      type=float, required=True,
+                        help="Stop-loss in points   e.g. 30 for NIFTY, 5 for RELIANCE")
     parser.add_argument("--entry",     choices=["close", "next_open"], default="close",
                         help="Entry price: signal-candle close or next-candle open "
                              "(default: close)")
