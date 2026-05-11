@@ -19,6 +19,7 @@ Signal dict keys (common to all triggers):
 """
 
 import time
+from datetime import datetime, timezone
 
 from live.signal_engine import compute_supertrend, compute_ema, compute_rsi
 from live.trade_suggestions import build_all_trades
@@ -235,6 +236,158 @@ class RsiThresholdTrigger(BaseTrigger):
 
 
 # ---------------------------------------------------------------------------
+# Confluence helpers
+# ---------------------------------------------------------------------------
+
+def _cross_label(cross_cfg: dict) -> str:
+    ind = cross_cfg["indicator"]
+    if ind == "ema":
+        return f"EMA{cross_cfg['period']}"
+    if ind == "supertrend":
+        return f"ST({cross_cfg['period']},{cross_cfg['multiplier']})"
+    return ind.upper()
+
+
+def _eval_confirm(cond: dict, symbol: str, timeframe: str,
+                  ltp: float, cross_dir: str) -> bool:
+    """
+    Evaluate one confirm condition. Returns True if the signal should proceed.
+
+    Supported types:
+        supertrend_direction  — ST direction must match cross direction
+        price_below_day_high  — LTP < today's intraday high (from 5m candles)
+        price_above_day_low   — LTP > today's intraday low  (from 5m candles)
+    """
+    ctype = cond["type"]
+
+    if ctype == "supertrend_direction":
+        _, st_dir, _, _ = compute_supertrend(
+            symbol, timeframe, cond["period"], cond["multiplier"]
+        )
+        expected = 1 if cross_dir == "UP" else -1
+        return st_dir == expected
+
+    if ctype in ("price_below_day_high", "price_above_day_low"):
+        from db.queries import get_candles
+        df = get_candles(symbol, "5m", limit=90)   # 90 × 5m = 7.5h covers full session
+        if df.empty:
+            return True
+        today = datetime.now(timezone.utc).date()
+        today_df = df[df["ts"].dt.date == today]
+        if today_df.empty:
+            return True
+        if ctype == "price_below_day_high":
+            return ltp < float(today_df["high"].max())
+        return ltp > float(today_df["low"].min())
+
+    return True   # unknown condition type → don't block
+
+
+# ---------------------------------------------------------------------------
+# Confluence cross — cross indicator + N confirm conditions (AND-gated)
+# ---------------------------------------------------------------------------
+
+class ConfluenceCrossTrigger(BaseTrigger):
+    """
+    Fires when the cross indicator crosses AND all confirm conditions pass.
+
+    Config keys:
+        cross:     {"indicator": "ema"|"supertrend", "period": N, ["multiplier": M]}
+        confirm:   list of condition dicts — all must pass at fire time
+        direction: "UP" | "DOWN" | None  (filter to one crossing direction)
+
+    Example:
+        {
+            "type":      "confluence_cross",
+            "timeframe": "15m",
+            "cross":     {"indicator": "ema", "period": 20},
+            "confirm":   [
+                {"type": "supertrend_direction", "period": 10, "multiplier": 3.0},
+                {"type": "price_below_day_high"},
+            ],
+            "direction": "DOWN",
+        }
+    """
+
+    def __init__(self, cfg: dict, symbol: str):
+        super().__init__(cfg, symbol)
+        self._cross_cfg   = cfg["cross"]
+        self._confirm_cfg = cfg.get("confirm", [])
+        self.direction    = cfg.get("direction")
+
+        self._cross_val:  float | None = None
+        self._cross_ts                 = None
+        self._last_close: float | None = None
+        self._prev_above: bool  | None = None
+        self._st_dir:     int   | None = None   # only set when cross=supertrend
+
+    def refresh(self):
+        ind = self._cross_cfg["indicator"]
+        if ind == "ema":
+            self._cross_val, self._cross_ts, self._last_close = compute_ema(
+                self.symbol, self.timeframe, self._cross_cfg["period"]
+            )
+        elif ind == "supertrend":
+            self._cross_val, self._st_dir, self._cross_ts, self._last_close = (
+                compute_supertrend(
+                    self.symbol, self.timeframe,
+                    self._cross_cfg["period"], self._cross_cfg["multiplier"]
+                )
+            )
+        baseline = self._last_ltp if self._last_ltp is not None else self._last_close
+        self._prev_above = baseline > self._cross_val
+
+    def check(self, ltp: float) -> dict | None:
+        self._last_ltp = ltp
+        if self._cross_val is None:
+            return None
+
+        curr_above = ltp > self._cross_val
+        if curr_above == self._prev_above:
+            return None
+
+        cross_dir = "UP" if curr_above else "DOWN"
+
+        # Direction filter
+        if self.direction == "UP" and cross_dir == "DOWN":
+            self._prev_above = curr_above
+            return None
+        if self.direction == "DOWN" and cross_dir == "UP":
+            self._prev_above = curr_above
+            return None
+
+        # Evaluate all confirm conditions — any failure suppresses the signal
+        for cond in self._confirm_cfg:
+            if not _eval_confirm(cond, self.symbol, self.timeframe, ltp, cross_dir):
+                self._prev_above = curr_above
+                print(f"  [confluence]  {self.symbol} [{self.name}]  "
+                      f"{cross_dir} suppressed — {cond['type']} not confirmed", flush=True)
+                return None
+
+        self._prev_above = curr_above
+        extra = {
+            "prev_close":   self._last_close,
+            "cross_label":  _cross_label(self._cross_cfg),
+            "confirmed_by": [c["type"] for c in self._confirm_cfg],
+        }
+        if self._st_dir is not None:
+            extra["st_dir"] = self._st_dir
+
+        return self._signal(
+            ltp, self._cross_val,
+            event=f"CROSS {cross_dir}",
+            candle_ts=self._cross_ts,
+            extra=extra,
+        )
+
+    def summary(self) -> str:
+        if self._cross_val is None:
+            return "not loaded"
+        confirm_str = " + ".join(c["type"] for c in self._confirm_cfg) or "no filters"
+        return f"{_cross_label(self._cross_cfg)} = {self._cross_val:,.2f}  [{confirm_str}]"
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
@@ -242,6 +395,7 @@ _REGISTRY: dict[str, type] = {
     "supertrend_cross": SupertrendCrossTrigger,
     "ema_cross":        EmaCrossTrigger,
     "rsi_threshold":    RsiThresholdTrigger,
+    "confluence_cross": ConfluenceCrossTrigger,
 }
 
 

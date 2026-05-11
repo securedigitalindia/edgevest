@@ -38,12 +38,12 @@ def _row(label: str, value: str, bold_value: bool = True) -> str:
 # ---------------------------------------------------------------------------
 
 def _fmt_candle_ts(candle_ts, timeframe: str) -> str:
-    """Convert candle timestamp to IST. 1h → HH:MM IST (DD Mon), others → DD Mon YYYY."""
+    """Convert candle timestamp to IST. Intraday → HH:MM IST (DD Mon), daily+ → DD Mon YYYY."""
     if candle_ts is None:
         return "—"
     import pandas as pd
     ts = pd.Timestamp(candle_ts).tz_convert("Asia/Kolkata")
-    if timeframe == "1h":
+    if timeframe in ("5m", "15m", "1h"):
         return ts.strftime("%H:%M IST  (%d %b)")
     return ts.strftime("%d %b %Y  IST")
 
@@ -57,6 +57,7 @@ def _format_signal(signal: dict, alert_str: str) -> str:
         "supertrend_cross": "Supertrend",
         "ema_cross":        f"EMA{_ema_period(signal)}",
         "rsi_threshold":    "RSI",
+        "confluence_cross": signal.get("cross_label", "Indicator"),
     }.get(signal.get("trigger_type", ""), "Indicator")
 
     ltp        = signal["ltp"]
@@ -84,6 +85,16 @@ def _format_signal(signal: dict, alert_str: str) -> str:
 
     if "rsi_level" in signal:
         lines.append(_row("Threshold", str(signal["rsi_level"]), bold_value=False))
+
+    confirmed_by = signal.get("confirmed_by", [])
+    if confirmed_by:
+        labels = {
+            "supertrend_direction": "ST direction",
+            "price_below_day_high": "below day high",
+            "price_above_day_low":  "above day low",
+        }
+        confirmed_str = "  +  ".join(labels.get(c, c) for c in confirmed_by)
+        lines.append(_row("Confirmed", confirmed_str, bold_value=False))
 
     lines += [
         "",
