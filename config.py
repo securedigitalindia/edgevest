@@ -124,6 +124,36 @@ MARKET_CLOSE_IST = (15, 30)
 #   "trade": {"type": "<template>", "params": {...}}  → attach a trade suggestion to the alert
 
 TRIGGERS = [
+    # --- Confluence alerts (cross + confirm conditions) ---
+    # EMA20 cross UP while ST is bearish + price below day high → fade the bounce (bearish)
+    {
+        "name":      "EMA20_15M_BEARISH",
+        "type":      "confluence_cross",
+        "timeframe": "15m",
+        "cross":     {"indicator": "ema", "period": 20},
+        "direction": "UP",
+        "confirm": [
+            {"type": "supertrend_bearish", "period": 10, "multiplier": 3.0},
+            {"type": "price_below_day_high"},
+        ],
+        "symbols":          "all",
+        "cooldown_minutes": 15,
+    },
+    # EMA20 cross DOWN while ST is bullish + price above day low → buy the dip (bullish)
+    {
+        "name":      "EMA20_15M_BULLISH",
+        "type":      "confluence_cross",
+        "timeframe": "15m",
+        "cross":     {"indicator": "ema", "period": 20},
+        "direction": "DOWN",
+        "confirm": [
+            {"type": "supertrend_bullish", "period": 10, "multiplier": 3.0},
+            {"type": "price_above_day_low"},
+        ],
+        "symbols":          "all",
+        "cooldown_minutes": 15,
+    },
+
     # --- Basic alerts (no trade suggestion) ---
     {
         "name":             "ST_1D_CROSS",

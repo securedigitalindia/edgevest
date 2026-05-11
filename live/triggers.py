@@ -261,11 +261,26 @@ def _eval_confirm(cond: dict, symbol: str, timeframe: str,
     ctype = cond["type"]
 
     if ctype == "supertrend_direction":
+        # ST direction must match cross direction (UP→bullish, DOWN→bearish)
         _, st_dir, _, _ = compute_supertrend(
             symbol, timeframe, cond["period"], cond["multiplier"]
         )
         expected = 1 if cross_dir == "UP" else -1
         return st_dir == expected
+
+    if ctype == "supertrend_bullish":
+        # ST must be bullish (+1) regardless of cross direction
+        _, st_dir, _, _ = compute_supertrend(
+            symbol, timeframe, cond["period"], cond["multiplier"]
+        )
+        return st_dir == 1
+
+    if ctype == "supertrend_bearish":
+        # ST must be bearish (-1) regardless of cross direction
+        _, st_dir, _, _ = compute_supertrend(
+            symbol, timeframe, cond["period"], cond["multiplier"]
+        )
+        return st_dir == -1
 
     if ctype in ("price_below_day_high", "price_above_day_low"):
         from db.queries import get_candles

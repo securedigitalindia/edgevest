@@ -90,6 +90,8 @@ def _format_signal(signal: dict, alert_str: str) -> str:
     if confirmed_by:
         labels = {
             "supertrend_direction": "ST direction",
+            "supertrend_bullish":   "ST bullish",
+            "supertrend_bearish":   "ST bearish",
             "price_below_day_high": "below day high",
             "price_above_day_low":  "above day low",
         }
