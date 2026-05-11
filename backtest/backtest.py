@@ -233,7 +233,7 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
                     (sig_row["signal_dir"] == "DOWN" and frow["low"]  <= cross_val)
                 )
                 if touched:
-                    entry_price  = float(frow["close"])
+                    entry_price  = cross_val   # enter at the crossing level, not candle close
                     scan_from_ts = frow["ts"] + pd.Timedelta(minutes=entry_interval_min)
                     break
 
