@@ -71,10 +71,6 @@ INDICATORS = {
 # -----------------------------------------------------------
 # Sync settings
 # -----------------------------------------------------------
-# How many recent candles to re-fetch on daily sync
-# (catches late corrections from yfinance)
-SYNC_LOOKBACK_CANDLES = 5
-
 # yfinance request delay (seconds) between symbol fetches
 # to avoid rate limiting
 FETCH_DELAY_SECONDS = 1.5
@@ -94,9 +90,6 @@ TELEGRAM_CHAT_ID   = "1080341401"
 
 # Seconds between each LTP poll during market hours
 POLL_INTERVAL_SECONDS = 5
-
-# How many poll cycles between Supertrend refreshes from DB (~5 min at 5s/cycle)
-ST_REFRESH_CYCLES = 60
 
 # NSE market hours in IST
 MARKET_OPEN_IST  = (9, 15)
@@ -120,6 +113,24 @@ MARKET_CLOSE_IST = (15, 30)
 
 TRIGGERS = [
     # --- Basic alerts (no trade suggestion) ---
+    {
+        "name":             "ST_1D_CROSS",
+        "type":             "supertrend_cross",
+        "timeframe":        "1d",
+        "period":           7,
+        "multiplier":       3.0,
+        "symbols":          ["NIFTY50", "BANKNIFTY"],
+        "cooldown_minutes": 480,   # 8h — daily flip won't reverse intraday
+    },
+    {
+        "name":             "ST_1WK_CROSS",
+        "type":             "supertrend_cross",
+        "timeframe":        "1wk",
+        "period":           7,
+        "multiplier":       3.0,
+        "symbols":          ["NIFTY50", "BANKNIFTY"],
+        "cooldown_minutes": 2880,  # 2 days — weekly flip is a rare, durable signal
+    },
     {
         "name":             "ST_1H_CROSS",
         "type":             "supertrend_cross",

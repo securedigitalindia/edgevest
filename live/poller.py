@@ -6,7 +6,7 @@ Run:
     python main.py live --force    # skip market-hours + holiday check (for testing)
 
 Daily lifecycle:
-  Startup   : holiday check → daily yfinance sync → expiry cache refresh → build triggers
+  Startup   : holiday check → expiry cache refresh → build triggers
   Market hrs: poll every 5s → store ticks → run triggers → build 1h candles at :15 boundary
   16:00 IST : daily yfinance sync → tick cleanup → expiry cache refresh → exit
 """
@@ -25,7 +25,6 @@ from config import (
     TRIGGERS,
     UPSTOX_INSTRUMENT_KEYS,
     POLL_INTERVAL_SECONDS,
-    ST_REFRESH_CYCLES,
     MARKET_OPEN_IST,
     MARKET_CLOSE_IST,
 )
@@ -87,17 +86,11 @@ def _wait_until(target_hour: int, target_minute: int = 0):
 def _run_startup_tasks():
     """
     Run at poller startup before market opens.
-    Full yfinance sync (safety net for missed EOD) + expiry cache refresh.
+    Only refreshes expiry cache — no yfinance sync here because the market
+    may already be open and yfinance would return incomplete in-progress candles.
+    The EOD sync at 16:00 IST is the right time to sync (market closed by then).
     """
-    from sync.daily_sync import run_daily_sync
-
     print("── Startup tasks ──────────────────────────────────")
-    print("Syncing candles from yfinance...\n")
-    try:
-        run_daily_sync()
-    except Exception as e:
-        print(f"  [startup sync failed]  {e}", flush=True)
-
     print("Refreshing option expiry dates from Upstox...\n")
     try:
         expiry_cache.refresh()
@@ -234,13 +227,10 @@ def run_live(force: bool = False):
             print(f"  [morning brief failed]  {e}", flush=True)
         wait_for_market_open()
 
-    cycle        = 0
     error_streak = 0
     daily_alerts: list[dict] = []   # accumulates every signal fired today
 
     while force or is_market_open():
-        cycle += 1
-
         # 1h candle close: build from ticks → refresh indicators
         if candle_watcher.should_sync():
             t = _ist_now()
@@ -256,16 +246,6 @@ def run_live(force: bool = False):
                         print(f"  [refresh failed — {trig.symbol} {trig.name}]  {e}",
                               flush=True)
             print("  Done.\n", flush=True)
-
-        # Periodic indicator refresh between candle closes
-        elif cycle % ST_REFRESH_CYCLES == 0:
-            for triggers in ikey_triggers.values():
-                for trig in triggers:
-                    try:
-                        trig.refresh()
-                    except Exception as e:
-                        print(f"  [refresh failed — {trig.symbol} {trig.name}]  {e}",
-                              flush=True)
 
         # Fetch LTPs
         try:

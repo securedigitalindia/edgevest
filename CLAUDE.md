@@ -30,7 +30,7 @@ python main.py init               # (re-)create all tables, idempotent
 ## Daily Lifecycle (live poller)
 
 ```
-Startup      holiday check → full yfinance sync → expiry cache refresh → load triggers → morning Telegram brief
+Startup      holiday check → expiry cache refresh → load triggers → morning Telegram brief
 09:15–15:30  poll every 5s: store LTP ticks → run triggers → alert on crossing → build 1h candles at :15 boundary
 15:30        stop polling
 16:00        full yfinance sync + tick cleanup + expiry cache refresh + EOD Telegram brief → exit

@@ -13,7 +13,7 @@ import yfinance as yf
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import SYMBOLS, TIMEFRAMES, FETCH_DELAY_SECONDS, SYNC_LOOKBACK_CANDLES
+from config import SYMBOLS, TIMEFRAMES, FETCH_DELAY_SECONDS
 from db.queries import (
     upsert_candles, update_sync_log,
     get_latest_ts, get_row_count
@@ -30,6 +30,17 @@ SYNC_PERIODS = {
     "1d":  "30d",
     "1wk": "90d",
     "1mo": "90d",
+}
+
+# How far back to re-sync from latest_before.
+# 1h: 12h covers a full NSE session (09:15–15:15 = 6 candles) so all
+#     tick-built candles with volume=NULL get overwritten by yfinance.
+# Others: a few days/weeks to catch any late yfinance corrections.
+SYNC_LOOKBACK = {
+    "1h":  pd.Timedelta(hours=12),
+    "1d":  pd.Timedelta(days=5),
+    "1wk": pd.Timedelta(weeks=2),
+    "1mo": pd.Timedelta(days=62),
 }
 
 
@@ -64,11 +75,12 @@ def sync_symbol(symbol_cfg: dict) -> dict:
             summary["timeframes"][tf_key] = {"status": "fetch_failed"}
             continue
 
-        # Filter to only rows newer than what we already have
-        # We re-fetch SYNC_LOOKBACK_CANDLES to catch any late corrections
+        # Re-sync from (latest_before - lookback) so that:
+        # • 1h: all tick-built candles from today's session get replaced with
+        #        proper yfinance OHLCV (volume was NULL in tick-built candles)
+        # • others: catches any late yfinance corrections
         if latest_before:
-            cutoff = pd.Timestamp(latest_before, tz="UTC")
-            # Keep rows >= cutoff to allow upsert of corrected candles
+            cutoff = pd.Timestamp(latest_before, tz="UTC") - SYNC_LOOKBACK[tf_key]
             df = df[df["ts"] >= cutoff].copy()
 
         if df.empty:

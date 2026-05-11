@@ -64,7 +64,7 @@ def build_all(symbol_names: list[str]) -> dict[str, int]:
 
         ltps = ticks["ltp"].astype(float)
         candle = pd.DataFrame([{
-            "ts":     start_utc.isoformat(),
+            "ts":     start_utc.strftime("%Y-%m-%d %H:%M:%S+00:00"),
             "open":   float(ltps.iloc[0]),
             "high":   float(ltps.max()),
             "low":    float(ltps.min()),
