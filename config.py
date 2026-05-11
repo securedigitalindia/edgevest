@@ -133,7 +133,7 @@ TRIGGERS = [
         "cross":     {"indicator": "ema", "period": 20},
         "direction": "UP",
         "confirm": [
-            {"type": "supertrend_bearish", "period": 10, "multiplier": 3.0},
+            {"type": "supertrend_direction", "period": 10, "multiplier": 3.0, "expected": "bearish"},
             {"type": "price_below_day_high"},
         ],
         "symbols":          "all",
@@ -147,7 +147,7 @@ TRIGGERS = [
         "cross":     {"indicator": "ema", "period": 20},
         "direction": "DOWN",
         "confirm": [
-            {"type": "supertrend_bullish", "period": 10, "multiplier": 3.0},
+            {"type": "supertrend_direction", "period": 10, "multiplier": 3.0, "expected": "bullish"},
             {"type": "price_above_day_low"},
         ],
         "symbols":          "all",
