@@ -169,7 +169,8 @@ _TF_MINUTES = {"5m": 5, "15m": 15, "1h": 60, "1d": 1440, "1wk": 10080}
 def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
                     exit_df: pd.DataFrame,
                     tp_pts: float, sl_pts: float,
-                    entry_mode: str = "close",
+                    entry_5m_df: pd.DataFrame | None = None,
+                    entry_mode: str = "5m_cross",
                     tf_minutes: int = 15,
                     mode: str = "intraday",
                     max_hold_days: int = 10) -> list[dict]:
@@ -177,18 +178,19 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
     Entry  : detected on signal_df (trigger timeframe, e.g. 15m)
     Exit   : scanned on exit_df
 
-    mode = "intraday"
-        exit_df = 5m candles
-        Scan same day only; force-exit at end of day (EOD).
+    entry_mode:
+        "5m_cross"  — look inside the 15m window using entry_5m_df; enter at the
+                      close of the first 5m candle that touched cross_val.
+                      Most accurate: mirrors when the live alert fires.
+        "close"     — 15m signal-candle close (optimistic)
+        "next_open" — next 15m candle open (conservative)
 
-    mode = "positional"
-        exit_df = 1d candles
-        Scan from next trading day; hold up to max_hold_days.
-        Force-exit at close of day N if TP/SL not hit (EXPIRED).
+    mode = "intraday"   exit on 5m same-day candles, force-exit EOD
+    mode = "positional" exit on 1d candles from next day, force-exit EXPIRED
 
     Trade direction:
-        signal_dir DOWN  →  LONG   (bullish)
-        signal_dir UP    →  SHORT  (bearish)
+        signal_dir DOWN  ->  LONG   (bullish)
+        signal_dir UP    ->  SHORT  (bearish)
     """
     signal_df = signal_df.copy()
     signal_df["_ist_date"] = signal_df["ts"].dt.tz_convert(IST).dt.date
@@ -196,6 +198,9 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
     exit_df = exit_df.copy()
     exit_df["_ist_date"] = exit_df["ts"].dt.tz_convert(IST).dt.date
     exit_df = exit_df.reset_index(drop=True)
+
+    if entry_5m_df is not None:
+        entry_5m_df = entry_5m_df.reset_index(drop=True)
 
     results = []
 
@@ -205,7 +210,28 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
         pos      = signal_df.index.get_loc(sig_idx)
 
         # --- Entry ---
-        if entry_mode == "next_open":
+        if entry_mode == "5m_cross" and entry_5m_df is not None:
+            # Find the first 5m candle inside the 15m window where cross_val was touched
+            window_start = sig_row["ts"]
+            window_end   = window_start + pd.Timedelta(minutes=tf_minutes)
+            window_5m    = entry_5m_df[
+                (entry_5m_df["ts"] >= window_start) &
+                (entry_5m_df["ts"] <  window_end)
+            ]
+            cross_val    = float(sig_row["cross_val"])
+            entry_price  = float(sig_row["close"])   # fallback to 15m close
+            scan_from_ts = window_end
+            for _, frow in window_5m.iterrows():
+                touched = (
+                    (sig_row["signal_dir"] == "UP"   and frow["high"] >= cross_val) or
+                    (sig_row["signal_dir"] == "DOWN" and frow["low"]  <= cross_val)
+                )
+                if touched:
+                    entry_price  = float(frow["close"])
+                    scan_from_ts = frow["ts"] + pd.Timedelta(minutes=5)
+                    break
+
+        elif entry_mode == "next_open":
             if pos + 1 >= len(signal_df):
                 continue
             next_row = signal_df.iloc[pos + 1]
@@ -213,7 +239,8 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
                 continue
             entry_price  = float(next_row["open"])
             scan_from_ts = next_row["ts"]
-        else:
+
+        else:   # "close"
             entry_price  = float(sig_row["close"])
             scan_from_ts = sig_row["ts"] + pd.Timedelta(minutes=tf_minutes)
 
@@ -359,10 +386,19 @@ def run_backtest(trigger_names: list[str], symbol_filter: list[str],
                 print(f"  Insufficient data: {symbol} [{cfg['timeframe']}] — {len(df)} rows")
                 continue
 
+            # 5m candles — used for both entry detection and intraday exit scanning
+            df_5m = get_candles(symbol, "5m", limit=10000)
+            if not df_5m.empty:
+                df_5m = df_5m[df_5m["ts"] >= cutoff].reset_index(drop=True)
+
             # Exit scanning candles — 5m for intraday, 1d for positional
-            exit_df = get_candles(symbol, exit_tf, limit=10000)
-            if not exit_df.empty:
-                exit_df = exit_df[exit_df["ts"] >= cutoff].reset_index(drop=True)
+            if mode == "intraday":
+                exit_df = df_5m
+            else:
+                exit_df = get_candles(symbol, "1d", limit=10000)
+                if not exit_df.empty:
+                    exit_df = exit_df[exit_df["ts"] >= cutoff].reset_index(drop=True)
+
             if exit_df.empty:
                 print(f"  Warning: no {exit_tf} data for {symbol}, "
                       f"falling back to {cfg['timeframe']} for exits")
@@ -374,8 +410,10 @@ def run_backtest(trigger_names: list[str], symbol_filter: list[str],
                 print(f"  Signal detection failed [{symbol} / {cfg['name']}]: {e}")
                 continue
 
-            results = simulate_trades(df, signals, exit_df, tp_pts, sl_pts,
-                                      entry_mode, tf_minutes, mode, max_hold_days)
+            entry_5m = df_5m if not df_5m.empty else None
+            results  = simulate_trades(df, signals, exit_df, tp_pts, sl_pts,
+                                       entry_5m, entry_mode, tf_minutes,
+                                       mode, max_hold_days)
             print_report(results, cfg["name"], symbol, tp_pts, sl_pts, mode)
 
 
@@ -392,9 +430,12 @@ if __name__ == "__main__":
                         help="Take-profit in points  e.g. 100 for NIFTY, 20 for RELIANCE")
     parser.add_argument("--sl",      type=float, required=True,
                         help="Stop-loss in points   e.g. 30 for NIFTY, 5 for RELIANCE")
-    parser.add_argument("--entry",     choices=["close", "next_open"], default="close",
-                        help="Entry price: signal-candle close or next-candle open "
-                             "(default: close)")
+    parser.add_argument("--entry",     choices=["5m_cross", "close", "next_open"],
+                        default="5m_cross",
+                        help="5m_cross: enter at first 5m candle inside 15m window that "
+                             "touched the indicator (default, most accurate)  "
+                             "close: 15m signal-candle close  "
+                             "next_open: next 15m candle open")
     parser.add_argument("--mode",      choices=["intraday", "positional"], default="intraday",
                         help="intraday: exit same day on 5m candles  "
                              "positional: hold across days on 1d candles  "
