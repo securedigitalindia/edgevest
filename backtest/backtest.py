@@ -176,20 +176,26 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
                     entry_mode: str = "5m_cross",
                     tf_minutes: int = 15,
                     mode: str = "intraday",
-                    max_hold_days: int = 10) -> list[dict]:
+                    max_hold_days: int = 10,
+                    exit_mode: str = "fixed") -> list[dict]:
     """
     Entry  : detected on signal_df (trigger timeframe, e.g. 15m)
     Exit   : scanned on exit_df
 
     entry_mode:
-        "5m_cross"  — look inside the 15m window using entry_5m_df; enter at the
-                      close of the first 5m candle that touched cross_val.
-                      Most accurate: mirrors when the live alert fires.
-        "close"     — 15m signal-candle close (optimistic)
-        "next_open" — next 15m candle open (conservative)
+        "5m_cross"  — enter at cross_val using 1m/5m candle touch inside 15m window
+        "close"     — 15m signal-candle close
+        "next_open" — next 15m candle open
 
-    mode = "intraday"   exit on 5m same-day candles, force-exit EOD
-    mode = "positional" exit on 1d candles from next day, force-exit EXPIRED
+    exit_mode:
+        "fixed"     — fixed TP (tp_pts) and fixed SL (sl_pts)
+        "trail_ema" — trailing stop + EMA close stop:
+                        tp_pts  = trail gap: SL trails this many pts below running high
+                        sl_pts  = initial hard SL before trailing kicks in
+                        EMA close: exit when 15m candle closes on wrong side of EMA20
+
+    mode = "intraday"   exit same-day, force-exit EOD
+    mode = "positional" exit across days, force-exit EXPIRED
 
     Trade direction:
         signal_dir DOWN  ->  LONG   (bullish)
@@ -197,6 +203,10 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
     """
     signal_df = signal_df.copy()
     signal_df["_ist_date"] = signal_df["ts"].dt.tz_convert(IST).dt.date
+
+    # Pre-compute EMA20 on signal_df for trail_ema close check
+    if exit_mode == "trail_ema":
+        signal_df["_ema20"] = pta.ema(signal_df["close"], length=20)
 
     exit_df = exit_df.copy()
     exit_df["_ist_date"] = exit_df["ts"].dt.tz_convert(IST).dt.date
@@ -253,50 +263,104 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
             entry_price  = float(sig_row["close"])
             scan_from_ts = sig_row["ts"] + pd.Timedelta(minutes=tf_minutes)
 
-        tp_price = entry_price + tp_pts if is_long else entry_price - tp_pts
-        sl_price = entry_price - sl_pts if is_long else entry_price + sl_pts
-
-        # --- Exit scan rows ---
-        if mode == "intraday":
-            scan_rows = exit_df[
-                (exit_df["_ist_date"] == sig_date) &
-                (exit_df["ts"] >= scan_from_ts)
-            ]
-        else:
-            # positional: start from the next trading day, cap at max_hold_days
-            scan_rows = exit_df[exit_df["_ist_date"] > sig_date].head(max_hold_days)
-
         eod_label  = "EOD" if mode == "intraday" else "EXPIRED"
         outcome    = eod_label
         exit_price = entry_price
         exit_ts    = scan_from_ts
 
-        for _, erow in scan_rows.iterrows():
-            exit_price = float(erow["close"])
-            exit_ts    = erow["ts"]
+        if exit_mode == "fixed":
+            tp_price = entry_price + tp_pts if is_long else entry_price - tp_pts
+            sl_price = entry_price - sl_pts if is_long else entry_price + sl_pts
 
-            if is_long:
-                if erow["high"] >= tp_price:
-                    outcome    = "TP"
-                    exit_price = tp_price
-                    exit_ts    = erow["ts"]
-                    break
-                if erow["low"] <= sl_price:
-                    outcome    = "SL"
-                    exit_price = sl_price
-                    exit_ts    = erow["ts"]
-                    break
+            if mode == "intraday":
+                scan_rows = exit_df[
+                    (exit_df["_ist_date"] == sig_date) &
+                    (exit_df["ts"] >= scan_from_ts)
+                ]
             else:
-                if erow["low"] <= tp_price:
-                    outcome    = "TP"
-                    exit_price = tp_price
-                    exit_ts    = erow["ts"]
-                    break
-                if erow["high"] >= sl_price:
-                    outcome    = "SL"
-                    exit_price = sl_price
-                    exit_ts    = erow["ts"]
-                    break
+                scan_rows = exit_df[exit_df["_ist_date"] > sig_date].head(max_hold_days)
+
+            for _, erow in scan_rows.iterrows():
+                exit_price = float(erow["close"])
+                exit_ts    = erow["ts"]
+                if is_long:
+                    if erow["high"] >= tp_price:
+                        outcome, exit_price, exit_ts = "TP", tp_price, erow["ts"]; break
+                    if erow["low"] <= sl_price:
+                        outcome, exit_price, exit_ts = "SL", sl_price, erow["ts"]; break
+                else:
+                    if erow["low"] <= tp_price:
+                        outcome, exit_price, exit_ts = "TP", tp_price, erow["ts"]; break
+                    if erow["high"] >= sl_price:
+                        outcome, exit_price, exit_ts = "SL", sl_price, erow["ts"]; break
+
+        else:  # trail_ema
+            # tp_pts = trail gap (SL trails this many pts below running high for LONG)
+            # sl_pts = initial hard SL before trailing kicks in
+            # EMA close = exit when 15m candle closes on wrong side of EMA20
+            hard_sl      = entry_price - sl_pts if is_long else entry_price + sl_pts
+            running_ext  = entry_price   # highest seen (LONG) or lowest seen (SHORT)
+            trail_sl     = hard_sl       # starts at hard SL, tightens as price moves
+
+            # 5m candles same-day after entry
+            fives = exit_df[
+                (exit_df["_ist_date"] == sig_date) &
+                (exit_df["ts"] >= scan_from_ts)
+            ]
+            # 15m candles same-day after entry (for EMA close check)
+            fifteens = signal_df[
+                (signal_df["_ist_date"] == sig_date) &
+                (signal_df["ts"] >= scan_from_ts)
+            ]
+
+            # Merge into a single timeline sorted by ts
+            fives_ev    = fives[["ts", "open", "high", "low", "close"]].copy()
+            fives_ev["_ev"] = "5m"
+            fifteen_ev  = fifteens[["ts", "close", "_ema20"]].copy()
+            fifteen_ev["_ev"] = "15m"
+            fifteen_ev  = fifteen_ev.rename(columns={"close": "close"})
+
+            events = pd.concat(
+                [fives_ev.assign(high=fives_ev["high"], low=fives_ev["low"]),
+                 fifteen_ev.assign(high=float("nan"), low=float("nan"))],
+                ignore_index=True
+            ).sort_values("ts")
+
+            for _, ev in events.iterrows():
+                if ev["_ev"] == "5m":
+                    exit_price = float(ev["close"])
+                    exit_ts    = ev["ts"]
+                    h, l       = float(ev["high"]), float(ev["low"])
+
+                    if is_long:
+                        # Update trailing: assume high comes before low within candle
+                        if h > running_ext:
+                            running_ext = h
+                            trail_sl    = max(hard_sl, running_ext - tp_pts)
+                        if l <= trail_sl:
+                            outcome, exit_price, exit_ts = "TRAIL_SL", trail_sl, ev["ts"]
+                            break
+                    else:
+                        if l < running_ext:
+                            running_ext = l
+                            trail_sl    = min(hard_sl, running_ext + tp_pts)
+                        if h >= trail_sl:
+                            outcome, exit_price, exit_ts = "TRAIL_SL", trail_sl, ev["ts"]
+                            break
+
+                else:  # 15m close — check EMA condition
+                    c    = float(ev["close"])
+                    ema  = float(ev["_ema20"]) if not pd.isna(ev["_ema20"]) else None
+                    if ema is None:
+                        continue
+                    if is_long and c < ema:
+                        outcome, exit_price, exit_ts = "EMA_CLOSE", c, ev["ts"]
+                        break
+                    if not is_long and c > ema:
+                        outcome, exit_price, exit_ts = "EMA_CLOSE", c, ev["ts"]
+                        break
+                    exit_price = c
+                    exit_ts    = ev["ts"]
 
         pnl = (exit_price - entry_price) if is_long else (entry_price - exit_price)
 
@@ -344,15 +408,21 @@ def print_report(results: list[dict], trigger_name: str, symbol: str,
         print(f"  {entry_str:<17} {r['side']:<6} {r['entry_price']:>9,.1f}  "
               f"{exit_str:<17} {r['exit_price']:>9,.1f}  {pnl_str:>8}  {r['outcome']}")
 
-    total       = len(results)
-    tp_cnt      = sum(1 for r in results if r["outcome"] == "TP")
-    sl_cnt      = sum(1 for r in results if r["outcome"] == "SL")
-    forced_cnt  = sum(1 for r in results if r["outcome"] == forced_label)
-    net_pnl     = sum(r["pnl"] for r in results)
-    win_rate    = tp_cnt / total * 100
+    total      = len(results)
+    tp_cnt     = sum(1 for r in results if r["outcome"] == "TP")
+    sl_cnt     = sum(1 for r in results if r["outcome"] in ("SL", "TRAIL_SL"))
+    ema_cnt    = sum(1 for r in results if r["outcome"] == "EMA_CLOSE")
+    forced_cnt = sum(1 for r in results if r["outcome"] == forced_label)
+    net_pnl    = sum(r["pnl"] for r in results)
+    win_pnl    = sum(r["pnl"] for r in results if r["pnl"] > 0)
+    win_rate   = sum(1 for r in results if r["pnl"] > 0) / total * 100
 
-    print(f"\n  Trades: {total}   TP: {tp_cnt}   SL: {sl_cnt}   {forced_label}: {forced_cnt}"
-          f"   Win rate: {win_rate:.0f}%   Net P&L: {net_pnl:+.1f} pts")
+    summary = f"Trades: {total}   SL: {sl_cnt}   {forced_label}: {forced_cnt}"
+    if tp_cnt:
+        summary += f"   TP: {tp_cnt}"
+    if ema_cnt:
+        summary += f"   EMA_CLOSE: {ema_cnt}"
+    print(f"\n  {summary}   Win rate: {win_rate:.0f}%   Net P&L: {net_pnl:+.1f} pts")
     print()
 
 
@@ -367,7 +437,8 @@ def _expand_symbols(sym_cfg) -> list[str]:
 
 def run_backtest(trigger_names: list[str], symbol_filter: list[str],
                  days: int, tp_pts: float, sl_pts: float,
-                 entry_mode: str, mode: str, max_hold_days: int):
+                 entry_mode: str, mode: str, max_hold_days: int,
+                 exit_mode: str = "fixed"):
 
     cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=days)
 
@@ -432,7 +503,7 @@ def run_backtest(trigger_names: list[str], symbol_filter: list[str],
 
             results  = simulate_trades(df, signals, exit_df, tp_pts, sl_pts,
                                        entry_df, entry_mode, tf_minutes,
-                                       mode, max_hold_days)
+                                       mode, max_hold_days, exit_mode)
             print_report(results, cfg["name"], symbol, tp_pts, sl_pts, mode)
 
 
@@ -455,6 +526,10 @@ if __name__ == "__main__":
                              "touched the indicator (default, most accurate)  "
                              "close: 15m signal-candle close  "
                              "next_open: next 15m candle open")
+    parser.add_argument("--exit-mode", choices=["fixed", "trail_ema"], default="fixed",
+                        help="fixed: fixed TP+SL  "
+                             "trail_ema: tp=trail gap, sl=initial hard SL, "
+                             "exit also when 15m closes wrong side of EMA20")
     parser.add_argument("--mode",      choices=["intraday", "positional"], default="intraday",
                         help="intraday: exit same day on 5m candles  "
                              "positional: hold across days on 1d candles  "
@@ -466,4 +541,4 @@ if __name__ == "__main__":
 
     names = args.trigger or [t["name"] for t in TRIGGERS if t["type"] == "confluence_cross"]
     run_backtest(names, args.symbol, args.days, args.tp, args.sl,
-                 args.entry, args.mode, args.hold_days)
+                 args.entry, args.mode, args.hold_days, args.exit_mode)
