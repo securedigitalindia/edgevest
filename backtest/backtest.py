@@ -211,13 +211,19 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
 
         # --- Entry ---
         if entry_mode == "5m_cross" and entry_5m_df is not None:
-            # Find the first 5m candle inside the 15m window where cross_val was touched
+            # Find the first fine candle inside the 15m window where cross_val was touched
             window_start = sig_row["ts"]
             window_end   = window_start + pd.Timedelta(minutes=tf_minutes)
             window_5m    = entry_5m_df[
                 (entry_5m_df["ts"] >= window_start) &
                 (entry_5m_df["ts"] <  window_end)
             ]
+            # Infer candle interval from entry df (1m or 5m)
+            if len(entry_5m_df) >= 2:
+                _delta = (entry_5m_df["ts"].iloc[1] - entry_5m_df["ts"].iloc[0]).total_seconds()
+                entry_interval_min = max(1, int(round(_delta / 60)))
+            else:
+                entry_interval_min = 5
             cross_val    = float(sig_row["cross_val"])
             entry_price  = float(sig_row["close"])   # fallback to 15m close
             scan_from_ts = window_end
@@ -228,7 +234,7 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
                 )
                 if touched:
                     entry_price  = float(frow["close"])
-                    scan_from_ts = frow["ts"] + pd.Timedelta(minutes=5)
+                    scan_from_ts = frow["ts"] + pd.Timedelta(minutes=entry_interval_min)
                     break
 
         elif entry_mode == "next_open":
@@ -360,8 +366,7 @@ def run_backtest(trigger_names: list[str], symbol_filter: list[str],
                  days: int, tp_pts: float, sl_pts: float,
                  entry_mode: str, mode: str, max_hold_days: int):
 
-    cutoff  = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=days)
-    exit_tf = "5m" if mode == "intraday" else "1d"
+    cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=days)
 
     triggers = [t for t in TRIGGERS if t["name"] in trigger_names]
     if not triggers:
@@ -395,25 +400,26 @@ def run_backtest(trigger_names: list[str], symbol_filter: list[str],
             if not df_5m.empty:
                 df_5m = df_5m[df_5m["ts"] >= cutoff].reset_index(drop=True)
 
+            # Entry discovery: 1m preferred (find exact cross within 15m window),
+            # fall back to 5m. 1m only has 7 days from yfinance but grows from live ticks.
             entry_df = df_1m if not df_1m.empty else (df_5m if not df_5m.empty else None)
-            if not df_1m.empty:
-                print(f"  [{symbol}]  using 1m candles for entry detection "
-                      f"({len(df_1m)} rows)")
-            elif not df_5m.empty:
-                print(f"  [{symbol}]  no 1m data yet — using 5m for entry detection")
+            entry_res = "1m" if not df_1m.empty else ("5m" if not df_5m.empty else "none")
 
-            # Exit scanning candles — 5m for intraday, 1d for positional
+            # Exit scanning: 5m for intraday (60-day history covers full backtest window),
+            # 1d for positional. 1m exit scanning deferred until enough history builds up.
             if mode == "intraday":
-                exit_df = df_5m if not df_5m.empty else df_1m
+                exit_df = df_5m
             else:
                 exit_df = get_candles(symbol, "1d", limit=10000)
                 if not exit_df.empty:
                     exit_df = exit_df[exit_df["ts"] >= cutoff].reset_index(drop=True)
 
-            if exit_df.empty:
-                print(f"  Warning: no {exit_tf} data for {symbol}, "
-                      f"falling back to {cfg['timeframe']} for exits")
+            if exit_df is None or exit_df.empty:
+                print(f"  Warning: no exit data for {symbol}, falling back to {cfg['timeframe']}")
                 exit_df = df
+
+            print(f"  [{symbol}]  entry: {entry_res}  exit: "
+                  f"{'5m' if mode == 'intraday' else '1d'}")
 
             try:
                 signals = detect_signals(df, cfg)
