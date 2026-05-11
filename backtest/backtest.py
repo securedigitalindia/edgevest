@@ -354,7 +354,7 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
                     h, l       = float(ev["high"]), float(ev["low"])
 
                     if is_long:
-                        if h > running_ext:
+                        if tp_pts is not None and h > running_ext:
                             running_ext = h
                             new_trail   = running_ext - tp_pts
                             trail_sl    = max(trail_sl, new_trail) if trail_sl is not None else new_trail
@@ -362,7 +362,7 @@ def simulate_trades(signal_df: pd.DataFrame, signals: pd.DataFrame,
                             outcome, exit_price, exit_ts = "TRAIL_SL", trail_sl, ev["ts"]
                             break
                     else:
-                        if l < running_ext:
+                        if tp_pts is not None and l < running_ext:
                             running_ext = l
                             new_trail   = running_ext + tp_pts
                             trail_sl    = min(trail_sl, new_trail) if trail_sl is not None else new_trail
@@ -419,9 +419,12 @@ def print_report(results: list[dict], trigger_name: str, symbol: str,
     if exit_mode == "fixed":
         params_str = f"TP=+{tp_pts:.0f}  SL=-{sl_pts:.0f}"
     elif exit_mode in ("trail_ema", "trail_ind"):
-        params_str = f"trail={tp_pts:.0f}"
+        parts = []
+        if tp_pts is not None:
+            parts.append(f"trail={tp_pts:.0f}")
         if sl_pts is not None:
-            params_str += f"  SL=-{sl_pts:.0f}"
+            parts.append(f"SL=-{sl_pts:.0f}")
+        params_str = "  ".join(parts) if parts else "pure indicator"
 
     print(f"\n{'='*76}")
     print(f"  {symbol}  ·  {trigger_name}  [{mode}]  [{exit_mode}]"
@@ -548,8 +551,10 @@ if __name__ == "__main__":
                         help="Symbol name(s) (default: from trigger config)")
     parser.add_argument("--days",    type=int,   required=True,
                         help="Lookback in calendar days  e.g. 30")
-    parser.add_argument("--tp",      type=float, required=True,
-                        help="fixed: take-profit pts  |  trail modes: trail gap pts")
+    parser.add_argument("--tp",      type=float, default=None,
+                        help="fixed: take-profit pts (required)  |  "
+                             "trail_ema: trail gap pts (required)  |  "
+                             "trail_ind: trail gap pts (optional — omit for pure indicator exit)")
     parser.add_argument("--sl",      type=float, default=None,
                         help="Stop-loss pts (required for fixed; optional hard SL for trail modes)")
     parser.add_argument("--entry",     choices=["5m_cross", "close", "next_open"],
@@ -572,8 +577,10 @@ if __name__ == "__main__":
                              "(default: 10)")
     args = parser.parse_args()
 
-    if args.exit_mode == "fixed" and args.sl is None:
-        parser.error("--sl is required for --exit-mode fixed")
+    if args.exit_mode == "fixed" and (args.tp is None or args.sl is None):
+        parser.error("--tp and --sl are both required for --exit-mode fixed")
+    if args.exit_mode == "trail_ema" and args.tp is None:
+        parser.error("--tp (trail gap) is required for --exit-mode trail_ema")
 
     names = args.trigger or [t["name"] for t in TRIGGERS if t["type"] == "confluence_cross"]
     run_backtest(names, args.symbol, args.days, args.tp, args.sl,
