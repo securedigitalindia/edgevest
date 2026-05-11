@@ -32,7 +32,7 @@ from live.upstox_client import get_ltp
 from live.triggers import build_trigger, BaseTrigger
 from live.alert import send_alert
 from live.expiry import expiry_cache
-from live.intraday_sync import HourlyCandleWatcher
+from live.intraday_sync import CandleWatcher
 from live import tick_store, candle_builder
 from live.holidays import check_or_exit
 from live.briefing import send_morning_brief, send_eod_brief
@@ -205,8 +205,12 @@ def run_live(force: bool = False):
     _run_startup_tasks()
 
     ikey_triggers, ikeys, ikey_to_name = _build_all_triggers()
-    candle_watcher = HourlyCandleWatcher()
-    candle_watcher.mark_startup()
+
+    # One watcher per intraday timeframe — fires once at each candle close
+    _INTRADAY_TF = [("5m", 5), ("15m", 15), ("1h", 60)]
+    watchers = {key: CandleWatcher(mins) for key, mins in _INTRADAY_TF}
+    for w in watchers.values():
+        w.mark_startup()
 
     if not ikeys:
         print("\nNo triggers active. Check TRIGGERS and UPSTOX_INSTRUMENT_KEYS in config.py")
@@ -231,15 +235,18 @@ def run_live(force: bool = False):
     daily_alerts: list[dict] = []   # accumulates every signal fired today
 
     while force or is_market_open():
-        # 1h candle close: build from ticks → refresh indicators
-        if candle_watcher.should_sync():
+        # Candle close: build from ticks → refresh triggers for that timeframe
+        for tf_key, watcher in watchers.items():
+            if not watcher.should_build():
+                continue
             t = _ist_now()
-            print(f"\n[{t.strftime('%H:%M IST')}]  1h candle closed — building from ticks...",
+            print(f"\n[{t.strftime('%H:%M IST')}]  {tf_key} candle closed — building from ticks...",
                   flush=True)
-            candle_builder.build_all(all_symbol_names)
-            print("  Refreshing indicators...", flush=True)
+            candle_builder.build_all(all_symbol_names, tf_key)
             for triggers in ikey_triggers.values():
                 for trig in triggers:
+                    if trig.timeframe != tf_key:
+                        continue
                     try:
                         trig.refresh()
                     except Exception as e:

@@ -1,97 +1,53 @@
 """
-Intraday 1h candle sync — keeps the DB current during live market hours.
+Intraday candle close watcher.
 
-Uses yfinance (same source as bootstrap/daily sync) to fetch the latest
-1h candles and upsert them. Called at poller startup and each time a new
-1h candle closes (every hour at :15 IST during market hours).
+CandleWatcher fires should_build() once per candle close for a given
+interval. Boundaries are counted from NSE market open (09:15 IST).
 
-This ensures EMA/ST/RSI computed on 1h data always includes today's
-closed candles, not just yesterday's historical data.
+  CandleWatcher(5)   → fires at 09:20, 09:25, ..., 15:30 IST
+  CandleWatcher(15)  → fires at 09:30, 09:45, ..., 15:30 IST
+  CandleWatcher(60)  → fires at 10:15, 11:15, ..., 15:15 IST
 """
 
-import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from bootstrap.yfinance_loader import fetch_historical
-from db.queries import upsert_candles, get_latest_ts
-from config import SYMBOLS, FETCH_DELAY_SECONDS
-
 IST            = ZoneInfo("Asia/Kolkata")
-_SYNC_PERIOD   = "5d"    # enough to cover today + a few days buffer
-_SYNC_TF_KEY   = "1h"
-_SYNC_INTERVAL = "1h"
+_MARKET_OPEN_H = 9
+_MARKET_OPEN_M = 15
 
 
-def sync_1h_candles(symbol_names: list[str] | None = None) -> dict[str, int]:
-    """
-    Fetch latest 1h candles from yfinance and upsert to DB for each symbol.
-    symbol_names: subset to sync, or None for all SYMBOLS.
-    Returns {symbol_name: rows_upserted}.
-    """
-    targets = [s for s in SYMBOLS
-               if symbol_names is None or s["name"] in symbol_names]
-    results = {}
+class CandleWatcher:
+    def __init__(self, interval_minutes: int):
+        self.interval_minutes         = interval_minutes
+        self._last_boundary: datetime | None = None
 
-    for i, sym in enumerate(targets):
-        name   = sym["name"]
-        ticker = sym["ticker"]
-
-        before = get_latest_ts(name, _SYNC_TF_KEY)
-
-        df = fetch_historical(ticker, _SYNC_INTERVAL, _SYNC_PERIOD)
-
-        if df.empty:
-            print(f"  [1h sync]  {name}  — no data from yfinance", flush=True)
-            results[name] = 0
-            continue
-
-        rows = upsert_candles(name, _SYNC_TF_KEY, df)
-        after = get_latest_ts(name, _SYNC_TF_KEY)
-
-        print(f"  [1h sync]  {name:<14}  {rows} rows upserted  "
-              f"|  latest: {str(after)[:16]}", flush=True)
-        results[name] = rows
-
-        # Delay between fetches to avoid yfinance rate limiting
-        if i < len(targets) - 1:
-            time.sleep(FETCH_DELAY_SECONDS)
-
-    return results
-
-
-class HourlyCandleWatcher:
-    """
-    Tracks 1h candle closes during market hours.
-    Call should_sync() on every poll tick — returns True once per candle close.
-
-    NSE 1h candles close at :15 past each hour (market opens 9:15 IST):
-        10:15, 11:15, 12:15, 13:15, 14:15, 15:15
-    """
-
-    def __init__(self):
-        self._last_synced_hour: int | None = None
-
-    def should_sync(self) -> bool:
-        now_ist = datetime.now(timezone.utc).astimezone(IST)
-        hour    = now_ist.hour
-        minute  = now_ist.minute
-
-        # A new 1h candle has closed when we're past :15 of a new hour
-        if minute < 15:
-            return False
-
-        if self._last_synced_hour == hour:
-            return False   # already synced this hour
-
-        self._last_synced_hour = hour
-        return True
+    def _current_boundary(self, now_ist: datetime) -> datetime | None:
+        """Most recently completed candle-close boundary, or None if before first close."""
+        market_open = now_ist.replace(
+            hour=_MARKET_OPEN_H, minute=_MARKET_OPEN_M,
+            second=0, microsecond=0,
+        )
+        if now_ist < market_open:
+            return None
+        elapsed_min = (now_ist - market_open).total_seconds() / 60
+        n = int(elapsed_min // self.interval_minutes)
+        if n == 0:
+            return None
+        return market_open + timedelta(minutes=n * self.interval_minutes)
 
     def mark_startup(self):
-        """
-        Call after the startup sync so the watcher doesn't immediately
-        re-trigger a sync on the first poll tick.
-        """
+        """Suppress any past-boundary fires on first poll after startup."""
         now_ist = datetime.now(timezone.utc).astimezone(IST)
-        if now_ist.minute >= 15:
-            self._last_synced_hour = now_ist.hour
+        self._last_boundary = self._current_boundary(now_ist)
+
+    def should_build(self) -> bool:
+        """Returns True once per candle close. Call on every poll tick."""
+        now_ist  = datetime.now(timezone.utc).astimezone(IST)
+        boundary = self._current_boundary(now_ist)
+        if boundary is None:
+            return False
+        if self._last_boundary is not None and boundary <= self._last_boundary:
+            return False
+        self._last_boundary = boundary
+        return True

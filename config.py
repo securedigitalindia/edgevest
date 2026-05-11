@@ -32,6 +32,18 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "data", "drishti.db")
 
 TIMEFRAMES = [
     {
+        "key":         "5m",
+        "interval":    "5m",
+        "period":      "60d",       # yfinance max for 5m
+        "description": "5 Minute",
+    },
+    {
+        "key":         "15m",
+        "interval":    "15m",
+        "period":      "60d",       # yfinance max for 15m
+        "description": "15 Minute",
+    },
+    {
         "key":         "1h",
         "interval":    "1h",
         "period":      "730d",      # yfinance max for 1h
