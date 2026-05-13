@@ -90,7 +90,7 @@ def send_morning_brief():
     send_telegram("\n".join(lines))
 
 
-_SDIV = "─" * 26
+_SDIV  = "─" * 28
 
 
 def _base_positions(legs: list[dict]) -> int:
@@ -99,45 +99,42 @@ def _base_positions(legs: list[dict]) -> int:
     return reduce(gcd, lots) if lots else 1
 
 
-def _leg_line(leg: dict, close_price, n_pos: int = 1) -> str:
-    """Single leg display: BUY/SELL icon · instrument · lots · entry → current."""
-    side_icon  = "🔴 SELL" if leg["side"] == "SELL" else "🟢 BUY "
-    itype      = leg["instrument_type"]
-    strike_str = f"{int(leg['strike']):,} " if leg.get("strike") else ""
-    base_lots  = leg["lots"] // n_pos
-    entry_p    = leg["price"] or 0
-    if close_price is not None:
-        price_str = f"₹{entry_p:,.0f}  →  <b>₹{close_price:,.0f}</b>"
-    else:
-        price_str = f"₹{entry_p:,.0f}"
-    return f"  {side_icon}  {strike_str}{itype}  {base_lots}L   {price_str}"
+def _leg_pnl(leg: dict, close_price, n_pos: int) -> float | None:
+    """P&L for 1 base position from one leg. None if price unavailable."""
+    if close_price is None or leg["price"] is None:
+        return None
+    base_qty = (leg["lots"] // n_pos) * (leg["lot_size"] or 1)
+    if leg["side"] == "SELL":
+        return (leg["price"] - close_price) * base_qty
+    return (close_price - leg["price"]) * base_qty
 
 
-def _calc_open_pnl(entry_legs: list, current_prices: dict):
-    total, has_data = 0.0, False
+def _calc_total_pnl(entry_legs: list, prices: dict, n_pos: int) -> float | None:
+    """Total P&L across all actual lots (all positions)."""
+    total, has = 0.0, False
     for leg in entry_legs:
-        cur_price = current_prices.get(leg.get("instrument_key"))
-        if cur_price is None or leg["price"] is None:
+        p = prices.get(leg.get("instrument_key"))
+        if p is None or leg["price"] is None:
             continue
-        qty = (leg["lots"] * leg["lot_size"]) if leg["lot_size"] else leg["lots"]
-        total += (leg["price"] - cur_price) * qty if leg["side"] == "SELL" \
-            else (cur_price - leg["price"]) * qty
-        has_data = True
-    return total if has_data else None
+        qty = (leg["lots"] * (leg["lot_size"] or 1))
+        total += (leg["price"] - p) * qty if leg["side"] == "SELL" \
+            else (p - leg["price"]) * qty
+        has = True
+    return total if has else None
 
 
-def _calc_realized_pnl(entry_legs: list, close_legs: list):
-    total, has_data = 0.0, False
+def _calc_realized_pnl(entry_legs: list, close_legs: list) -> float | None:
+    total, has = 0.0, False
     for leg in entry_legs:
         cl = next((l for l in close_legs
                    if l.get("instrument_key") == leg.get("instrument_key")), None)
         if cl is None or leg["price"] is None or cl["price"] is None:
             continue
-        qty = (leg["lots"] * leg["lot_size"]) if leg["lot_size"] else leg["lots"]
+        qty = leg["lots"] * (leg["lot_size"] or 1)
         total += (leg["price"] - cl["price"]) * qty if leg["side"] == "SELL" \
             else (cl["price"] - leg["price"]) * qty
-        has_data = True
-    return total if has_data else None
+        has = True
+    return total if has else None
 
 
 def _fmt_entry_time(t: dict, today_ist: date) -> str:
@@ -146,10 +143,68 @@ def _fmt_entry_time(t: dict, today_ist: date) -> str:
             tzinfo=timezone.utc)
         entry_ist = entry_utc.astimezone(ZoneInfo("Asia/Kolkata"))
         if entry_ist.date() == today_ist:
-            return entry_ist.strftime("%H:%M IST, today")
-        return entry_ist.strftime("%d %b %Y  %H:%M IST")
+            return entry_ist.strftime("%H:%M IST")
+        return entry_ist.strftime("%d %b %Y,  %H:%M IST")
     except Exception:
         return "—"
+
+
+def _instrument_label(leg: dict) -> str:
+    itype      = leg["instrument_type"]
+    strike_str = f"{int(leg['strike']):,} " if leg.get("strike") else ""
+    return f"{strike_str}{itype}"
+
+
+def _build_trade_block(
+    symbol: str, entry_legs: list, prices: dict,
+    n_pos: int, entered: str,
+    margin_required: float | None,
+    status_line: str,           # e.g. "📌 NIFTY50" or "✅ NIFTY50 — Exited"
+) -> str:
+    margin_per = (margin_required / n_pos) if margin_required else None
+    pos_str    = f"  ×{n_pos} pos" if n_pos > 1 else ""
+
+    lines = [
+        f"{status_line}<b>{_h(symbol)}</b>{pos_str}",
+    ]
+
+    # Margin + entry date on one sub-header line
+    meta_parts = []
+    if margin_per:
+        meta_parts.append(f"Margin/pos  ₹{margin_per:,.0f}")
+    meta_parts.append(f"Entered  {entered}")
+    lines.append(f"<i>{' ' * 4}{' • '.join(meta_parts)}</i>")
+    lines.append("")
+
+    # One leg per line: side  instrument  lots  @entry   (pnl)
+    for leg in entry_legs:
+        icon       = "🔴" if leg["side"] == "SELL" else "🟢"
+        instrument = _instrument_label(leg)
+        base_lots  = leg["lots"] // n_pos
+        entry_p    = leg["price"] or 0
+        leg_p      = _leg_pnl(leg, prices.get(leg.get("instrument_key")), n_pos)
+        pnl_str    = f"  <i>(₹{leg_p:+,.0f})</i>" if leg_p is not None else ""
+        lines.append(
+            f"  {icon}  {leg['side']:<4}  {instrument:<12}  "
+            f"{base_lots}L  @{entry_p:,.0f}{pnl_str}"
+        )
+
+    # Net P&L footer
+    total_pnl = _calc_total_pnl(entry_legs, prices, n_pos)
+    lines.append("")
+    if total_pnl is not None:
+        per_pos = total_pnl / n_pos
+        if n_pos > 1:
+            lines.append(
+                f"  <b>Net P&amp;L  ₹{total_pnl:+,.0f}</b>"
+                f"  <i>(₹{per_pos:+,.0f}/pos)</i>"
+            )
+        else:
+            lines.append(f"  <b>Net P&amp;L  ₹{total_pnl:+,.0f}</b>")
+    else:
+        lines.append("  <i>P&amp;L unavailable</i>")
+
+    return "\n".join(lines)
 
 
 def _trade_summary_block(today_ist: date) -> str:
@@ -162,7 +217,7 @@ def _trade_summary_block(today_ist: date) -> str:
     if not open_trades and not closed_today:
         return "📂 No active or recently closed trades today."
 
-    # Pre-load entry legs for open trades; collect instrument keys for LTP batch
+    # Collect instrument keys for a single LTP batch call
     all_ikeys: set[str] = set()
     for t in open_trades:
         legs = get_trade_legs(t["id"])
@@ -180,57 +235,38 @@ def _trade_summary_block(today_ist: date) -> str:
 
     sections: list[str] = []
 
-    # --- Open trades ---
     for t in open_trades:
         entry_legs = t["_entry_legs"]
-        n_pos      = _base_positions(entry_legs)
-        pnl        = _calc_open_pnl(entry_legs, current_prices)
-        entered    = _fmt_entry_time(t, today_ist)
-        pos_str    = f"  •  <i>×{n_pos} positions</i>" if n_pos > 1 else ""
+        sections.append(_build_trade_block(
+            symbol          = t["symbol"],
+            entry_legs      = entry_legs,
+            prices          = current_prices,
+            n_pos           = _base_positions(entry_legs),
+            entered         = _fmt_entry_time(t, today_ist),
+            margin_required = t.get("margin_required"),
+            status_line     = "📌 ",
+        ))
 
-        block = [
-            f"📌 <b>{_h(t['symbol'])}</b>{pos_str}",
-            f"<i>Entered {entered}</i>",
-        ]
-        for leg in entry_legs:
-            cur_p = current_prices.get(leg.get("instrument_key"))
-            block.append(_leg_line(leg, cur_p, n_pos))
-
-        pnl_str    = f"<b>P&amp;L  ₹{pnl:+,.0f}</b>" if pnl is not None \
-                     else "<i>P&amp;L unavailable</i>"
-        margin_per = (t["margin_required"] / n_pos) if t.get("margin_required") else None
-        margin_str = f"   <i>Margin/pos ₹{margin_per:,.0f}</i>" if margin_per else ""
-        block.append(f"{pnl_str}{margin_str}")
-        sections.append("\n".join(block))
-
-    # --- Today's exited / rolled trades ---
     for t in closed_today:
         all_legs   = get_trade_legs(t["id"])
         entry_legs = [l for l in all_legs if l["action"] == "entry"]
         close_legs = [l for l in all_legs if l["action"] in ("exit", "rollover_out")]
-        n_pos      = _base_positions(entry_legs)
-        pnl        = _calc_realized_pnl(entry_legs, close_legs)
-        entered    = _fmt_entry_time(t, today_ist)
-        pos_str    = f"  •  <i>×{n_pos} positions</i>" if n_pos > 1 else ""
+        # Build a prices dict from close leg prices for realized P&L display
+        close_prices = {l["instrument_key"]: l["price"]
+                        for l in close_legs if l.get("instrument_key") and l.get("price")}
+        icon = "🔄 " if t["status"] == "rolled" else "✅ "
+        word = "Rolled  •  " if t["status"] == "rolled" else "Exited  •  "
+        sections.append(_build_trade_block(
+            symbol          = t["symbol"],
+            entry_legs      = entry_legs,
+            prices          = close_prices,
+            n_pos           = _base_positions(entry_legs),
+            entered         = _fmt_entry_time(t, today_ist),
+            margin_required = t.get("margin_required"),
+            status_line     = f"{icon}{word}",
+        ))
 
-        icon = "🔄" if t["status"] == "rolled" else "✅"
-        word = "Rolled" if t["status"] == "rolled" else "Exited"
-
-        block = [
-            f"{icon} <b>{_h(t['symbol'])}</b>  —  {word}{pos_str}",
-            f"<i>Entered {entered}</i>",
-        ]
-        for leg in entry_legs:
-            cl = next((l for l in close_legs
-                       if l.get("instrument_key") == leg.get("instrument_key")), None)
-            block.append(_leg_line(leg, cl["price"] if cl else None, n_pos))
-
-        pnl_str = f"<b>P&amp;L  ₹{pnl:+,.0f}</b>" if pnl is not None \
-                  else "<i>P&amp;L unavailable</i>"
-        block.append(pnl_str)
-        sections.append("\n".join(block))
-
-    header = f"📊 <b>Positions  —  {today_ist.strftime('%d %b %Y')}</b>"
+    header  = f"📊 <b>Positions  —  {today_ist.strftime('%d %b %Y')}</b>"
     divider = f"\n{_SDIV}\n"
     return header + "\n" + _SDIV + "\n" + divider.join(sections)
 
