@@ -157,26 +157,16 @@ def _instrument_label(leg: dict) -> str:
 
 def _build_trade_block(
     symbol: str, entry_legs: list, prices: dict,
-    n_pos: int, entered: str,
-    margin_required: float | None,
-    status_line: str,           # e.g. "📌 NIFTY50" or "✅ NIFTY50 — Exited"
+    n_pos: int, entered: str, status: str,
 ) -> str:
-    margin_per = (margin_required / n_pos) if margin_required else None
-    pos_str    = f"  ×{n_pos} pos" if n_pos > 1 else ""
+    pos_str = f"  ×{n_pos} pos" if n_pos > 1 else ""
 
     lines = [
-        f"{status_line}<b>{_h(symbol)}</b>{pos_str}",
+        f"📌 <b>{_h(symbol)}</b>  •  {status}{pos_str}",
+        f"<i>Entered  {entered}</i>",
+        "",
     ]
 
-    # Margin + entry date on one sub-header line
-    meta_parts = []
-    if margin_per:
-        meta_parts.append(f"Margin/pos  ₹{margin_per:,.0f}")
-    meta_parts.append(f"Entered  {entered}")
-    lines.append(f"<i>{' ' * 4}{' • '.join(meta_parts)}</i>")
-    lines.append("")
-
-    # One leg per line: side  instrument  lots  @entry   (pnl)
     for leg in entry_legs:
         icon       = "🔴" if leg["side"] == "SELL" else "🟢"
         instrument = _instrument_label(leg)
@@ -189,18 +179,10 @@ def _build_trade_block(
             f"{base_lots}L  @{entry_p:,.0f}{pnl_str}"
         )
 
-    # Net P&L footer
     total_pnl = _calc_total_pnl(entry_legs, prices, n_pos)
     lines.append("")
     if total_pnl is not None:
-        per_pos = total_pnl / n_pos
-        if n_pos > 1:
-            lines.append(
-                f"  <b>Net P&amp;L  ₹{total_pnl:+,.0f}</b>"
-                f"  <i>(₹{per_pos:+,.0f}/pos)</i>"
-            )
-        else:
-            lines.append(f"  <b>Net P&amp;L  ₹{total_pnl:+,.0f}</b>")
+        lines.append(f"  <b>Net P&amp;L  ₹{total_pnl:+,.0f}</b>")
     else:
         lines.append("  <i>P&amp;L unavailable</i>")
 
@@ -238,32 +220,28 @@ def _trade_summary_block(today_ist: date) -> str:
     for t in open_trades:
         entry_legs = t["_entry_legs"]
         sections.append(_build_trade_block(
-            symbol          = t["symbol"],
-            entry_legs      = entry_legs,
-            prices          = current_prices,
-            n_pos           = _base_positions(entry_legs),
-            entered         = _fmt_entry_time(t, today_ist),
-            margin_required = t.get("margin_required"),
-            status_line     = "📌 ",
+            symbol     = t["symbol"],
+            entry_legs = entry_legs,
+            prices     = current_prices,
+            n_pos      = _base_positions(entry_legs),
+            entered    = _fmt_entry_time(t, today_ist),
+            status     = "🟢 Open",
         ))
 
     for t in closed_today:
         all_legs   = get_trade_legs(t["id"])
         entry_legs = [l for l in all_legs if l["action"] == "entry"]
         close_legs = [l for l in all_legs if l["action"] in ("exit", "rollover_out")]
-        # Build a prices dict from close leg prices for realized P&L display
         close_prices = {l["instrument_key"]: l["price"]
                         for l in close_legs if l.get("instrument_key") and l.get("price")}
-        icon = "🔄 " if t["status"] == "rolled" else "✅ "
-        word = "Rolled  •  " if t["status"] == "rolled" else "Exited  •  "
+        status = "🔄 Rolled" if t["status"] == "rolled" else "✅ Exited"
         sections.append(_build_trade_block(
-            symbol          = t["symbol"],
-            entry_legs      = entry_legs,
-            prices          = close_prices,
-            n_pos           = _base_positions(entry_legs),
-            entered         = _fmt_entry_time(t, today_ist),
-            margin_required = t.get("margin_required"),
-            status_line     = f"{icon}{word}",
+            symbol     = t["symbol"],
+            entry_legs = entry_legs,
+            prices     = close_prices,
+            n_pos      = _base_positions(entry_legs),
+            entered    = _fmt_entry_time(t, today_ist),
+            status     = status,
         ))
 
     header  = f"📊 <b>Positions  —  {today_ist.strftime('%d %b %Y')}</b>"
