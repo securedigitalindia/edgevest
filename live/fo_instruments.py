@@ -1,11 +1,21 @@
 """
-Looks up Upstox instrument keys for Nifty F&O contracts.
+Looks up Upstox instrument keys for NSE F&O contracts.
 
 Keys are numeric IDs (e.g. NSE_FO|66071) — they cannot be constructed
 from symbol/expiry/strike strings. This module downloads the NSE instrument
 file once per session and builds an index for fast lookups.
 
 Call refresh() at startup to pre-load the index.
+
+Nifty-specific helpers (backward compat):
+    nifty_fut_ikey(expiry)
+    nifty_pe_ikey(expiry, strike, weekly)
+    nifty_lot_size(expiry)
+
+Generic helpers (any NSE F&O underlying):
+    fo_ikey(symbol, instrument_type, expiry, strike, weekly)
+    fo_lot_size(symbol, expiry)
+    resolve_expiry(symbol, expiry_str)   — "May 2026" → date(2026,5,28)
 """
 
 import gzip
@@ -14,46 +24,90 @@ import requests
 from datetime import date, datetime, timezone
 
 _INSTRUMENTS_URL = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
-_NIFTY_UNDERLYING = "NSE_INDEX|Nifty 50"
 
-# In-memory index built from the instrument file
-# Keys: ("FUT", expiry_date) | ("PE", expiry_date, strike_int) | ("CE", expiry_date, strike_int)
-_index: dict = {}
+# Nifty-specific index (kept for backward compat)
+_NIFTY_UNDERLYING = "NSE_INDEX|Nifty 50"
+_index:     dict = {}
+_LOT_SIZES: dict[date, int] = {}
+
+# Generic index — all NSE_FO underlyings
+# key: (underlying_key, instrument_type, expiry_date, strike_int, weekly) → ikey
+_generic_index:     dict[tuple, str] = {}
+# key: (underlying_key, expiry_date) → lot_size
+_generic_lot_sizes: dict[tuple, int] = {}
+
 _loaded = False
+
+# Map from friendly symbol name → underlying_key in NSE instrument file
+_UNDERLYING_KEYS: dict[str, str] = {
+    "NIFTY50":    "NSE_INDEX|Nifty 50",
+    "BANKNIFTY":  "NSE_INDEX|Nifty Bank",
+    "FINNIFTY":   "NSE_INDEX|Nifty Fin Services",
+    "MIDCPNIFTY": "NSE_INDEX|NIFTY MID SELECT",
+    "SENSEX":     "BSE_INDEX|SENSEX",
+}
+
+# Spot price instrument key for each symbol (used in manual_trade to fetch LTP)
+SPOT_IKEYS: dict[str, str] = {
+    "NIFTY50":    "NSE_INDEX|Nifty 50",
+    "BANKNIFTY":  "NSE_INDEX|Nifty Bank",
+    "FINNIFTY":   "NSE_INDEX|Nifty Fin Services",
+    "MIDCPNIFTY": "NSE_INDEX|NIFTY MID SELECT",
+}
 
 
 def refresh():
     """Download and index the NSE F&O instrument file. Call once at startup."""
-    global _index, _loaded
+    global _index, _LOT_SIZES, _generic_index, _generic_lot_sizes, _loaded
+
     print("  Downloading NSE F&O instrument list from Upstox...", flush=True)
     resp = requests.get(_INSTRUMENTS_URL, timeout=30)
     resp.raise_for_status()
     instruments = json.loads(gzip.decompress(resp.content))
 
-    idx = {}
+    nifty_idx = {}
+    nifty_lot_sizes: dict[date, int] = {}
+    gen_idx:       dict[tuple, str] = {}
+    gen_lot_sizes: dict[tuple, int] = {}
+
     for row in instruments:
         if row.get("segment") != "NSE_FO":
             continue
-        if row.get("underlying_key") != _NIFTY_UNDERLYING:
-            continue
 
+        underlying_key = row.get("underlying_key", "")
         expiry_ms = row.get("expiry")
         if not expiry_ms:
             continue
-        expiry_date = datetime.fromtimestamp(expiry_ms / 1000, tz=timezone.utc).date()
-        itype = row.get("instrument_type")
-        ikey  = row["instrument_key"]
 
+        expiry_date = datetime.fromtimestamp(expiry_ms / 1000, tz=timezone.utc).date()
+        itype  = row.get("instrument_type")
+        ikey   = row["instrument_key"]
+        weekly = row.get("weekly", False)
+
+        # Generic index — all underlyings
         if itype == "FUT":
-            idx[("FUT", expiry_date)] = ikey
+            gen_idx[(underlying_key, "FUT", expiry_date, 0, False)] = ikey
+            gen_lot_sizes[(underlying_key, expiry_date)] = int(row.get("lot_size", 0))
         elif itype in ("PE", "CE"):
             strike = int(round(row.get("strike_price", 0)))
-            weekly = row.get("weekly", False)
-            idx[(itype, expiry_date, strike, weekly)] = ikey
+            gen_idx[(underlying_key, itype, expiry_date, strike, weekly)] = ikey
 
-    _index = idx
+        # Nifty-specific index (backward compat)
+        if underlying_key != _NIFTY_UNDERLYING:
+            continue
+        if itype == "FUT":
+            nifty_idx[("FUT", expiry_date)] = ikey
+            nifty_lot_sizes[expiry_date] = int(row.get("lot_size", 0))
+        elif itype in ("PE", "CE"):
+            strike = int(round(row.get("strike_price", 0)))
+            nifty_idx[(itype, expiry_date, strike, weekly)] = ikey
+
+    _index          = nifty_idx
+    _LOT_SIZES      = nifty_lot_sizes
+    _generic_index  = gen_idx
+    _generic_lot_sizes = gen_lot_sizes
     _loaded = True
-    print(f"  Indexed {len(_index)} Nifty F&O instruments.", flush=True)
+    print(f"  Indexed {len(gen_idx)} NSE F&O instruments across all underlyings.", flush=True)
 
 
 def _ensure_loaded():
@@ -61,73 +115,118 @@ def _ensure_loaded():
         refresh()
 
 
+# -----------------------------------------------------------
+# Nifty-specific helpers (backward compat)
+# -----------------------------------------------------------
+
 def nifty_fut_ikey(expiry: date) -> str | None:
-    """Instrument key for the Nifty monthly futures contract expiring on `expiry`."""
     _ensure_loaded()
     key = _index.get(("FUT", expiry))
     if key is None:
-        print(f"  [fo_instruments]  Nifty FUT {expiry} not found in index — "
-              "run refresh() or check expiry date", flush=True)
+        print(f"  [fo_instruments]  Nifty FUT {expiry} not found", flush=True)
     return key
 
 
 def nifty_pe_ikey(expiry: date, strike: int, weekly: bool = False) -> str | None:
-    """Instrument key for a Nifty PE option at given expiry and strike."""
     _ensure_loaded()
     key = _index.get(("PE", expiry, strike, weekly))
     if key is None:
-        print(f"  [fo_instruments]  Nifty {strike} PE {expiry} (weekly={weekly}) "
-              "not found in index", flush=True)
+        print(f"  [fo_instruments]  Nifty {strike} PE {expiry} (weekly={weekly}) not found",
+              flush=True)
     return key
 
 
 def nifty_lot_size(expiry: date) -> int | None:
-    """Return the lot size for the Nifty contract at the given expiry (from instrument file)."""
     _ensure_loaded()
-    # lot size is on the FUT row; options share the same lot size
-    # re-scan for lot_size since we don't cache it in the index
-    # (called rarely — acceptable cost)
-    if not _loaded:
-        return None
     return _LOT_SIZES.get(expiry)
 
 
-# Secondary cache for lot sizes (populated during refresh)
-_LOT_SIZES: dict[date, int] = {}
+# -----------------------------------------------------------
+# Generic helpers — any NSE F&O underlying
+# -----------------------------------------------------------
+
+def fo_ikey(
+    symbol: str,
+    instrument_type: str,
+    expiry: date,
+    strike: int = 0,
+    weekly: bool = False,
+) -> str | None:
+    """
+    Instrument key for any NSE F&O contract.
+
+    symbol          : 'NIFTY50' | 'BANKNIFTY' | 'FINNIFTY' | 'MIDCPNIFTY'
+    instrument_type : 'FUT' | 'PE' | 'CE'
+    expiry          : date object — use resolve_expiry() to convert from string
+    strike          : 0 for FUT, actual strike for PE/CE
+    weekly          : True for weekly options
+    """
+    _ensure_loaded()
+    underlying = _UNDERLYING_KEYS.get(symbol.upper())
+    if not underlying:
+        print(f"  [fo_instruments]  unknown symbol {symbol!r} — "
+              f"supported: {list(_UNDERLYING_KEYS)}", flush=True)
+        return None
+    key = _generic_index.get((underlying, instrument_type.upper(), expiry, strike, weekly))
+    if key is None:
+        print(f"  [fo_instruments]  {symbol} {instrument_type} {strike or ''} "
+              f"{expiry} (weekly={weekly}) not found in index", flush=True)
+    return key
 
 
-def refresh():  # noqa: F811 — intentional override to also populate _LOT_SIZES
-    """Download and index the NSE F&O instrument file. Call once at startup."""
-    global _index, _loaded, _LOT_SIZES
-    print("  Downloading NSE F&O instrument list from Upstox...", flush=True)
-    resp = requests.get(_INSTRUMENTS_URL, timeout=30)
-    resp.raise_for_status()
-    instruments = json.loads(gzip.decompress(resp.content))
+def fo_lot_size(symbol: str, expiry: date) -> int | None:
+    """Lot size for any NSE F&O underlying at the given expiry."""
+    _ensure_loaded()
+    underlying = _UNDERLYING_KEYS.get(symbol.upper())
+    if not underlying:
+        return None
+    return _generic_lot_sizes.get((underlying, expiry))
 
-    idx       = {}
-    lot_sizes = {}
-    for row in instruments:
-        if row.get("segment") != "NSE_FO":
-            continue
-        if row.get("underlying_key") != _NIFTY_UNDERLYING:
-            continue
 
-        expiry_ms = row.get("expiry")
-        if not expiry_ms:
-            continue
-        expiry_date = datetime.fromtimestamp(expiry_ms / 1000, tz=timezone.utc).date()
-        itype  = row.get("instrument_type")
-        ikey   = row["instrument_key"]
-        weekly = row.get("weekly", False)
+def resolve_expiry(symbol: str, expiry_str: str) -> date | None:
+    """
+    Resolve an expiry string to an exact date.
 
-        if itype == "FUT":
-            idx[("FUT", expiry_date)] = ikey
-            lot_sizes[expiry_date] = int(row.get("lot_size", 0))
-        elif itype in ("PE", "CE"):
-            strike = int(round(row.get("strike_price", 0)))
-            idx[(itype, expiry_date, strike, weekly)] = ikey
+    Accepts:
+        '26 May 2026'   → date(2026, 5, 26)   (parsed directly)
+        'May 2026'      → monthly expiry date for that symbol/month
+                          (found via FUT entry in index — one per month)
+    Returns None if not found.
+    """
+    _ensure_loaded()
+    expiry_str = expiry_str.strip()
 
-    _index     = idx
-    _LOT_SIZES = lot_sizes
-    _loaded    = True
-    print(f"  Indexed {len(_index)} Nifty F&O instruments.", flush=True)
+    # Full date format
+    for fmt in ("%d %b %Y", "%d %B %Y"):
+        try:
+            return datetime.strptime(expiry_str, fmt).date()
+        except ValueError:
+            pass
+
+    # Month+year only — look up monthly FUT expiry for that symbol/month
+    for fmt in ("%b %Y", "%B %Y"):
+        try:
+            ref = datetime.strptime(expiry_str, fmt)
+            break
+        except ValueError:
+            pass
+    else:
+        print(f"  [fo_instruments]  cannot parse expiry {expiry_str!r}", flush=True)
+        return None
+
+    underlying = _UNDERLYING_KEYS.get(symbol.upper())
+    if not underlying:
+        return None
+
+    # FUT entries have weekly=False and strike=0; one per calendar month
+    candidates = [
+        exp for (uk, itype, exp, strike, weekly) in _generic_index
+        if uk == underlying
+        and itype == "FUT"
+        and exp.month == ref.month
+        and exp.year  == ref.year
+    ]
+    if not candidates:
+        print(f"  [fo_instruments]  no FUT expiry found for {symbol} {expiry_str}", flush=True)
+        return None
+    return min(candidates)   # earliest = only monthly FUT for that month

@@ -23,6 +23,7 @@ _EVENT_META = {
     "500-MULTI ENTRY":    ("📉", "Nifty crossed 500-level — short entry"),
     "500-MULTI EXIT":     ("🔺", "Short exit — Nifty fell 500 pts from entry"),
     "500-MULTI ROLLOVER": ("🔄", "Monthly expiry rollover — rolling short to next month"),
+    "MANUAL ENTRY":       ("✍️", "Manual trade entry"),
 }
 
 
@@ -68,20 +69,24 @@ def _format_signal(signal: dict, alert_str: str) -> str:
     ind        = signal["indicator_val"]
     diff       = ltp - ind
     prev_close = signal.get("prev_close")
+    is_manual  = signal.get("trigger_type") == "manual"
 
     lines = [
         f'🔔 <b>{_h(signal["symbol"])}</b>  •  {_h(tf)}  •  {icon} <b>{_h(event)}</b>',
         _DIV,
-        f"<i>{_h(description)} {_h(ind_label)}</i>",
+        f"<i>{_h(description)}</i>",
         "",
-        _row("CMP",        f"{ltp:,.2f}"),
     ]
-    if prev_close is not None:
-        lines.append(_row("Prev Close", f"{prev_close:,.2f}", bold_value=False))
-    lines += [
-        _row(ind_label,  f"{ind:,.2f}"),
-        _row("Diff",     f"{diff:+,.2f}", bold_value=False),
-    ]
+    if not is_manual:
+        lines.append(_row("CMP", f"{ltp:,.2f}"))
+        if prev_close is not None:
+            lines.append(_row("Prev Close", f"{prev_close:,.2f}", bold_value=False))
+        lines += [
+            _row(ind_label,  f"{ind:,.2f}"),
+            _row("Diff",     f"{diff:+,.2f}", bold_value=False),
+        ]
+    else:
+        lines.append(_row("Spot", f"{ltp:,.2f}", bold_value=False))
 
     if "st_dir" in signal:
         bias = "Bullish 🟢" if signal["st_dir"] == 1 else "Bearish 🔴"
