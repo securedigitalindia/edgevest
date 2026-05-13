@@ -42,7 +42,7 @@ Startup      holiday check → expiry cache refresh → load triggers → mornin
 **`config.py`** — single source of truth. `SYMBOLS`, `TIMEFRAMES`, `TRIGGERS`, `UPSTOX_INSTRUMENT_KEYS`, Telegram credentials, poll intervals, cooldown settings. To add a trigger: append to `TRIGGERS` list — no code change needed.
 
 ### Database (`db/`)
-**`db/init_db.py`** — `get_connection()`, table creation, `TF_TABLE` mapping. Tables: `candles_1h/1d/1wk/1mo`, `sync_log`, `ticks`.
+**`db/init_db.py`** — `get_connection()`, table creation, `TF_TABLE` mapping. Tables: `candles_1h/1d/1wk/1mo`, `sync_log`, `ticks`, `recommended_trades`.
 
 **`db/queries.py`** — only file with SQL. Key functions:
 - `upsert_candles(symbol, tf_key, df)` — write OHLCV, uses INSERT OR REPLACE
@@ -50,6 +50,12 @@ Startup      holiday check → expiry cache refresh → load triggers → mornin
 - `write_ticks(symbol_ltps: dict)` — write {symbol: ltp} at current UTC second to `ticks` table
 - `get_ticks(symbol, start_utc, end_utc)` — read ticks in a time window
 - `cleanup_ticks(days_to_keep=7)` — delete old ticks
+- `open_recommended_trade(trigger_name, symbol, entry_level, entry_ltp, entry_time, exit_level, pe_strike, expiry_str, fut_lots, pe_lots, entry_fut_price, entry_pe_price, parent_trade_id)` — record a new open trade; lot sizes and leg prices snapshotted at entry
+- `get_open_recommended_trade(symbol, entry_level)` — return the open trade at a given level, or None
+- `get_all_open_recommended_trades(symbol)` — all open trades for a symbol (status='open')
+- `get_trade_chain(trade_id)` — all trades in the rollover chain (root → latest), ordered by entry_time; walk parent_trade_id links
+- `close_recommended_trade(trade_id, exit_ltp, exit_time, exit_fut_price, exit_pe_price)` — mark as exited; leg prices optional (NULL until fut/options polling added)
+- `roll_recommended_trade(trade_id, exit_ltp, exit_time, new_expiry_str, new_pe_strike, ...)` — mark current as 'rolled', open replacement row with parent_trade_id linking back; use at monthly expiry
 
 ### Data Pipeline (`bootstrap/`, `sync/`)
 **`bootstrap/yfinance_loader.py`** — `fetch_historical()` shared by bootstrap and sync. Normalises to UTC, drops in-progress candles for intraday intervals.
@@ -67,10 +73,12 @@ Startup      holiday check → expiry cache refresh → load triggers → mornin
 
 **`live/intraday_sync.py`** — `HourlyCandleWatcher`: fires `should_sync()` once per hour at :15 IST. Still used for the watcher timing logic; yfinance startup sync has moved to `daily_sync`.
 
-**`live/triggers.py`** — trigger classes. `build_trigger(cfg, symbol)` instantiates from config. All triggers inherit `BaseTrigger` which handles cooldown (`cooldown_minutes` in config) and trade suggestion dispatch. Three types:
+**`live/triggers.py`** — trigger classes. `build_trigger(cfg, symbol)` instantiates from config. All triggers inherit `BaseTrigger` which handles cooldown (`cooldown_minutes` in config) and trade suggestion dispatch. Types:
 - `SupertrendCrossTrigger` — LTP crosses Supertrend line
 - `EmaCrossTrigger` — LTP crosses EMA line (optional `direction: UP/DOWN` filter)
 - `RsiThresholdTrigger` — RSI crosses below `below` or above `above`
+- `ConfluenceCrossTrigger` — cross + multiple confirm conditions (AND-gated)
+- `Nifty500MultipleTrigger` — LTP crosses UP through 500-multiple → entry signal; LTP drops `exit_distance` pts from entry → exit signal. Uses `recommended_trades` DB for dedup and exit tracking. `check()` can return a list of signals (entry + exit can fire same tick). Does NOT use `BaseTrigger._signal()` — builds signal dicts directly in `_make_signal()`.
 
 **`live/signal_engine.py`** — pure indicator compute functions (`compute_supertrend`, `compute_ema`, `compute_rsi`). Each returns the indicator value plus last candle close (used to initialise crossing baseline so gap-down/up scenarios fire immediately on first tick).
 
@@ -78,7 +86,10 @@ Startup      holiday check → expiry cache refresh → load triggers → mornin
 
 **`live/expiry.py`** — `ExpiryCache` fetches NSE option expiry dates from Upstox `OptionsApi`. `expiry_cache.pick(symbol, type, index)` returns a `date`. Types: `"weekly"`, `"monthly"`, `"quarterly"`.
 
-**`live/trade_suggestions.py`** — trade suggestion templates. Each template function takes `(ltp, symbol, params)` and returns a trade dict with `title`, `legs`, `rationale`. Templates: `nifty_pe_cal_qtrly`, `nifty_pe_cal_monthly`, `nifty_pe_cal_weekly_to_monthly`.
+**`live/trade_suggestions.py`** — trade suggestion templates. Each template function takes `(ltp, symbol, params)` and returns a trade dict with `title`, `legs`, `rationale`. Templates:
+- `nifty_pe_cal_qtrly` / `nifty_pe_cal_monthly` / `nifty_pe_cal_weekly_to_monthly` — PE calendar spreads
+- `nifty_500_short_entry` — entry trade for 500-multiple strategy: SELL fut + SELL PE. Returns private keys `_pe_strike`, `_expiry_str`, `_exit_level` that `Nifty500MultipleTrigger` extracts for DB storage before sending the signal.
+- `nifty_500_short_exit` — exit trade: BUY fut + BUY PE back. Params come from the `recommended_trades` DB row merged with config params (so fut_lots/pe_lots are still config-driven).
 
 **`live/holidays.py`** — `is_trading_day(date)` and `check_or_exit()` using BSE (XBOM) calendar from `exchange-calendars`. BSE and NSE share the same holiday schedule.
 

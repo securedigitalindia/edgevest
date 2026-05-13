@@ -109,6 +109,9 @@ TELEGRAM_CHAT_ID   = "1080341401"
 # Seconds between each LTP poll during market hours
 POLL_INTERVAL_SECONDS = 5
 
+# Time (IST) to roll expiring positions on expiry day — before 15:30 settlement
+ROLLOVER_TIME_IST = (14, 0)
+
 # NSE market hours in IST
 MARKET_OPEN_IST  = (9, 15)
 MARKET_CLOSE_IST = (15, 30)
@@ -196,6 +199,31 @@ TRIGGERS = [
         "below":            35,
         "symbols":          "all",
         "cooldown_minutes": 60,   # RSI can linger in zone; one alert per hour max
+    },
+
+    # --- Nifty 500-multiple short strategy ---
+    # Entry: Nifty LTP crosses UP through any 500-multiple (23500, 24000, 24500, ...)
+    # Trade: sell same-month fut (fut_lots) + sell same-month PE (pe_lots)
+    #        PE strike = highest 500-multiple at least min_pe_distance_pct% below LTP
+    # Exit:  Nifty falls exit_distance pts from entry level → close signal fired automatically
+    # Dedup: one open position per level; no re-entry until the trade at that level exits
+    {
+        "name":      "NIFTY500_MULTI",
+        "type":      "nifty_500_multiple",
+        "timeframe": "live",
+        "symbols":   ["NIFTY50"],
+        "trades": [
+            {
+                "type": "nifty_500_short_entry",
+                "params": {
+                    "min_pe_distance_pct": 3,    # PE strike >= 3% below LTP
+                    "strike_step":         500,  # round PE strike to nearest 500
+                    "exit_distance":       500,  # exit when Nifty falls 500 pts
+                    "fut_lots":            1,
+                    "pe_lots":             2,
+                },
+            },
+        ],
     },
 
     # --- Trade suggestion alerts ---

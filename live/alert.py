@@ -16,10 +16,13 @@ _DIV     = "─" * 30
 _DIV_MSG = "\n" + _DIV + "\n"
 
 _EVENT_META = {
-    "CROSS UP":      ("↑", "Price crossed ABOVE"),
-    "CROSS DOWN":    ("↓", "Price crossed BELOW"),
-    "RSI OVERSOLD":  ("⚠️", "RSI dropped into oversold zone"),
-    "RSI OVERBOUGHT":("⚠️", "RSI rose into overbought zone"),
+    "CROSS UP":        ("↑",  "Price crossed ABOVE"),
+    "CROSS DOWN":      ("↓",  "Price crossed BELOW"),
+    "RSI OVERSOLD":    ("⚠️", "RSI dropped into oversold zone"),
+    "RSI OVERBOUGHT":  ("⚠️", "RSI rose into overbought zone"),
+    "500-MULTI ENTRY":    ("📉", "Nifty crossed 500-level — short entry"),
+    "500-MULTI EXIT":     ("🔺", "Short exit — Nifty fell 500 pts from entry"),
+    "500-MULTI ROLLOVER": ("🔄", "Monthly expiry rollover — rolling short to next month"),
 }
 
 
@@ -54,10 +57,11 @@ def _format_signal(signal: dict, alert_str: str) -> str:
     tf        = signal["timeframe"].upper()
 
     ind_label = {
-        "supertrend_cross": "Supertrend",
-        "ema_cross":        f"EMA{_ema_period(signal)}",
-        "rsi_threshold":    "RSI",
-        "confluence_cross": signal.get("cross_label", "Indicator"),
+        "supertrend_cross":   "Supertrend",
+        "ema_cross":          f"EMA{_ema_period(signal)}",
+        "rsi_threshold":      "RSI",
+        "confluence_cross":   signal.get("cross_label", "Indicator"),
+        "nifty_500_multiple": "500 Level",
     }.get(signal.get("trigger_type", ""), "Indicator")
 
     ltp        = signal["ltp"]
@@ -85,6 +89,11 @@ def _format_signal(signal: dict, alert_str: str) -> str:
 
     if "rsi_level" in signal:
         lines.append(_row("Threshold", str(signal["rsi_level"]), bold_value=False))
+
+    if "entry_level" in signal:
+        lines.append(_row("Entry @", f"{signal['entry_level']:,}", bold_value=False))
+    if "exit_level" in signal:
+        lines.append(_row("Exit @", f"{signal['exit_level']:,}", bold_value=False))
 
     confirmed_by = signal.get("confirmed_by", [])
     if confirmed_by:

@@ -97,6 +97,12 @@ def _run_startup_tasks():
     except Exception as e:
         print(f"  [expiry refresh failed]  {e}", flush=True)
 
+    try:
+        from live.fo_instruments import refresh as refresh_fo
+        refresh_fo()
+    except Exception as e:
+        print(f"  [F&O instruments refresh failed]  {e}", flush=True)
+
     print("───────────────────────────────────────────────────\n")
 
 
@@ -125,12 +131,17 @@ def _run_eod_tasks(daily_alerts: list):
     except Exception as e:
         print(f"  [tick cleanup failed]  {e}", flush=True)
 
-    print("Refreshing option expiry dates from Upstox...")
+    print("Refreshing option expiry dates and F&O instruments from Upstox...")
     try:
         expiry_cache.refresh()
-        print()
     except Exception as e:
         print(f"  [expiry refresh failed]  {e}", flush=True)
+    try:
+        from live.fo_instruments import refresh as refresh_fo
+        refresh_fo()
+        print()
+    except Exception as e:
+        print(f"  [F&O instruments refresh failed]  {e}", flush=True)
 
     print("Sending EOD brief to Telegram...")
     try:
@@ -275,8 +286,11 @@ def run_live(force: bool = False):
 
         for ikey, ltp in prices.items():
             for trig in ikey_triggers.get(ikey, []):
-                signal = trig.check(ltp)
-                if signal:
+                result = trig.check(ltp)
+                if not result:
+                    continue
+                sigs = result if isinstance(result, list) else [result]
+                for signal in sigs:
                     send_alert(signal)
                     daily_alerts.append(signal)
 
