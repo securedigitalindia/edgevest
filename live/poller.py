@@ -237,7 +237,7 @@ def run_live(force: bool = False):
     # Morning brief — sent after startup tasks so Telegram confirms we're live
     if not force:
         try:
-            send_morning_brief(trigger_count=total)
+            send_morning_brief()
         except Exception as e:
             print(f"  [morning brief failed]  {e}", flush=True)
         wait_for_market_open()

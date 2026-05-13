@@ -58,29 +58,33 @@ def _tomorrow_holiday_line() -> str | None:
             f"         Next trading day: <b>{nxt.strftime('%d %b')}</b>")
 
 
-def send_morning_brief(trigger_count: int):
-    """Send day-start brief — called after startup tasks complete."""
-    now  = datetime.now(timezone.utc).astimezone(IST)
-    q, a = _pick_quote(MORNING_QUOTES)
+def send_morning_brief():
+    """
+    Send day-start brief — called after startup tasks complete.
+    Only fires if the service started before 09:30 IST (normal morning startup).
+    Silently skipped on mid-session restarts.
+    """
+    now = datetime.now(timezone.utc).astimezone(IST)
+    if now.hour > 9 or (now.hour == 9 and now.minute >= 30):
+        print(f"  [morning brief]  skipped — started at {now.strftime('%H:%M IST')}, "
+              f"not a morning startup", flush=True)
+        return
 
+    q, a = _pick_quote(MORNING_QUOTES)
     holiday_line = _tomorrow_holiday_line()
+
     lines = [
-        f"🌅 <b>Good Morning — Market Brief</b>",
+        "🌅 <b>Good Morning — Market Brief</b>",
         _DIV,
         f"📅 <b>{now.strftime('%A, %d %b %Y')}</b>",
         "",
         f'💡 <i>"{q}"</i>',
         f"   — <i>{a}</i>",
         "",
-        _DIV,
     ]
     if holiday_line:
-        lines += [f"📆 Tomorrow:  {holiday_line}", ""]
-    lines += [
-        f"🎯 <b>{trigger_count}</b> trigger(s) active — watching from 09:15 IST",
-        _DIV,
-        "Have a great trading session! 📈",
-    ]
+        lines += [_DIV, f"📆 Tomorrow:  {holiday_line}", ""]
+    lines += [_DIV, "Have a great trading session! 📈"]
     send_telegram("\n".join(lines))
 
 
