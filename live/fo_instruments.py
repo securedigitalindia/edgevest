@@ -21,7 +21,7 @@ Generic helpers (any NSE F&O underlying):
 import gzip
 import json
 import requests
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 
 _INSTRUMENTS_URL = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
 
@@ -230,3 +230,94 @@ def resolve_expiry(symbol: str, expiry_str: str) -> date | None:
         print(f"  [fo_instruments]  no FUT expiry found for {symbol} {expiry_str}", flush=True)
         return None
     return min(candidates)   # earliest = only monthly FUT for that month
+
+
+# -----------------------------------------------------------
+# Instrument search — used by manage_trades.py CLI
+# -----------------------------------------------------------
+
+_SYMBOL_ALIASES: dict[str, str] = {
+    "nifty":       "NIFTY50",
+    "nifty50":     "NIFTY50",
+    "bank":        "BANKNIFTY",
+    "banknifty":   "BANKNIFTY",
+    "fin":         "FINNIFTY",
+    "finnifty":    "FINNIFTY",
+    "midcap":      "MIDCPNIFTY",
+    "mid":         "MIDCPNIFTY",
+    "midcpnifty":  "MIDCPNIFTY",
+}
+
+_MONTH_NUMS: dict[str, int] = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4,  "may": 5,  "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    "january": 1, "february": 2, "march": 3,    "april": 4,
+    "june": 6,    "july": 7,     "august": 8,   "september": 9,
+    "october": 10, "november": 11, "december": 12,
+}
+
+
+def search_instruments(query: str) -> list[dict]:
+    """
+    Search for F&O instruments by natural language query.
+
+    Examples:
+        'nifty 25000 ce'
+        'banknifty 57000 pe may'
+        'banknifty fut'
+        'finnifty 24000 ce jun'
+
+    Returns list of dicts (sorted by expiry, monthly before weekly):
+        symbol, instrument_type, strike, expiry (date), expiry_str, weekly, instrument_key
+    Only includes expiries on or after today.
+    """
+    _ensure_loaded()
+
+    symbol: str | None = None
+    itype:  str | None = None
+    strike: int | None = None
+    month:  int | None = None
+
+    for token in query.lower().split():
+        if token in _SYMBOL_ALIASES:
+            symbol = _SYMBOL_ALIASES[token]
+        elif token in ("pe", "ce", "fut", "eq"):
+            itype = token.upper()
+        elif token.lstrip("-").isdigit():
+            strike = int(token)
+        elif token in _MONTH_NUMS:
+            month = _MONTH_NUMS[token]
+
+    if not symbol or not itype:
+        return []
+
+    underlying = _UNDERLYING_KEYS.get(symbol)
+    if not underlying:
+        return []
+
+    today = date.today()
+    results: list[dict] = []
+
+    for (uk, it, expiry, s, weekly), ikey in _generic_index.items():
+        if uk != underlying or it != itype:
+            continue
+        if expiry < today:
+            continue
+        if itype in ("PE", "CE") and strike is not None and s != strike:
+            continue
+        if month is not None and expiry.month != month:
+            continue
+
+        results.append({
+            "symbol":          symbol,
+            "instrument_type": it,
+            "strike":          s if it in ("PE", "CE") else None,
+            "expiry":          expiry,
+            "expiry_str":      expiry.strftime("%d %b %Y"),
+            "weekly":          weekly,
+            "instrument_key":  ikey,
+        })
+
+    # Monthly expiries before weekly, then sort by date
+    results.sort(key=lambda r: (r["expiry"], r["weekly"]))
+    return results

@@ -112,51 +112,95 @@ def _print_open_trades(trades: list, legs_by_id: dict) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────
+# Instrument search
+# ─────────────────────────────────────────────────────────────────
+
+def _search_instrument() -> dict | None:
+    """
+    Prompt user for a search query, show results, return selected instrument.
+    Returns None if user leaves query blank (signals 'done adding legs').
+    """
+    from live.fo_instruments import search_instruments, _ensure_loaded
+    _ensure_loaded()
+
+    print()
+    while True:
+        query = _ask(
+            "  Search  (e.g.  nifty 25000 ce  /  banknifty fut  /  blank to finish)"
+        ).strip()
+        if not query:
+            return None
+
+        results = search_instruments(query)
+
+        if not results:
+            print(f"    ✗  No instruments found for '{query}'  —  try again")
+            continue
+
+        display = results[:10]
+        print()
+        for i, r in enumerate(display, 1):
+            kind       = "weekly " if r["weekly"] else "monthly"
+            strike_str = f"{int(r['strike']):,} " if r["strike"] else ""
+            print(f"    {i}.  {r['symbol']:<12}  "
+                  f"{strike_str}{r['instrument_type']:<3}  "
+                  f"{r['expiry_str']}  ({kind})")
+        if len(results) > 10:
+            print(f"         ... {len(results) - 10} more — refine with a month, e.g. 'may'")
+        print()
+
+        sel = _ask(f"  Select  (1–{len(display)},  0 to search again)")
+        try:
+            idx = int(sel)
+        except ValueError:
+            continue
+        if idx == 0:
+            continue
+        if 1 <= idx <= len(display):
+            return display[idx - 1]
+        print(f"    ✗  Enter 1–{len(display)} or 0")
+
+
+# ─────────────────────────────────────────────────────────────────
 # CREATE flow
 # ─────────────────────────────────────────────────────────────────
 
 def _collect_legs() -> list[dict]:
-    legs = []
+    """Search-driven leg collection. Returns list of leg dicts for add_manual_trade."""
     print(f"\n  {_DIV2}")
-    print("  Add legs  —  leave Side blank when done\n")
+    print("  Add legs  —  search each instrument, blank to finish\n")
 
-    leg_num = 1
+    legs, leg_num = [], 1
     while True:
-        print(f"  Leg {leg_num}")
-        side = _ask("    Side  (BUY / SELL  or blank to finish)").upper()
-        if not side:
+        print(f"  — Leg {leg_num} —")
+        instrument = _search_instrument()
+
+        if instrument is None:
             if not legs:
                 print("    ✗  At least one leg is required.\n")
                 continue
             break
-        if side not in ("BUY", "SELL"):
-            print("    ✗  Enter BUY or SELL\n")
-            continue
 
-        itype = _ask_choice("    Type", VALID_TYPES)
+        side  = _ask_choice("  Side", ["BUY", "SELL"])
+        lots  = _ask_int("  Lots")
+        price = _ask_float("  Price")
 
-        strike = None
-        if itype in ("PE", "CE"):
-            strike = _ask_int("    Strike  (e.g. 57000)")
+        leg = {
+            "side":    side,
+            "type":    instrument["instrument_type"],
+            "lots":    lots,
+            "price":   price,
+            "_symbol": instrument["symbol"],
+        }
+        if instrument["strike"]:
+            leg["strike"] = int(instrument["strike"])
+        if instrument["expiry"]:
+            leg["expiry"] = instrument["expiry_str"]   # "26 May 2026"
 
-        expiry = None
-        if itype in ("PE", "CE", "FUT"):
-            expiry = _ask("    Expiry  (e.g. May 2026  or  26 May 2026)")
-            if not expiry:
-                print("    ✗  Expiry is required for options/futures\n")
-                continue
-
-        lots  = _ask_int("    Lots")
-        price = _ask_float("    Entry price")
-
-        leg = {"side": side, "type": itype, "lots": lots, "price": price}
-        if strike:
-            leg["strike"] = strike
-        if expiry:
-            leg["expiry"] = expiry
-
+        strike_str = f"{int(instrument['strike']):,} " if instrument["strike"] else ""
+        print(f"\n    ✓  {side}  {strike_str}{instrument['instrument_type']}"
+              f"  {instrument['expiry_str']}  {lots}L  @{price:,.2f}\n")
         legs.append(leg)
-        print(f"    ✓  Leg {leg_num} added\n")
         leg_num += 1
 
     return legs
@@ -168,25 +212,23 @@ def cli_create() -> None:
     print(f"\n{_DIV}")
     print("  Create New Trade")
     print(_DIV)
-
-    print(f"\n  Symbols: {', '.join(VALID_SYMBOLS)}")
-    while True:
-        symbol = _ask("  Symbol").upper()
-        if symbol in VALID_SYMBOLS:
-            break
-        print(f"    ✗  Unknown symbol. Supported: {', '.join(VALID_SYMBOLS)}")
+    print("\n  Tip: search like  'nifty 25000 ce'  /  'banknifty fut'  /  'banknifty 57000 pe may'")
 
     legs = _collect_legs()
     note = _ask("\n  Note  (optional, press Enter to skip)")
 
-    # Summary
+    # Symbol comes from the search results — extract and strip from leg dicts
+    symbol = legs[0].pop("_symbol")
+    for leg in legs[1:]:
+        leg.pop("_symbol", None)
+
     n_pos = _base_pos([{"lots": l["lots"]} for l in legs])
     print(f"\n  {_DIV2}")
     print(f"  Summary  —  {symbol}" + (f"  ×{n_pos} positions" if n_pos > 1 else ""))
     print(f"  {_DIV2}")
     for leg in legs:
         strike = f"{leg['strike']:,} " if leg.get("strike") else ""
-        expiry = f"   ({leg['expiry']})" if leg.get("expiry") else ""
+        expiry = f"  ({leg['expiry']})" if leg.get("expiry") else ""
         print(f"    {leg['side']:<4}  {strike}{leg['type']}  {leg['lots']}L"
               f"  @{leg['price']:,.2f}{expiry}")
     if note:
