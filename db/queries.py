@@ -295,6 +295,43 @@ def get_all_open_recommended_trades(symbol: str) -> list:
     return [dict(zip(_TRADE_COLS, r)) for r in rows]
 
 
+def get_all_open_trades() -> list[dict]:
+    """Return all open trades across all symbols, ordered by entry time."""
+    conn = get_connection()
+    cur = conn.execute(f"""
+        SELECT {_TRADE_SELECT} FROM recommended_trades
+        WHERE status = 'open'
+        ORDER BY entry_time
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(zip(_TRADE_COLS, r)) for r in rows]
+
+
+def get_today_closed_trades(ist_date) -> list[dict]:
+    """
+    Return trades exited or rolled today (IST calendar date).
+    ist_date: a date object in IST.
+    """
+    # IST midnight = UTC 18:30 the previous day
+    day_start_utc = datetime(ist_date.year, ist_date.month, ist_date.day,
+                             tzinfo=timezone.utc) - timedelta(hours=5, minutes=30)
+    day_end_utc   = day_start_utc + timedelta(days=1)
+    start_str = day_start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_str   = day_end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    conn = get_connection()
+    cur = conn.execute(f"""
+        SELECT {_TRADE_SELECT} FROM recommended_trades
+        WHERE status IN ('exited', 'rolled')
+          AND exit_time >= ? AND exit_time < ?
+        ORDER BY exit_time
+    """, (start_str, end_str))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(zip(_TRADE_COLS, r)) for r in rows]
+
+
 def get_trade_chain(trade_id: int) -> list:
     """
     Return all trades in the rollover chain containing trade_id,

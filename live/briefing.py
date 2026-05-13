@@ -5,7 +5,7 @@ Day-start and end-of-day briefing messages sent via Telegram.
 from datetime import date, timedelta, datetime, timezone
 from zoneinfo import ZoneInfo
 
-from live.alert import send_telegram
+from live.alert import send_telegram, _h
 from live.holidays import is_trading_day
 
 IST  = ZoneInfo("Asia/Kolkata")
@@ -88,6 +88,130 @@ def send_morning_brief():
     send_telegram("\n".join(lines))
 
 
+def _leg_pnl_line(leg: dict, close_price) -> str:
+    side       = leg["side"]
+    itype      = leg["instrument_type"]
+    strike_str = f"{int(leg['strike']):,} " if leg.get("strike") else ""
+    lots_str   = f"{leg['lots']}L"
+    entry_p    = leg["price"] or 0
+    if close_price is not None:
+        return f"   {side}  {strike_str}{itype}  {lots_str}  {entry_p:,.0f} → {close_price:,.0f}"
+    return f"   {side}  {strike_str}{itype}  {lots_str}  @ {entry_p:,.0f}"
+
+
+def _calc_open_pnl(entry_legs: list, current_prices: dict):
+    total, has_data = 0.0, False
+    for leg in entry_legs:
+        cur_price = current_prices.get(leg.get("instrument_key"))
+        if cur_price is None or leg["price"] is None:
+            continue
+        qty = (leg["lots"] * leg["lot_size"]) if leg["lot_size"] else leg["lots"]
+        total += (leg["price"] - cur_price) * qty if leg["side"] == "SELL" \
+            else (cur_price - leg["price"]) * qty
+        has_data = True
+    return total if has_data else None
+
+
+def _calc_realized_pnl(entry_legs: list, close_legs: list):
+    total, has_data = 0.0, False
+    for leg in entry_legs:
+        cl = next((l for l in close_legs
+                   if l.get("instrument_key") == leg.get("instrument_key")), None)
+        if cl is None or leg["price"] is None or cl["price"] is None:
+            continue
+        qty = (leg["lots"] * leg["lot_size"]) if leg["lot_size"] else leg["lots"]
+        total += (leg["price"] - cl["price"]) * qty if leg["side"] == "SELL" \
+            else (cl["price"] - leg["price"]) * qty
+        has_data = True
+    return total if has_data else None
+
+
+def _trade_entry_date(t: dict, today_ist: date) -> str:
+    try:
+        entry_utc = datetime.strptime(t["entry_time"], "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc)
+        entry_ist = entry_utc.astimezone(ZoneInfo("Asia/Kolkata"))
+        if entry_ist.date() == today_ist:
+            return entry_ist.strftime("%H:%M IST")
+        return entry_ist.strftime("%d %b")
+    except Exception:
+        return "—"
+
+
+def _trade_summary_block(today_ist: date) -> str:
+    """Build HTML trade summary for EOD brief."""
+    from db.queries import get_all_open_trades, get_today_closed_trades, get_trade_legs
+
+    open_trades  = get_all_open_trades()
+    closed_today = get_today_closed_trades(today_ist)
+
+    if not open_trades and not closed_today:
+        return "📂 No active or recently closed trades today."
+
+    # Pre-load entry legs for open trades; collect instrument keys for LTP batch
+    all_ikeys: set[str] = set()
+    for t in open_trades:
+        legs = get_trade_legs(t["id"])
+        t["_entry_legs"] = [l for l in legs if l["action"] == "entry"]
+        all_ikeys.update(l["instrument_key"] for l in t["_entry_legs"]
+                         if l.get("instrument_key"))
+
+    current_prices: dict[str, float] = {}
+    if all_ikeys:
+        try:
+            from live.upstox_client import get_ltp
+            current_prices = get_ltp(list(all_ikeys))
+        except Exception as e:
+            print(f"  [EOD brief]  LTP fetch failed: {e}", flush=True)
+
+    lines = [f"📂 <b>Trade Summary</b>"]
+
+    # --- Open trades ---
+    for t in open_trades:
+        entry_legs = t["_entry_legs"]
+        pnl        = _calc_open_pnl(entry_legs, current_prices)
+        since      = _trade_entry_date(t, today_ist)
+        lines.append(
+            f"\n🟢 <b>OPEN</b>  ·  id={t['id']}  {_h(t['symbol'])}  "
+            f"<i>{_h(t['trigger_name'])}</i>  (since {since})"
+        )
+        for leg in entry_legs:
+            cur_p = current_prices.get(leg.get("instrument_key"))
+            lines.append(_leg_pnl_line(leg, cur_p))
+
+        pnl_str    = f"<b>₹{pnl:+,.0f}</b>" if pnl is not None else "<i>P&L unavailable</i>"
+        margin_str = (f"  |  Margin ₹{t['margin_required']:,.0f}"
+                      if t.get("margin_required") else "")
+        lines.append(f"   {pnl_str}{margin_str}")
+
+    # --- Today's exited / rolled trades ---
+    for t in closed_today:
+        all_legs    = get_trade_legs(t["id"])
+        entry_legs  = [l for l in all_legs if l["action"] == "entry"]
+        close_legs  = [l for l in all_legs if l["action"] in ("exit", "rollover_out")]
+        pnl         = _calc_realized_pnl(entry_legs, close_legs)
+        since       = _trade_entry_date(t, today_ist)
+
+        if t["status"] == "rolled":
+            icon, word = "🔄", "ROLLED"
+        else:
+            icon, word = "✅", "EXITED"
+
+        lines.append(
+            f"\n{icon} <b>{word}</b>  ·  id={t['id']}  {_h(t['symbol'])}  "
+            f"<i>{_h(t['trigger_name'])}</i>  (entered {since})"
+        )
+        for leg in entry_legs:
+            cl = next((l for l in close_legs
+                       if l.get("instrument_key") == leg.get("instrument_key")), None)
+            lines.append(_leg_pnl_line(leg, cl["price"] if cl else None))
+
+        pnl_str = f"<b>₹{pnl:+,.0f}</b>" if pnl is not None else "<i>P&L unavailable</i>"
+        lines.append(f"   {pnl_str}")
+
+    return "\n".join(lines)
+
+
 def send_eod_brief(alerts: list[dict]):
     """Send end-of-day summary — called at 16:00 IST after EOD tasks."""
     now  = datetime.now(timezone.utc).astimezone(IST)
@@ -108,12 +232,23 @@ def send_eod_brief(alerts: list[dict]):
     else:
         alert_block = "📊 No triggers fired today — quiet session."
 
+    # Trade summary
+    try:
+        trade_block = _trade_summary_block(now.date())
+    except Exception as e:
+        print(f"  [EOD brief]  trade summary failed: {e}", flush=True)
+        trade_block = None
+
     holiday_line = _tomorrow_holiday_line()
     lines = [
         f"🌆 <b>Market Closed — {now.strftime('%d %b %Y')}</b>",
         _DIV,
         alert_block,
         "",
+    ]
+    if trade_block:
+        lines += [_DIV, trade_block, ""]
+    lines += [
         _DIV,
         f'💡 <i>"{q}"</i>',
         f"   — <i>{a}</i>",
