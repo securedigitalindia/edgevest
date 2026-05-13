@@ -94,6 +94,33 @@ def api_create():
         return jsonify(ok=False, error=str(e)), 400
 
 
+@app.route("/api/prices", methods=["POST"])
+def api_prices():
+    keys = (request.json or {}).get("keys", [])
+    if not keys:
+        return jsonify({})
+    try:
+        from live.upstox_client import get_ltp
+        return jsonify(get_ltp(keys))
+    except Exception:
+        return jsonify({})
+
+
+@app.route("/api/spot")
+def api_spot():
+    from live.fo_instruments import SPOT_IKEYS
+    try:
+        from live.upstox_client import get_ltp
+        prices = get_ltp(list(SPOT_IKEYS.values()))
+        return jsonify({
+            sym: prices[ikey]
+            for sym, ikey in SPOT_IKEYS.items()
+            if ikey in prices
+        })
+    except Exception:
+        return jsonify({})
+
+
 @app.route("/api/trades/<int:trade_id>/exit", methods=["POST"])
 def api_exit(trade_id):
     data   = request.json or {}
