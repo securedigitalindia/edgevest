@@ -28,6 +28,8 @@ Auto-derived (not needed from caller):
 """
 
 from datetime import datetime, timezone
+from math import gcd
+from functools import reduce
 from zoneinfo import ZoneInfo
 
 from db.queries import open_recommended_trade, add_trade_legs
@@ -164,7 +166,11 @@ def _send_manual_alert(
     spot_ltp, margin_required, margin_final,
     note, now_utc,
 ):
-    # Build display legs for the trade suggestion (matches alert.py format)
+    # Number of positions entered — GCD of all leg lots
+    all_lots = [l["lots"] for l in resolved_legs if l["lots"] > 0]
+    n_pos    = reduce(gcd, all_lots) if all_lots else 1
+
+    # Build display legs at 1-position scale
     display_legs = []
     for l in resolved_legs:
         if l["instrument_type"] == "FUT":
@@ -174,9 +180,10 @@ def _send_manual_alert(
         else:
             instrument = f"{symbol} {l['instrument_type']}"
 
-        qty = l["lots"] * l["lot_size"] if l["lot_size"] else l["lots"]
-        note_parts = [f"{l['lots']}L × {l['lot_size']} = {qty} contracts" if l["lot_size"]
-                      else f"{l['lots']} lot(s)"]
+        base_lots  = l["lots"] // n_pos
+        base_qty   = base_lots * l["lot_size"] if l["lot_size"] else base_lots
+        note_parts = [f"{base_lots}L × {l['lot_size']} = {base_qty} qty" if l["lot_size"]
+                      else f"{base_lots} lot(s)"]
         note_parts.append(f"@ ₹{l['price']:,.2f}")
         display_legs.append({
             "action":     l["side"],
@@ -184,18 +191,22 @@ def _send_manual_alert(
             "note":       "  ".join(note_parts),
         })
 
-    # Rationale line
-    rationale_parts = []
+    # Rationale line — margin shown per position
+    pos_label = f"{n_pos} positions" if n_pos > 1 else "1 position"
+    rationale_parts = [pos_label]
     if margin_required is not None:
-        rationale_parts.append(f"Margin required: ₹{margin_required:,.0f}")
+        per = margin_required / n_pos
+        rationale_parts.append(f"Margin/pos: ₹{per:,.0f}")
     if margin_final is not None and margin_final != margin_required:
-        rationale_parts.append(f"final ₹{margin_final:,.0f}")
+        per_final = margin_final / n_pos
+        rationale_parts.append(f"final ₹{per_final:,.0f}")
     if note:
         rationale_parts.append(note)
-    rationale = "  |  ".join(rationale_parts) if rationale_parts else "Manual trade entry."
+    rationale = "  |  ".join(rationale_parts)
 
+    pos_tag = f"  ×{n_pos} pos" if n_pos > 1 else ""
     trade_suggestion = {
-        "title":     f"Manual Trade  ·  {symbol}  ·  id={trade_id}",
+        "title":     f"Manual Trade  ·  {symbol}  ·  id={trade_id}{pos_tag}",
         "legs":      display_legs,
         "rationale": rationale,
     }

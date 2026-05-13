@@ -3,6 +3,8 @@ Day-start and end-of-day briefing messages sent via Telegram.
 """
 
 from datetime import date, timedelta, datetime, timezone
+from math import gcd
+from functools import reduce
 from zoneinfo import ZoneInfo
 
 from live.alert import send_telegram, _h
@@ -88,11 +90,18 @@ def send_morning_brief():
     send_telegram("\n".join(lines))
 
 
-def _leg_pnl_line(leg: dict, close_price) -> str:
+def _base_positions(legs: list[dict]) -> int:
+    """GCD of all leg lots — the number of positions entered."""
+    lots = [l["lots"] for l in legs if l.get("lots", 0) > 0]
+    return reduce(gcd, lots) if lots else 1
+
+
+def _leg_pnl_line(leg: dict, close_price, n_pos: int = 1) -> str:
     side       = leg["side"]
     itype      = leg["instrument_type"]
     strike_str = f"{int(leg['strike']):,} " if leg.get("strike") else ""
-    lots_str   = f"{leg['lots']}L"
+    base_lots  = leg["lots"] // n_pos
+    lots_str   = f"{base_lots}L"
     entry_p    = leg["price"] or 0
     if close_price is not None:
         return f"   {side}  {strike_str}{itype}  {lots_str}  {entry_p:,.0f} → {close_price:,.0f}"
@@ -169,19 +178,21 @@ def _trade_summary_block(today_ist: date) -> str:
     # --- Open trades ---
     for t in open_trades:
         entry_legs = t["_entry_legs"]
+        n_pos      = _base_positions(entry_legs)
         pnl        = _calc_open_pnl(entry_legs, current_prices)
         since      = _trade_entry_date(t, today_ist)
+        pos_tag    = f"  ×{n_pos} pos" if n_pos > 1 else ""
         lines.append(
             f"\n🟢 <b>OPEN</b>  ·  id={t['id']}  {_h(t['symbol'])}  "
-            f"<i>{_h(t['trigger_name'])}</i>  (since {since})"
+            f"<i>{_h(t['trigger_name'])}</i>  (since {since}){pos_tag}"
         )
         for leg in entry_legs:
             cur_p = current_prices.get(leg.get("instrument_key"))
-            lines.append(_leg_pnl_line(leg, cur_p))
+            lines.append(_leg_pnl_line(leg, cur_p, n_pos))
 
         pnl_str    = f"<b>₹{pnl:+,.0f}</b>" if pnl is not None else "<i>P&L unavailable</i>"
-        margin_str = (f"  |  Margin ₹{t['margin_required']:,.0f}"
-                      if t.get("margin_required") else "")
+        margin_per = (t["margin_required"] / n_pos) if t.get("margin_required") else None
+        margin_str = (f"  |  Margin/pos ₹{margin_per:,.0f}" if margin_per else "")
         lines.append(f"   {pnl_str}{margin_str}")
 
     # --- Today's exited / rolled trades ---
@@ -189,8 +200,10 @@ def _trade_summary_block(today_ist: date) -> str:
         all_legs    = get_trade_legs(t["id"])
         entry_legs  = [l for l in all_legs if l["action"] == "entry"]
         close_legs  = [l for l in all_legs if l["action"] in ("exit", "rollover_out")]
+        n_pos       = _base_positions(entry_legs)
         pnl         = _calc_realized_pnl(entry_legs, close_legs)
         since       = _trade_entry_date(t, today_ist)
+        pos_tag     = f"  ×{n_pos} pos" if n_pos > 1 else ""
 
         if t["status"] == "rolled":
             icon, word = "🔄", "ROLLED"
@@ -199,12 +212,12 @@ def _trade_summary_block(today_ist: date) -> str:
 
         lines.append(
             f"\n{icon} <b>{word}</b>  ·  id={t['id']}  {_h(t['symbol'])}  "
-            f"<i>{_h(t['trigger_name'])}</i>  (entered {since})"
+            f"<i>{_h(t['trigger_name'])}</i>  (entered {since}){pos_tag}"
         )
         for leg in entry_legs:
             cl = next((l for l in close_legs
                        if l.get("instrument_key") == leg.get("instrument_key")), None)
-            lines.append(_leg_pnl_line(leg, cl["price"] if cl else None))
+            lines.append(_leg_pnl_line(leg, cl["price"] if cl else None, n_pos))
 
         pnl_str = f"<b>₹{pnl:+,.0f}</b>" if pnl is not None else "<i>P&L unavailable</i>"
         lines.append(f"   {pnl_str}")
