@@ -24,6 +24,7 @@ _EVENT_META = {
     "500-MULTI EXIT":     ("🔺", "Short exit — Nifty fell 500 pts from entry"),
     "500-MULTI ROLLOVER": ("🔄", "Monthly expiry rollover — rolling short to next month"),
     "MANUAL ENTRY":       ("✍️", "Manual trade entry"),
+    "MANUAL EXIT":        ("✅", "Manual trade exit"),
 }
 
 

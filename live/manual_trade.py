@@ -1,7 +1,7 @@
 """
-Manual trade entry — add a trade directly to the DB and fire a Telegram alert.
+Manual trade entry and exit — add/close trades directly and fire Telegram alerts.
 
-Usage:
+--- ADD ---
     from live.manual_trade import add_manual_trade
 
     add_manual_trade(
@@ -20,11 +20,18 @@ Each leg dict fields:
     expiry   (required for PE/CE/FUT) : str — 'May 2026' or '26 May 2026'
     strike   (required for PE/CE)     : int — strike price
 
-Auto-derived (not needed from caller):
-    instrument_key — looked up from Upstox instrument file
-    lot_size       — looked up from instrument file
-    entry_ltp      — current spot price fetched from Upstox
-    margin         — calculated via Upstox ChargeApi
+--- CLOSE ---
+    from live.manual_trade import close_manual_trade
+
+    close_manual_trade(
+        trade_id = 9,
+        prices   = [1200.0, 700.0],   # exit price per leg, same order as entry
+    )
+
+    # To see leg order first:
+    from db.queries import get_trade_legs
+    for i, l in enumerate(get_trade_legs(9)):
+        print(i, l['side'], l['instrument_type'], l.get('strike'), l['lots'], l['price'])
 """
 
 from datetime import datetime, timezone
@@ -32,9 +39,9 @@ from math import gcd
 from functools import reduce
 from zoneinfo import ZoneInfo
 
-from db.queries import open_recommended_trade, add_trade_legs
+from db.queries import open_recommended_trade, add_trade_legs, close_recommended_trade, get_trade_legs
 from live.fo_instruments import fo_ikey, fo_lot_size, resolve_expiry, SPOT_IKEYS
-from live.alert import send_alert
+from live.alert import send_alert, send_telegram, _h, _DIV
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -224,3 +231,145 @@ def _send_manual_alert(
     }
 
     send_alert(signal)
+
+
+# ---------------------------------------------------------------------------
+# Close a trade manually
+# ---------------------------------------------------------------------------
+
+def close_manual_trade(trade_id: int, prices: list[float], note: str = "") -> None:
+    """
+    Exit an open trade: record exit legs, mark as exited, send Telegram alert.
+
+    prices  : exit execution price for each entry leg, in the same order they
+              were stored (use get_trade_legs(trade_id) to verify order).
+    """
+    from db.init_db import get_connection
+    from db.queries import _TRADE_COLS, _TRADE_SELECT
+
+    # --- 1. Load trade header ---
+    conn = get_connection()
+    cur  = conn.execute(
+        f"SELECT {_TRADE_SELECT} FROM recommended_trades WHERE id = ?", (trade_id,)
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if row is None:
+        raise ValueError(f"Trade id={trade_id} not found")
+
+    trade = dict(zip(_TRADE_COLS, row))
+    if trade["status"] != "open":
+        raise ValueError(
+            f"Trade id={trade_id} is already '{trade['status']}' — only open trades can be closed"
+        )
+
+    symbol = trade["symbol"]
+
+    # --- 2. Load entry legs and validate price count ---
+    entry_legs = [l for l in get_trade_legs(trade_id) if l["action"] == "entry"]
+    if len(prices) != len(entry_legs):
+        leg_lines = "\n".join(
+            f"  {i+1}.  {l['side']:<4}  {l['instrument_type']}  "
+            f"{'strike=' + str(int(l['strike'])) + '  ' if l.get('strike') else ''}"
+            f"{l['lots']}L  @{l['price']}"
+            for i, l in enumerate(entry_legs)
+        )
+        raise ValueError(
+            f"Expected {len(entry_legs)} price(s), got {len(prices)}.\n"
+            f"Entry legs for trade {trade_id}:\n{leg_lines}"
+        )
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # --- 3. Build exit legs (opposite side to entry) ---
+    exit_legs = [
+        {
+            "action":          "exit",
+            "side":            "BUY" if leg["side"] == "SELL" else "SELL",
+            "instrument_type": leg["instrument_type"],
+            "instrument_key":  leg["instrument_key"],
+            "strike":          leg["strike"],
+            "expiry_str":      leg["expiry_str"],
+            "lots":            leg["lots"],
+            "lot_size":        leg["lot_size"],
+            "price":           float(exit_price),
+            "ts":              now_utc,
+        }
+        for leg, exit_price in zip(entry_legs, prices)
+    ]
+
+    # --- 4. Fetch spot LTP ---
+    spot_ltp = 0.0
+    try:
+        from live.upstox_client import get_ltp
+        spot_ikey = SPOT_IKEYS.get(symbol)
+        if spot_ikey:
+            spot_ltp = get_ltp([spot_ikey]).get(spot_ikey, 0.0)
+    except Exception as e:
+        print(f"  [close_manual_trade]  spot fetch failed: {e}", flush=True)
+
+    # --- 5. Persist ---
+    close_recommended_trade(trade_id, spot_ltp, now_utc, exit_legs)
+
+    # --- 6. Send alert ---
+    _send_exit_alert(trade_id, symbol, entry_legs, exit_legs, spot_ltp, note, now_utc)
+
+    now_ist = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b %Y  %H:%M IST")
+    print(f"  [close_manual_trade]  trade id={trade_id}  {symbol}  closed at {now_ist}",
+          flush=True)
+
+
+def _send_exit_alert(
+    trade_id, symbol, entry_legs, exit_legs,
+    spot_ltp, note, now_utc,
+):
+    n_pos     = reduce(gcd, [l["lots"] for l in entry_legs if l["lots"] > 0]) or 1
+    alert_str = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
+
+    # Compute realized P&L
+    total_pnl, has_pnl = 0.0, False
+    for e_leg, x_leg in zip(entry_legs, exit_legs):
+        if e_leg["price"] is not None and x_leg["price"] is not None:
+            qty = e_leg["lots"] * (e_leg["lot_size"] or 1)
+            total_pnl += (e_leg["price"] - x_leg["price"]) * qty if e_leg["side"] == "SELL" \
+                else (x_leg["price"] - e_leg["price"]) * qty
+            has_pnl = True
+
+    pos_tag = f"  ×{n_pos} pos" if n_pos > 1 else ""
+
+    lines = [
+        f'✅ <b>{_h(symbol)}</b>  •  Manual Exit{pos_tag}',
+        _DIV,
+        f"<i>Spot  ₹{spot_ltp:,.2f}</i>" if spot_ltp else "",
+        "",
+    ]
+
+    # Entry → Exit per leg
+    for e_leg, x_leg in zip(entry_legs, exit_legs):
+        strike_str = f"{int(e_leg['strike']):,} " if e_leg.get("strike") else ""
+        base_lots  = e_leg["lots"] // n_pos
+        entry_p    = e_leg["price"] or 0
+        exit_p     = x_leg["price"] or 0
+        leg_pnl    = None
+        if e_leg["price"] is not None and x_leg["price"] is not None:
+            qty = (e_leg["lots"] // n_pos) * (e_leg["lot_size"] or 1)
+            leg_pnl = (entry_p - exit_p) * qty if e_leg["side"] == "SELL" \
+                else (exit_p - entry_p) * qty
+        pnl_str = f"   <i>(₹{leg_pnl:+,.0f})</i>" if leg_pnl is not None else ""
+        icon    = "🔴" if e_leg["side"] == "SELL" else "🟢"
+        lines.append(
+            f"  {icon}  {e_leg['side']:<4}  {strike_str}{e_leg['instrument_type']}"
+            f"  {base_lots}L   ₹{entry_p:,.0f} → ₹{exit_p:,.0f}{pnl_str}"
+        )
+
+    lines += ["", _DIV]
+    if has_pnl:
+        lines.append(f"<b>Net P&amp;L  ₹{total_pnl:+,.0f}</b>")
+    if note:
+        lines.append(f"<i>{_h(note)}</i>")
+    lines += ["", f"Alert at  {alert_str}"]
+
+    # Remove empty leading line if spot was blank
+    text = "\n".join(l for l in lines)
+    send_telegram(text)
