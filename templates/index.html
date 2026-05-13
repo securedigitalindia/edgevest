@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drishti — Trade Manager</title>
+<style>
+  :root {
+    --bg:       #f1f5f9;
+    --card:     #ffffff;
+    --border:   #e2e8f0;
+    --text:     #1e293b;
+    --muted:    #64748b;
+    --blue:     #3b82f6;
+    --blue-dk:  #2563eb;
+    --green:    #16a34a;
+    --red:      #dc2626;
+    --tag-open: #dcfce7;
+    --tag-open-text: #166534;
+    --radius:   10px;
+    --shadow:   0 1px 4px rgba(0,0,0,.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: var(--bg); color: var(--text); font-size: 14px; }
+
+  header { background: var(--card); border-bottom: 1px solid var(--border);
+           padding: 14px 28px; display: flex; align-items: center; gap: 10px; }
+  header h1 { font-size: 16px; font-weight: 700; letter-spacing: .3px; }
+  header span { font-size: 12px; color: var(--muted); }
+
+  .layout { display: grid; grid-template-columns: 480px 1fr; gap: 20px;
+            padding: 24px 28px; max-width: 1300px; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  /* ── Cards ── */
+  .card { background: var(--card); border: 1px solid var(--border);
+          border-radius: var(--radius); box-shadow: var(--shadow); }
+  .card-header { padding: 14px 18px; border-bottom: 1px solid var(--border);
+                 display: flex; align-items: center; justify-content: space-between; }
+  .card-header h2 { font-size: 14px; font-weight: 600; }
+  .card-body { padding: 18px; }
+
+  /* ── Form elements ── */
+  input, select, textarea {
+    width: 100%; padding: 7px 10px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 13px; color: var(--text);
+    background: #fff; outline: none; transition: border .15s;
+  }
+  input:focus, select:focus { border-color: var(--blue); }
+  input::placeholder { color: #94a3b8; }
+  label { font-size: 12px; font-weight: 500; color: var(--muted);
+          display: block; margin-bottom: 4px; }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 5px;
+         padding: 7px 14px; border-radius: 6px; font-size: 13px;
+         font-weight: 500; cursor: pointer; border: none; transition: opacity .15s; }
+  .btn:hover { opacity: .85; }
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-success { background: var(--green); color: #fff; }
+  .btn-danger  { background: var(--red);   color: #fff; }
+  .btn-ghost   { background: transparent; border: 1px solid var(--border);
+                 color: var(--text); }
+  .btn-sm      { padding: 4px 10px; font-size: 12px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── Leg rows ── */
+  .legs-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+  .leg-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px; position: relative; }
+  .leg-num { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+
+  /* search-within-leg */
+  .search-wrap { position: relative; }
+  .search-results {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+    background: #fff; border: 1px solid var(--border); border-top: none;
+    border-radius: 0 0 6px 6px; max-height: 220px; overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1); display: none;
+  }
+  .search-results.open { display: block; }
+  .result-item { padding: 8px 12px; cursor: pointer; font-size: 13px;
+                 border-bottom: 1px solid var(--border); }
+  .result-item:last-child { border-bottom: none; }
+  .result-item:hover { background: #f8fafc; }
+
+  .selected-instrument { display: none; align-items: center; gap: 8px;
+                         background: #eff6ff; border: 1px solid #bfdbfe;
+                         border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; font-size: 13px; }
+  .selected-instrument.visible { display: flex; }
+  .selected-instrument strong { color: var(--blue); font-size: 13px; flex: 1; }
+  .clear-btn { cursor: pointer; color: var(--muted); font-size: 16px; line-height: 1; }
+  .clear-btn:hover { color: var(--red); }
+
+  .leg-fields { display: grid; grid-template-columns: 80px 80px 1fr; gap: 8px; }
+  .leg-fields.hidden { display: none; }
+
+  .remove-leg { position: absolute; top: 10px; right: 10px;
+                background: none; border: none; color: #94a3b8;
+                cursor: pointer; font-size: 16px; line-height: 1; padding: 0; }
+  .remove-leg:hover { color: var(--red); }
+
+  .add-leg-btn { width: 100%; padding: 8px; border: 1px dashed var(--border);
+                 border-radius: 6px; background: none; color: var(--muted);
+                 cursor: pointer; font-size: 13px; }
+  .add-leg-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+  /* ── Trades list ── */
+  .trade-card { border: 1px solid var(--border); border-radius: 8px;
+                margin-bottom: 12px; overflow: hidden; }
+  .trade-header { padding: 10px 14px; background: #f8fafc;
+                  display: flex; align-items: center; gap: 10px; }
+  .trade-symbol { font-weight: 700; font-size: 15px; }
+  .trade-since { font-size: 12px; color: var(--muted); margin-left: auto; }
+  .badge-open { font-size: 11px; font-weight: 600; padding: 2px 8px;
+                border-radius: 20px; background: var(--tag-open); color: var(--tag-open-text); }
+  .trade-legs-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .trade-legs-table td { padding: 6px 14px; border-bottom: 1px solid #f1f5f9; }
+  .trade-legs-table tr:last-child td { border-bottom: none; }
+  .side-buy  { color: var(--green); font-weight: 600; }
+  .side-sell { color: var(--red);   font-weight: 600; }
+  .trade-footer { padding: 10px 14px; border-top: 1px solid var(--border);
+                  display: flex; gap: 8px; align-items: center; }
+
+  /* ── Exit form ── */
+  .exit-form { display: none; padding: 14px; border-top: 1px solid var(--border);
+               background: #fff9f9; }
+  .exit-form.open { display: block; }
+  .exit-form h4 { font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--red); }
+  .exit-leg-row { display: grid; grid-template-columns: 1fr 140px; gap: 10px;
+                  align-items: center; margin-bottom: 8px; }
+  .exit-leg-label { font-size: 13px; }
+  .exit-leg-label .entry-p { font-size: 11px; color: var(--muted); }
+  .exit-form-footer { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+  .exit-form-footer .note-wrap { flex: 1; }
+
+  /* ── Misc ── */
+  .empty { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
+  .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 18px;
+           border-radius: 8px; font-size: 13px; font-weight: 500;
+           box-shadow: 0 4px 16px rgba(0,0,0,.15); opacity: 0;
+           transition: opacity .3s; pointer-events: none; z-index: 999; }
+  .toast.show { opacity: 1; }
+  .toast.ok  { background: var(--green); color: #fff; }
+  .toast.err { background: var(--red);   color: #fff; }
+  .spinner { font-size: 12px; color: var(--muted); }
+  .form-row { margin-bottom: 12px; }
+  .pos-tag { font-size: 11px; background: #eff6ff; color: var(--blue);
+             padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📊 Drishti</h1>
+  <span>Manual Trade Manager</span>
+</header>
+
+<div class="layout">
+
+  <!-- ── LEFT: Create Trade ── -->
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <h2>New Trade</h2>
+      </div>
+      <div class="card-body">
+
+        <div class="legs-list" id="legs-list"></div>
+        <button class="add-leg-btn" onclick="addLeg()">+ Add Leg</button>
+
+        <div class="form-row" style="margin-top:14px">
+          <label>Note (optional)</label>
+          <input id="create-note" placeholder="e.g. Bull put spread">
+        </div>
+
+        <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:4px"
+                onclick="createTrade()" id="create-btn">
+          Create Trade &amp; Send Alert
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT: Open Trades ── -->
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <h2>Open Positions</h2>
+        <button class="btn btn-ghost btn-sm" onclick="loadTrades()">↻ Refresh</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div id="trades-list"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Leg management ─────────────────────────────────────────────
+
+let legCounter = 0;
+
+function addLeg() {
+  legCounter++;
+  const n = legCounter;
+  const div = document.createElement('div');
+  div.className = 'leg-row';
+  div.id = `leg-${n}`;
+  div.innerHTML = `
+    <div class="leg-num">Leg ${document.querySelectorAll('.leg-row').length + 1}</div>
+    <button class="remove-leg" onclick="removeLeg(${n})" title="Remove leg">✕</button>
+
+    <div class="search-wrap">
+      <input class="leg-search" id="search-${n}" autocomplete="off"
+             placeholder="Search instrument  (e.g. nifty 25000 ce  /  banknifty fut)"
+             oninput="onSearchInput(${n})"
+             onkeydown="onSearchKey(event, ${n})">
+      <div class="search-results" id="results-${n}"></div>
+    </div>
+
+    <div class="selected-instrument" id="sel-${n}">
+      <strong id="sel-label-${n}"></strong>
+      <span class="clear-btn" onclick="clearLeg(${n})" title="Clear">✕</span>
+    </div>
+
+    <div class="leg-fields hidden" id="fields-${n}">
+      <div>
+        <label>Side</label>
+        <select id="side-${n}">
+          <option value="BUY">BUY</option>
+          <option value="SELL">SELL</option>
+        </select>
+      </div>
+      <div>
+        <label>Lots</label>
+        <input type="number" id="lots-${n}" min="1" placeholder="1">
+      </div>
+      <div>
+        <label>Price</label>
+        <input type="number" id="price-${n}" step="0.05" placeholder="0.00">
+      </div>
+    </div>`;
+
+  document.getElementById('legs-list').appendChild(div);
+  document.getElementById(`search-${n}`).focus();
+  renumberLegs();
+}
+
+function removeLeg(n) {
+  const el = document.getElementById(`leg-${n}`);
+  if (el) el.remove();
+  renumberLegs();
+}
+
+function renumberLegs() {
+  document.querySelectorAll('.leg-row .leg-num').forEach((el, i) => {
+    el.textContent = `Leg ${i + 1}`;
+  });
+}
+
+// ── Instrument search ───────────────────────────────────────────
+
+const _debounceTimers = {};
+const _legData = {};   // n → selected instrument object
+
+function onSearchInput(n) {
+  clearTimeout(_debounceTimers[n]);
+  _debounceTimers[n] = setTimeout(() => fetchResults(n), 320);
+}
+
+function onSearchKey(e, n) {
+  if (e.key === 'Escape') closeResults(n);
+}
+
+async function fetchResults(n) {
+  const q = document.getElementById(`search-${n}`).value.trim();
+  const box = document.getElementById(`results-${n}`);
+  if (q.length < 2) { box.classList.remove('open'); return; }
+
+  const res  = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+
+  if (!data.results.length) { box.innerHTML = '<div class="result-item" style="color:#94a3b8">No results</div>'; }
+  else {
+    box.innerHTML = data.results.map((r, i) =>
+      `<div class="result-item" onclick="selectInstrument(${n}, ${i})">${r.label}</div>`
+    ).join('');
+  }
+  box._results = data.results;
+  box.classList.add('open');
+}
+
+function selectInstrument(n, idx) {
+  const box  = document.getElementById(`results-${n}`);
+  const item = box._results[idx];
+  _legData[n] = item;
+
+  document.getElementById(`search-${n}`).style.display = 'none';
+  closeResults(n);
+
+  const selEl = document.getElementById(`sel-${n}`);
+  document.getElementById(`sel-label-${n}`).textContent = item.label;
+  selEl.classList.add('visible');
+
+  document.getElementById(`fields-${n}`).classList.remove('hidden');
+  document.getElementById(`lots-${n}`).focus();
+}
+
+function clearLeg(n) {
+  delete _legData[n];
+  document.getElementById(`search-${n}`).style.display = '';
+  document.getElementById(`search-${n}`).value = '';
+  document.getElementById(`sel-${n}`).classList.remove('visible');
+  document.getElementById(`fields-${n}`).classList.add('hidden');
+  document.getElementById(`search-${n}`).focus();
+}
+
+function closeResults(n) {
+  document.getElementById(`results-${n}`)?.classList.remove('open');
+}
+
+// Close dropdown on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-wrap')) {
+    document.querySelectorAll('.search-results').forEach(el => el.classList.remove('open'));
+  }
+});
+
+// ── Create Trade ───────────────────────────────────────────────
+
+async function createTrade() {
+  const legEls = document.querySelectorAll('.leg-row');
+  if (!legEls.length) { showToast('Add at least one leg', 'err'); return; }
+
+  const legs   = [];
+  let   symbol = null;
+
+  for (const el of legEls) {
+    const n   = parseInt(el.id.split('-')[1]);
+    const ins = _legData[n];
+    if (!ins) { showToast('Select an instrument for each leg', 'err'); return; }
+
+    const side  = document.getElementById(`side-${n}`).value;
+    const lots  = parseInt(document.getElementById(`lots-${n}`).value);
+    const price = parseFloat(document.getElementById(`price-${n}`).value);
+
+    if (!lots || lots < 1)    { showToast(`Leg ${n}: enter a valid lot count`, 'err'); return; }
+    if (!price || price <= 0) { showToast(`Leg ${n}: enter a valid price`, 'err'); return; }
+
+    symbol = ins.symbol;
+    const leg = { side, type: ins.instrument_type, lots, price };
+    if (ins.strike)      leg.strike = ins.strike;
+    if (ins.expiry_str)  leg.expiry = ins.expiry_str;
+    legs.push(leg);
+  }
+
+  const note = document.getElementById('create-note').value.trim();
+  const btn  = document.getElementById('create-btn');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+
+  try {
+    const res  = await fetch('/api/trades/create', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ symbol, legs, note }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast(`Trade created (id=${data.trade_id}) — Telegram alert sent`, 'ok');
+      resetCreateForm();
+      loadTrades();
+    } else {
+      showToast(data.error || 'Create failed', 'err');
+    }
+  } catch(e) {
+    showToast('Network error', 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Create Trade & Send Alert';
+  }
+}
+
+function resetCreateForm() {
+  document.getElementById('legs-list').innerHTML = '';
+  document.getElementById('create-note').value   = '';
+  Object.keys(_legData).forEach(k => delete _legData[k]);
+  legCounter = 0;
+  addLeg();
+}
+
+// ── Open Trades ────────────────────────────────────────────────
+
+async function loadTrades() {
+  const list = document.getElementById('trades-list');
+  list.innerHTML = '<div class="empty spinner">Loading...</div>';
+
+  try {
+    const res    = await fetch('/api/trades');
+    const data   = await res.json();
+    const trades = data.trades;
+
+    if (!trades.length) {
+      list.innerHTML = '<div class="empty">No open positions.</div>';
+      return;
+    }
+
+    list.innerHTML = trades.map(t => renderTradeCard(t)).join('');
+  } catch(e) {
+    list.innerHTML = '<div class="empty">Failed to load trades.</div>';
+  }
+}
+
+function renderTradeCard(t) {
+  const legRows = t.legs.map(l => {
+    const sideClass = l.side === 'BUY' ? 'side-buy' : 'side-sell';
+    const strike    = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
+    const expiry    = l.expiry_str ? `  ${l.expiry_str}` : '';
+    const price     = l.price != null ? `₹${Number(l.price).toLocaleString('en-IN', {minimumFractionDigits:2})}` : '—';
+    return `<tr>
+      <td class="${sideClass}">${l.side}</td>
+      <td>${strike}${l.instrument_type}${expiry}</td>
+      <td>${l.lots}L</td>
+      <td>${price}</td>
+    </tr>`;
+  }).join('');
+
+  const exitInputs = t.legs.map((l, i) => {
+    const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
+    const expiry = l.expiry_str ? ` ${l.expiry_str}` : '';
+    return `<div class="exit-leg-row">
+      <div class="exit-leg-label">
+        <span class="${l.side === 'BUY' ? 'side-buy' : 'side-sell'}">${l.side}</span>
+        &nbsp;${strike}${l.instrument_type}${expiry}  ${l.lots}L
+        <div class="entry-p">entry ₹${Number(l.price).toFixed(2)}</div>
+      </div>
+      <div>
+        <label>Exit price</label>
+        <input type="number" step="0.05" id="exit-price-${t.id}-${i}"
+               placeholder="0.00">
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="trade-card" id="trade-${t.id}">
+    <div class="trade-header">
+      <span class="trade-symbol">${t.symbol}</span>
+      <span class="badge-open">Open</span>
+      <span class="trade-since">${t.entry_ist}</span>
+    </div>
+    <table class="trade-legs-table">${legRows}</table>
+    <div class="trade-footer">
+      <button class="btn btn-danger btn-sm" onclick="toggleExitForm(${t.id})">
+        Exit Trade
+      </button>
+    </div>
+    <div class="exit-form" id="exit-form-${t.id}">
+      <h4>Exit Prices</h4>
+      ${exitInputs}
+      <div class="exit-form-footer">
+        <div class="note-wrap">
+          <input id="exit-note-${t.id}" placeholder="Note (optional)">
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="submitExit(${t.id}, ${t.legs.length})">
+          Confirm Exit
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleExitForm(${t.id})">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function toggleExitForm(id) {
+  document.getElementById(`exit-form-${id}`).classList.toggle('open');
+}
+
+async function submitExit(tradeId, legCount) {
+  const prices = [];
+  for (let i = 0; i < legCount; i++) {
+    const p = parseFloat(document.getElementById(`exit-price-${tradeId}-${i}`).value);
+    if (!p || p <= 0) { showToast(`Enter a valid exit price for leg ${i+1}`, 'err'); return; }
+    prices.push(p);
+  }
+  const note = document.getElementById(`exit-note-${tradeId}`).value.trim();
+
+  try {
+    const res  = await fetch(`/api/trades/${tradeId}/exit`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ prices, note }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Trade closed — Telegram alert sent', 'ok');
+      loadTrades();
+    } else {
+      showToast(data.error || 'Exit failed', 'err');
+    }
+  } catch(e) {
+    showToast('Network error', 'err');
+  }
+}
+
+// ── Toast ──────────────────────────────────────────────────────
+
+let _toastTimer;
+function showToast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = `toast ${type} show`;
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// ── Init ───────────────────────────────────────────────────────
+
+addLeg();
+loadTrades();
+</script>
+</body>
+</html>
