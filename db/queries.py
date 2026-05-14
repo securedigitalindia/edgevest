@@ -367,6 +367,107 @@ def get_today_closed_trades(ist_date) -> list[dict]:
 
 
 # -----------------------------------------------------------
+# Users
+# -----------------------------------------------------------
+
+def get_user_by_google_id(google_id: str) -> dict | None:
+    conn = get_connection()
+    row  = conn.execute(
+        "SELECT id,google_id,email,name,picture,role,trader_id,active FROM users WHERE google_id=?",
+        (google_id,)
+    ).fetchone()
+    conn.close()
+    if not row: return None
+    return dict(zip(["id","google_id","email","name","picture","role","trader_id","active"], row))
+
+
+def upsert_user(google_id: str, email: str, name: str, picture: str) -> dict:
+    """Create or update a Google user. First-ever user becomes super_admin."""
+    from datetime import datetime, timezone
+    now  = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection()
+
+    existing = conn.execute(
+        "SELECT id,role FROM users WHERE google_id=?", (google_id,)
+    ).fetchone()
+
+    if existing:
+        conn.execute(
+            "UPDATE users SET name=?,picture=? WHERE google_id=?",
+            (name, picture, google_id)
+        )
+        conn.commit()
+    else:
+        count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        role  = "super_admin" if count == 0 else "client"
+        conn.execute(
+            "INSERT INTO users (google_id,email,name,picture,role,created_at) VALUES (?,?,?,?,?,?)",
+            (google_id, email, name, picture, role, now)
+        )
+        conn.commit()
+
+    row = conn.execute(
+        "SELECT id,google_id,email,name,picture,role,trader_id,active FROM users WHERE google_id=?",
+        (google_id,)
+    ).fetchone()
+    conn.close()
+    return dict(zip(["id","google_id","email","name","picture","role","trader_id","active"], row))
+
+
+def get_all_users() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT u.id, u.email, u.name, u.picture, u.role, u.active,
+               u.trader_id, t.name
+        FROM users u
+        LEFT JOIN traders t ON t.id = u.trader_id
+        ORDER BY u.created_at
+    """).fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "email": r[1], "name": r[2], "picture": r[3],
+         "role": r[4], "active": bool(r[5]),
+         "trader_id": r[6], "trader_name": r[7]}
+        for r in rows
+    ]
+
+
+def update_user_role(user_id: int, role: str) -> None:
+    conn = get_connection()
+    conn.execute("UPDATE users SET role=? WHERE id=?", (role, user_id))
+    conn.commit()
+    conn.close()
+
+
+def update_user_trader(user_id: int, trader_id: int | None) -> None:
+    conn = get_connection()
+    conn.execute("UPDATE users SET trader_id=? WHERE id=?", (trader_id, user_id))
+    conn.commit()
+    conn.close()
+
+
+def get_accounts_for_trader(trader_id: int) -> list[dict]:
+    """All accounts belonging to a specific trader."""
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT a.id, a.label, a.account_no, a.active,
+               t.id, t.name, t.mobile, b.id, b.name
+        FROM accounts a
+        LEFT JOIN traders t ON t.id = a.trader_id
+        LEFT JOIN brokers b ON b.id = a.broker_id
+        WHERE a.trader_id = ?
+        ORDER BY b.name
+    """, (trader_id,)).fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "label": r[1], "account_no": r[2], "active": bool(r[3]),
+         "trader_id": r[4], "trader": r[5], "mobile": r[6],
+         "broker_id": r[7], "broker": r[8]}
+        for r in rows
+    ]
+
+
+# -----------------------------------------------------------
 # Brokers / Traders / Accounts
 # -----------------------------------------------------------
 

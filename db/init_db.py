@@ -206,6 +206,24 @@ def init_db():
     """)
     print("  ✓  Table ready: accounts")
 
+    # -------------------------------------------------------
+    # users — Google OAuth login + roles
+    # -------------------------------------------------------
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            google_id   TEXT    NOT NULL UNIQUE,
+            email       TEXT    NOT NULL UNIQUE,
+            name        TEXT    NOT NULL,
+            picture     TEXT,
+            role        TEXT    NOT NULL DEFAULT 'client',
+            trader_id   INTEGER REFERENCES traders(id),
+            active      INTEGER NOT NULL DEFAULT 1,
+            created_at  TEXT    NOT NULL
+        )
+    """)
+    print("  ✓  Table ready: users")
+
     # account_trades — one row per account per recommendation
     cur.execute("""
         CREATE TABLE IF NOT EXISTS account_trades (

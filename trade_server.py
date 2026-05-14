@@ -1,21 +1,78 @@
 #!/usr/bin/env python3
 """
-Drishti — Manual Trade Web UI
+Drishti — Trade Manager Web UI
 Run:  python trade_server.py
-Opens http://localhost:5555 in your browser.
 """
 import sys
 import os
 import threading
 import webbrowser
+from functools import wraps
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, render_template, request, jsonify
+from dotenv import load_dotenv
+load_dotenv()
+
+from flask import (Flask, render_template, request, jsonify,
+                   session, redirect, url_for, abort)
+from authlib.integrations.flask_client import OAuth
 
 app = Flask(__name__)
+app.secret_key = os.environ["SECRET_KEY"]
 PORT = 5555
 
+oauth = OAuth(app)
+google = oauth.register(
+    name="google",
+    client_id=os.environ["GOOGLE_CLIENT_ID"],
+    client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
+
+
+# ─────────────────────────────────────────────────────────
+# Auth helpers
+# ─────────────────────────────────────────────────────────
+
+def current_user() -> dict | None:
+    return session.get("user")
+
+def require_login(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not current_user():
+            if request.path.startswith("/api/"):
+                return jsonify(error="Unauthorized"), 401
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return wrapped
+
+def require_role(*roles):
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            user = current_user()
+            if not user:
+                if request.path.startswith("/api/"):
+                    return jsonify(error="Unauthorized"), 401
+                return redirect(url_for("login"))
+            if user["role"] not in roles:
+                if request.path.startswith("/api/"):
+                    return jsonify(error="Forbidden"), 403
+                return abort(403)
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator
+
+def is_admin(user=None):
+    u = user or current_user()
+    return u and u["role"] in ("super_admin", "admin")
+
+def is_super_admin(user=None):
+    u = user or current_user()
+    return u and u["role"] == "super_admin"
 
 def _ist_str(utc_str: str) -> str:
     from datetime import datetime, timezone
@@ -29,10 +86,87 @@ def _ist_str(utc_str: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────
+# Auth routes
+# ─────────────────────────────────────────────────────────
+
+@app.route("/login")
+def login():
+    if current_user():
+        return redirect(url_for("index"))
+    return render_template("login.html")
+
+@app.route("/auth/google")
+def auth_google():
+    redirect_uri = url_for("auth_callback", _external=True)
+    return google.authorize_redirect(redirect_uri)
+
+@app.route("/auth/callback")
+def auth_callback():
+    token    = google.authorize_access_token()
+    userinfo = token.get("userinfo") or google.userinfo()
+    from db.queries import upsert_user
+    user = upsert_user(
+        google_id = userinfo["sub"],
+        email     = userinfo["email"],
+        name      = userinfo["name"],
+        picture   = userinfo.get("picture", ""),
+    )
+    if not user["active"]:
+        return render_template("login.html", error="Your account has been deactivated.")
+    session["user"] = user
+    return redirect(url_for("index"))
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+# ─────────────────────────────────────────────────────────
+# API: current user
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/me")
+@require_login
+def api_me():
+    return jsonify(user=current_user())
+
+
+# ─────────────────────────────────────────────────────────
+# API: users (super_admin only)
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/users")
+@require_role("super_admin")
+def api_users():
+    from db.queries import get_all_users
+    return jsonify(users=get_all_users())
+
+@app.route("/api/users/<int:uid>/role", methods=["POST"])
+@require_role("super_admin")
+def api_user_role(uid):
+    role = (request.json or {}).get("role", "")
+    if role not in ("super_admin", "admin", "client"):
+        return jsonify(ok=False, error="Invalid role"), 400
+    from db.queries import update_user_role
+    update_user_role(uid, role)
+    return jsonify(ok=True)
+
+@app.route("/api/users/<int:uid>/trader", methods=["POST"])
+@require_role("super_admin")
+def api_user_trader(uid):
+    trader_id = (request.json or {}).get("trader_id")
+    from db.queries import update_user_trader
+    update_user_trader(uid, trader_id)
+    return jsonify(ok=True)
+
+
+# ─────────────────────────────────────────────────────────
 # API: instrument search
 # ─────────────────────────────────────────────────────────
 
 @app.route("/api/search")
+@require_login
 def api_search():
     q = request.args.get("q", "").strip()
     if len(q) < 2:
@@ -63,9 +197,12 @@ def api_search():
 # ─────────────────────────────────────────────────────────
 
 @app.route("/api/brokers", methods=["GET", "POST"])
+@require_login
 def api_brokers():
     from db.queries import get_brokers, add_broker
     if request.method == "POST":
+        if not is_admin():
+            return jsonify(ok=False, error="Forbidden"), 403
         name = (request.json or {}).get("name", "").strip()
         if not name:
             return jsonify(ok=False, error="name is required"), 400
@@ -78,9 +215,12 @@ def api_brokers():
 
 
 @app.route("/api/traders", methods=["GET", "POST"])
+@require_login
 def api_traders():
     from db.queries import get_traders, add_trader
     if request.method == "POST":
+        if not is_admin():
+            return jsonify(ok=False, error="Forbidden"), 403
         data   = request.json or {}
         name   = data.get("name", "").strip()
         mobile = data.get("mobile", "")
@@ -89,13 +229,19 @@ def api_traders():
             return jsonify(ok=False, error="name is required"), 400
         tid = add_trader(name, mobile, note)
         return jsonify(ok=True, id=tid)
+    if not is_admin():
+        return jsonify(ok=False, error="Forbidden"), 403
     return jsonify(traders=get_traders())
 
 
 @app.route("/api/accounts", methods=["GET", "POST"])
+@require_login
 def api_accounts():
-    from db.queries import get_accounts, add_account
+    from db.queries import get_accounts, get_accounts_for_trader, add_account
+    user = current_user()
     if request.method == "POST":
+        if not is_admin():
+            return jsonify(ok=False, error="Forbidden"), 403
         data       = request.json or {}
         trader_id  = data.get("trader_id")
         broker_id  = data.get("broker_id")
@@ -105,14 +251,20 @@ def api_accounts():
             return jsonify(ok=False, error="trader_id and broker_id are required"), 400
         aid = add_account(trader_id, broker_id, account_no, label)
         return jsonify(ok=True, id=aid)
+    # Clients only see their own accounts
+    if user["role"] == "client":
+        if not user.get("trader_id"):
+            return jsonify(accounts=[])
+        return jsonify(accounts=get_accounts_for_trader(user["trader_id"]))
     return jsonify(accounts=get_accounts())
 
 
 # ─────────────────────────────────────────────────────────
-# API: recommendations (signal layer)
+# API: recommendations
 # ─────────────────────────────────────────────────────────
 
 @app.route("/api/recommendations")
+@require_login
 def api_recommendations():
     from db.queries import get_all_recommendations, get_trade_legs
     recs = get_all_recommendations()
@@ -133,6 +285,7 @@ def api_recommendations():
 
 
 @app.route("/api/recommendations/create", methods=["POST"])
+@require_role("super_admin", "admin")
 def api_rec_create():
     data   = request.json or {}
     symbol = data.get("symbol", "")
@@ -149,14 +302,27 @@ def api_rec_create():
 
 
 # ─────────────────────────────────────────────────────────
-# API: account trades (execution layer)
+# API: account trades
 # ─────────────────────────────────────────────────────────
 
 @app.route("/api/account-trades")
+@require_login
 def api_account_trades():
     from db.queries import get_open_account_trades, get_account_trade_legs
+    user       = current_user()
     account_id = request.args.get("account_id", type=int)
-    trades = get_open_account_trades(account_id=account_id)
+
+    if user["role"] == "client":
+        # Only own accounts — ignore any account_id filter from client
+        if not user.get("trader_id"):
+            return jsonify(trades=[])
+        from db.queries import get_accounts_for_trader
+        own_ids = {a["id"] for a in get_accounts_for_trader(user["trader_id"])}
+        trades  = [t for t in get_open_account_trades()
+                   if t["account_id"] in own_ids]
+    else:
+        trades = get_open_account_trades(account_id=account_id)
+
     out = []
     for t in trades:
         legs = [l for l in get_account_trade_legs(t["id"]) if l["action"] == "entry"]
@@ -176,15 +342,30 @@ def api_account_trades():
 
 
 @app.route("/api/account-trades/create", methods=["POST"])
+@require_login
 def api_account_trade_create():
+    from db.queries import get_accounts_for_trader
     data       = request.json or {}
     rec_id     = data.get("recommended_trade_id")
     account_id = data.get("account_id")
     symbol     = data.get("symbol", "")
     legs       = data.get("legs", [])
     note       = data.get("note", "")
+    user       = current_user()
+
+    if not rec_id:
+        return jsonify(ok=False, error="recommended_trade_id is required"), 400
     if not account_id or not symbol or not legs:
         return jsonify(ok=False, error="account_id, symbol and legs are required"), 400
+
+    # Client can only push to their own accounts
+    if user["role"] == "client":
+        if not user.get("trader_id"):
+            return jsonify(ok=False, error="No trader linked to your account"), 403
+        own_ids = {a["id"] for a in get_accounts_for_trader(user["trader_id"])}
+        if account_id not in own_ids:
+            return jsonify(ok=False, error="Forbidden — not your account"), 403
+
     try:
         from live.manual_trade import push_to_account
         at_id = push_to_account(rec_id, account_id, symbol, legs, note)
@@ -194,12 +375,26 @@ def api_account_trade_create():
 
 
 @app.route("/api/account-trades/<int:at_id>/exit", methods=["POST"])
+@require_login
 def api_account_trade_exit(at_id):
+    from db.queries import get_open_account_trades, get_accounts_for_trader
     data   = request.json or {}
     prices = data.get("prices", [])
     note   = data.get("note", "")
+    user   = current_user()
+
     if not prices:
         return jsonify(ok=False, error="prices are required"), 400
+
+    # Client can only exit their own trades
+    if user["role"] == "client":
+        if not user.get("trader_id"):
+            return jsonify(ok=False, error="Forbidden"), 403
+        own_ids = {a["id"] for a in get_accounts_for_trader(user["trader_id"])}
+        trade   = next((t for t in get_open_account_trades() if t["id"] == at_id), None)
+        if not trade or trade["account_id"] not in own_ids:
+            return jsonify(ok=False, error="Forbidden — not your trade"), 403
+
     try:
         from live.manual_trade import close_account_trade
         close_account_trade(at_id, prices, note)
@@ -213,6 +408,7 @@ def api_account_trade_exit(at_id):
 # ─────────────────────────────────────────────────────────
 
 @app.route("/api/prices", methods=["POST"])
+@require_login
 def api_prices():
     keys = (request.json or {}).get("keys", [])
     if not keys:
@@ -225,6 +421,7 @@ def api_prices():
 
 
 @app.route("/api/spot")
+@require_login
 def api_spot():
     from live.fo_instruments import SPOT_IKEYS
     try:
@@ -244,8 +441,9 @@ def api_spot():
 # ─────────────────────────────────────────────────────────
 
 @app.route("/")
+@require_login
 def index():
-    return render_template("index.html")
+    return render_template("index.html", user=current_user())
 
 
 # ─────────────────────────────────────────────────────────

@@ -227,7 +227,21 @@
     <span class="last-updated" id="last-updated"></span>
   </div>
   <div class="live-dot" title="Live prices"></div>
+  <div style="display:flex;align-items:center;gap:10px;margin-left:8px">
+    {% if user.picture %}
+    <img src="{{ user.picture }}" style="width:28px;height:28px;border-radius:50%;border:2px solid #334155">
+    {% endif %}
+    <span style="font-size:12px;color:#94a3b8">{{ user.name }}</span>
+    <span style="font-size:10px;padding:2px 7px;border-radius:20px;font-weight:700;
+      background:{% if user.role == 'super_admin' %}#7c3aed{% elif user.role == 'admin' %}#1d4ed8{% else %}#064e3b{% endif %};
+      color:#fff">
+      {{ user.role.replace('_',' ').upper() }}
+    </span>
+    <a href="/logout" style="font-size:11px;color:#64748b;text-decoration:none">Logout</a>
+  </div>
+  {% if user.role in ('super_admin', 'admin') %}
   <button class="hdr-btn" onclick="openDrawer()" title="Settings">⚙</button>
+  {% endif %}
 </header>
 
 <!-- Settings drawer -->
@@ -242,6 +256,9 @@
       <button class="stab active" onclick="showStab('brokers',this)">Brokers</button>
       <button class="stab" onclick="showStab('traders',this)">Traders</button>
       <button class="stab" onclick="showStab('accounts',this)">Accounts</button>
+      {% if user.role == 'super_admin' %}
+      <button class="stab" onclick="showStab('users',this)">Users</button>
+      {% endif %}
     </div>
 
     <div class="stab-panel active" id="stab-brokers">
@@ -289,6 +306,12 @@
         <button class="btn btn-primary btn-sm" onclick="addAccount()">Add</button>
       </div>
     </div>
+
+    {% if user.role == 'super_admin' %}
+    <div class="stab-panel" id="stab-users">
+      <div class="settings-list" id="users-list"><div class="empty">Loading…</div></div>
+    </div>
+    {% endif %}
   </div>
 </div>
 
@@ -296,6 +319,7 @@
 
   <!-- LEFT: Recommendations -->
   <div>
+    {% if user.role in ('super_admin', 'admin') %}
     <!-- New recommendation form -->
     <div class="card">
       <div class="card-header">
@@ -314,6 +338,7 @@
         </button>
       </div>
     </div>
+    {% endif %}
 
     <!-- Recommendations list -->
     <div class="card">
@@ -863,6 +888,8 @@ async function updateSpot() {
 // ─────────────────────────────────────────────────────────
 
 let _brokers = [], _traders = [], _accounts = [];
+const _role  = "{{ user.role }}";
+const _isAdmin = _role === 'super_admin' || _role === 'admin';
 
 function openDrawer()  {
   document.getElementById('drawer').classList.add('open');
@@ -881,16 +908,74 @@ function showStab(name, el) {
 }
 
 async function loadSettings() {
-  const [b, t, a] = await Promise.all([
+  const requests = [
     fetch('/api/brokers').then(r => r.json()),
     fetch('/api/traders').then(r => r.json()),
     fetch('/api/accounts').then(r => r.json()),
-  ]);
-  _brokers  = b.brokers  || [];
-  _traders  = t.traders  || [];
-  _accounts = a.accounts || [];
+  ];
+  if (_role === 'super_admin') requests.push(fetch('/api/users').then(r => r.json()));
+
+  const results = await Promise.all(requests);
+  _brokers  = results[0].brokers  || [];
+  _traders  = results[1].traders  || [];
+  _accounts = results[2].accounts || [];
   renderBrokersList(); renderTradersList(); renderAccountsList();
   populateAccountSelects();
+  if (_role === 'super_admin') renderUsersList(results[3].users || []);
+}
+
+function renderUsersList(users) {
+  const el = document.getElementById('users-list');
+  if (!el) return;
+  if (!users.length) { el.innerHTML = '<div class="empty">No users yet.</div>'; return; }
+  const roleOpts = ['super_admin','admin','client'].map(r =>
+    `<option value="${r}">${r.replace('_',' ')}</option>`).join('');
+  const traderOpts = '<option value="">— none —</option>' +
+    _traders.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  el.innerHTML = users.map(u => `
+    <div class="settings-item">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        ${u.picture ? `<img src="${u.picture}" style="width:24px;height:24px;border-radius:50%">` : ''}
+        <span class="s-name">${u.name}</span>
+        <span style="font-size:11px;color:var(--muted)">${u.email}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <label>Role</label>
+          <select onchange="setUserRole(${u.id},this.value)">
+            ${['super_admin','admin','client'].map(r =>
+              `<option value="${r}" ${u.role===r?'selected':''}>${r.replace('_',' ')}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Linked Trader</label>
+          <select onchange="setUserTrader(${u.id},this.value)">
+            ${traderOpts.replace(`value="${u.trader_id}"`, `value="${u.trader_id}" selected`)}
+          </select>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function setUserRole(uid, role) {
+  const res  = await fetch(`/api/users/${uid}/role`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ role }),
+  });
+  const data = await res.json();
+  if (data.ok) showToast('Role updated', 'ok');
+  else showToast(data.error || 'Failed', 'err');
+}
+
+async function setUserTrader(uid, trader_id) {
+  const res  = await fetch(`/api/users/${uid}/trader`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ trader_id: trader_id ? parseInt(trader_id) : null }),
+  });
+  const data = await res.json();
+  if (data.ok) showToast('Trader linked', 'ok');
+  else showToast(data.error || 'Failed', 'err');
 }
 
 function renderBrokersList() {
