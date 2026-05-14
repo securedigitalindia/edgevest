@@ -39,14 +39,18 @@ from math import gcd
 from functools import reduce
 from zoneinfo import ZoneInfo
 
-from db.queries import open_recommended_trade, add_trade_legs, close_recommended_trade, get_trade_legs
+from db.queries import (
+    open_recommended_trade, add_trade_legs, close_recommended_trade, get_trade_legs,
+    create_account_trade, get_account_trade_legs, mark_account_trade_closed,
+    get_open_account_trades, _ACCT_TRADE_COLS,
+)
 from live.fo_instruments import fo_ikey, fo_lot_size, resolve_expiry, SPOT_IKEYS
 from live.alert import send_alert, send_telegram, _h, _DIV
 
 IST = ZoneInfo("Asia/Kolkata")
 
 
-def add_manual_trade(symbol: str, legs: list[dict], note: str = "", account_id: int | None = None) -> int:
+def add_manual_trade(symbol: str, legs: list[dict], note: str = "") -> int:
     """
     Create a manual trade: resolve instrument keys, fetch spot + margin,
     write to DB, and send a Telegram alert.
@@ -136,7 +140,6 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "", account_id: 
         exit_level      = 0,
         margin_required = margin_required,
         margin_final    = margin_final,
-        account_id      = account_id,
     )
 
     # --- 5. Insert legs ---
@@ -371,6 +374,172 @@ def _send_exit_alert(
         lines.append(f"<i>{_h(note)}</i>")
     lines += ["", f"Alert at  {alert_str}"]
 
-    # Remove empty leading line if spot was blank
     text = "\n".join(l for l in lines)
     send_telegram(text)
+
+
+# ---------------------------------------------------------------------------
+# Push a recommendation to an account
+# ---------------------------------------------------------------------------
+
+def _resolve_legs(symbol: str, legs: list[dict], now_utc: str) -> list[dict]:
+    """Resolve instrument keys + lot sizes for a list of leg dicts."""
+    resolved = []
+    for i, leg in enumerate(legs, 1):
+        itype      = leg["type"].upper()
+        strike     = int(leg.get("strike", 0)) if leg.get("strike") else 0
+        expiry_str = leg.get("expiry", "")
+        expiry_date = ikey = None
+        lot_sz = 0
+        if itype in ("PE", "CE", "FUT"):
+            if not expiry_str:
+                raise ValueError(f"Leg {i}: expiry required for {itype}")
+            expiry_date = resolve_expiry(symbol, expiry_str)
+            if expiry_date is None:
+                raise ValueError(f"Leg {i}: cannot resolve expiry {expiry_str!r}")
+            expiry_str  = expiry_date.strftime("%d %b %Y")
+            ikey        = fo_ikey(symbol, itype, expiry_date,
+                                  strike=(strike if itype in ("PE", "CE") else 0))
+            lot_sz      = fo_lot_size(symbol, expiry_date) or 0
+        resolved.append({
+            "action":          "entry",
+            "side":            leg["side"].upper(),
+            "instrument_type": itype,
+            "instrument_key":  ikey,
+            "strike":          strike or None,
+            "expiry_str":      expiry_str or None,
+            "lots":            int(leg["lots"]),
+            "lot_size":        lot_sz,
+            "price":           float(leg["price"]),
+            "ts":              now_utc,
+        })
+    return resolved
+
+
+def push_to_account(
+    recommended_trade_id: int | None,
+    account_id: int,
+    symbol: str,
+    legs: list[dict],
+    note: str = "",
+) -> int:
+    """
+    Push a recommendation to an account with custom sizing.
+    Creates account_trade + account_trade_legs, sends Telegram alert.
+    Returns account_trade_id.
+    """
+    symbol  = symbol.upper()
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    resolved = _resolve_legs(symbol, legs, now_utc)
+
+    # Fetch account info for alert
+    from db.queries import get_accounts
+    account_info = next((a for a in get_accounts() if a["id"] == account_id), None)
+    account_label = (account_info or {}).get("label") or \
+                    (account_info or {}).get("trader") or f"Account {account_id}"
+
+    at_id = create_account_trade(
+        account_id           = account_id,
+        legs                 = resolved,
+        recommended_trade_id = recommended_trade_id,
+        note                 = note,
+        entry_time           = now_utc,
+    )
+
+    # Telegram alert
+    n_pos    = reduce(gcd, [l["lots"] for l in resolved if l["lots"] > 0]) or 1
+    now_ist  = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b %Y  %H:%M IST")
+    rec_tag  = f"  ·  rec#{recommended_trade_id}" if recommended_trade_id else ""
+    lines    = [
+        f'📥 <b>{_h(symbol)}</b>  ·  {_h(account_label)}{rec_tag}',
+        _DIV,
+    ]
+    for l in resolved:
+        strike_str = f"{int(l['strike']):,} " if l.get("strike") else ""
+        base_lots  = l["lots"] // n_pos
+        icon       = "🔴" if l["side"] == "SELL" else "🟢"
+        lines.append(
+            f"  {icon}  {l['side']:<4}  {strike_str}{l['instrument_type']}"
+            f"  {base_lots}L  @₹{l['price']:,.2f}"
+        )
+    pos_tag = f"  ×{n_pos} pos" if n_pos > 1 else ""
+    lines += ["", _DIV, f"{pos_tag}  {note}" if note else pos_tag,
+              f"Added at  {now_ist}"]
+    send_telegram("\n".join(l for l in lines))
+
+    print(f"  [push_to_account]  account_trade id={at_id}  {symbol}  "
+          f"account={account_label}  at {now_ist}", flush=True)
+    return at_id
+
+
+def close_account_trade(
+    account_trade_id: int,
+    prices: list[float],
+    note: str = "",
+) -> None:
+    """Exit an account_trade: record exit legs, mark exited, send Telegram."""
+    from db.queries import get_open_account_trades, get_accounts
+
+    # Load trade
+    conn_data = next(
+        (t for t in get_open_account_trades() if t["id"] == account_trade_id), None
+    )
+    if conn_data is None:
+        raise ValueError(f"Account trade id={account_trade_id} not found or already closed")
+
+    entry_legs = [l for l in get_account_trade_legs(account_trade_id) if l["action"] == "entry"]
+    if len(prices) != len(entry_legs):
+        raise ValueError(f"Expected {len(entry_legs)} price(s), got {len(prices)}")
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    exit_legs = [
+        {
+            "action":          "exit",
+            "side":            "BUY" if l["side"] == "SELL" else "SELL",
+            "instrument_type": l["instrument_type"],
+            "instrument_key":  l["instrument_key"],
+            "strike":          l["strike"],
+            "expiry_str":      l["expiry_str"],
+            "lots":            l["lots"],
+            "lot_size":        l["lot_size"],
+            "price":           float(p),
+        }
+        for l, p in zip(entry_legs, prices)
+    ]
+
+    mark_account_trade_closed(account_trade_id, exit_legs, now_utc, note)
+
+    # Telegram alert
+    symbol        = conn_data.get("symbol") or "—"
+    account_label = conn_data.get("account_label") or f"Account {conn_data['account_id']}"
+    n_pos         = reduce(gcd, [l["lots"] for l in entry_legs if l["lots"] > 0]) or 1
+    now_ist       = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
+
+    total_pnl = 0.0
+    lines = [
+        f'✅ <b>{_h(symbol)}</b>  ·  {_h(account_label)}  ·  Exit',
+        _DIV,
+    ]
+    for e, x in zip(entry_legs, exit_legs):
+        strike_str = f"{int(e['strike']):,} " if e.get("strike") else ""
+        base_lots  = e["lots"] // n_pos
+        qty        = (e["lots"] // n_pos) * (e["lot_size"] or 1)
+        ep, xp     = e["price"] or 0, x["price"] or 0
+        leg_pnl    = (ep - xp) * qty if e["side"] == "SELL" else (xp - ep) * qty
+        total_pnl += leg_pnl * n_pos
+        icon       = "🔴" if e["side"] == "SELL" else "🟢"
+        lines.append(
+            f"  {icon}  {e['side']:<4}  {strike_str}{e['instrument_type']}"
+            f"  {base_lots}L   ₹{ep:,.0f} → ₹{xp:,.0f}"
+            f"   <i>(₹{leg_pnl:+,.0f})</i>"
+        )
+    lines += ["", _DIV, f"<b>Net P&amp;L  ₹{total_pnl:+,.0f}</b>"]
+    if note:
+        lines.append(f"<i>{_h(note)}</i>")
+    lines.append(f"Exit at  {now_ist}")
+    send_telegram("\n".join(lines))
+
+    print(f"  [close_account_trade]  id={account_trade_id}  {symbol}  "
+          f"account={account_label}  closed at {now_ist}", flush=True)

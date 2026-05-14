@@ -17,6 +17,17 @@ app = Flask(__name__)
 PORT = 5555
 
 
+def _ist_str(utc_str: str) -> str:
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    try:
+        dt = datetime.strptime(utc_str, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc).astimezone(ZoneInfo("Asia/Kolkata"))
+        return dt.strftime("%d %b %Y  %H:%M IST")
+    except Exception:
+        return utc_str
+
+
 # ─────────────────────────────────────────────────────────
 # API: instrument search
 # ─────────────────────────────────────────────────────────
@@ -98,56 +109,108 @@ def api_accounts():
 
 
 # ─────────────────────────────────────────────────────────
-# API: trades
+# API: recommendations (signal layer)
 # ─────────────────────────────────────────────────────────
 
-@app.route("/api/trades")
-def api_trades():
-    from db.queries import get_all_open_trades, get_trade_legs
-    from datetime import datetime, timezone
-    from zoneinfo import ZoneInfo
-    IST = ZoneInfo("Asia/Kolkata")
-
-    account_id = request.args.get("account_id", type=int)
-    trades = get_all_open_trades(account_id=account_id)
-    out = []
-    for t in trades:
-        legs = [l for l in get_trade_legs(t["id"]) if l["action"] == "entry"]
-        try:
-            dt = datetime.strptime(t["entry_time"], "%Y-%m-%dT%H:%M:%SZ").replace(
-                tzinfo=timezone.utc).astimezone(IST)
-            entry_ist = dt.strftime("%d %b %Y  %H:%M IST")
-        except Exception:
-            entry_ist = t["entry_time"]
+@app.route("/api/recommendations")
+def api_recommendations():
+    from db.queries import get_all_recommendations, get_trade_legs
+    recs = get_all_recommendations()
+    out  = []
+    for r in recs:
+        legs = [l for l in get_trade_legs(r["id"]) if l["action"] == "entry"]
         out.append({
-            "id":            t["id"],
-            "symbol":        t["symbol"],
-            "entry_ist":     entry_ist,
+            "id":            r["id"],
+            "symbol":        r["symbol"],
+            "trigger":       r["trigger_name"],
+            "status":        r["status"],
+            "entry_ist":     _ist_str(r["entry_time"]),
+            "leg_count":     r["leg_count"],
+            "account_count": r["account_count"],
             "legs":          legs,
-            "account_id":    t["account_id"],
-            "account_label": t["account_label"],
-            "trader_name":   t["trader_name"],
-            "broker_name":   t["broker_name"],
         })
-    return jsonify(trades=out)
+    return jsonify(recommendations=out)
 
 
-@app.route("/api/trades/create", methods=["POST"])
-def api_create():
-    data       = request.json or {}
-    symbol     = data.get("symbol", "")
-    legs       = data.get("legs", [])
-    note       = data.get("note", "")
-    account_id = data.get("account_id")
+@app.route("/api/recommendations/create", methods=["POST"])
+def api_rec_create():
+    data   = request.json or {}
+    symbol = data.get("symbol", "")
+    legs   = data.get("legs", [])
+    note   = data.get("note", "")
     if not symbol or not legs:
         return jsonify(ok=False, error="symbol and legs are required"), 400
     try:
         from live.manual_trade import add_manual_trade
-        trade_id = add_manual_trade(symbol, legs, note, account_id=account_id)
+        trade_id = add_manual_trade(symbol, legs, note)
         return jsonify(ok=True, trade_id=trade_id)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 400
 
+
+# ─────────────────────────────────────────────────────────
+# API: account trades (execution layer)
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/account-trades")
+def api_account_trades():
+    from db.queries import get_open_account_trades, get_account_trade_legs
+    account_id = request.args.get("account_id", type=int)
+    trades = get_open_account_trades(account_id=account_id)
+    out = []
+    for t in trades:
+        legs = [l for l in get_account_trade_legs(t["id"]) if l["action"] == "entry"]
+        out.append({
+            "id":            t["id"],
+            "symbol":        t["symbol"] or "—",
+            "trigger":       t["trigger_name"],
+            "rec_id":        t["recommended_trade_id"],
+            "account_id":    t["account_id"],
+            "account_label": t["account_label"] or f"Account {t['account_id']}",
+            "trader_name":   t["trader_name"],
+            "broker_name":   t["broker_name"],
+            "entry_ist":     _ist_str(t["entry_time"]),
+            "legs":          legs,
+        })
+    return jsonify(trades=out)
+
+
+@app.route("/api/account-trades/create", methods=["POST"])
+def api_account_trade_create():
+    data       = request.json or {}
+    rec_id     = data.get("recommended_trade_id")
+    account_id = data.get("account_id")
+    symbol     = data.get("symbol", "")
+    legs       = data.get("legs", [])
+    note       = data.get("note", "")
+    if not account_id or not symbol or not legs:
+        return jsonify(ok=False, error="account_id, symbol and legs are required"), 400
+    try:
+        from live.manual_trade import push_to_account
+        at_id = push_to_account(rec_id, account_id, symbol, legs, note)
+        return jsonify(ok=True, account_trade_id=at_id)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)), 400
+
+
+@app.route("/api/account-trades/<int:at_id>/exit", methods=["POST"])
+def api_account_trade_exit(at_id):
+    data   = request.json or {}
+    prices = data.get("prices", [])
+    note   = data.get("note", "")
+    if not prices:
+        return jsonify(ok=False, error="prices are required"), 400
+    try:
+        from live.manual_trade import close_account_trade
+        close_account_trade(at_id, prices, note)
+        return jsonify(ok=True)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)), 400
+
+
+# ─────────────────────────────────────────────────────────
+# API: prices / spot
+# ─────────────────────────────────────────────────────────
 
 @app.route("/api/prices", methods=["POST"])
 def api_prices():
@@ -174,21 +237,6 @@ def api_spot():
         })
     except Exception:
         return jsonify({})
-
-
-@app.route("/api/trades/<int:trade_id>/exit", methods=["POST"])
-def api_exit(trade_id):
-    data   = request.json or {}
-    prices = data.get("prices", [])
-    note   = data.get("note", "")
-    if not prices:
-        return jsonify(ok=False, error="prices are required"), 400
-    try:
-        from live.manual_trade import close_manual_trade
-        close_manual_trade(trade_id, prices, note)
-        return jsonify(ok=True)
-    except Exception as e:
-        return jsonify(ok=False, error=str(e)), 400
 
 
 # ─────────────────────────────────────────────────────────

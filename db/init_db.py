@@ -206,14 +206,49 @@ def init_db():
     """)
     print("  ✓  Table ready: accounts")
 
-    # Add account_id to recommended_trades for existing DBs
-    existing_cols = {row[1] for row in cur.execute(
-        "SELECT * FROM pragma_table_info('recommended_trades')"
-    )}
-    if "account_id" not in existing_cols:
-        cur.execute(
-            "ALTER TABLE recommended_trades ADD COLUMN account_id INTEGER REFERENCES accounts(id)"
+    # account_trades — one row per account per recommendation
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS account_trades (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            recommended_trade_id INTEGER REFERENCES recommended_trades(id),
+            account_id           INTEGER NOT NULL REFERENCES accounts(id),
+            status               TEXT    NOT NULL DEFAULT 'open',
+            entry_time           TEXT    NOT NULL,
+            exit_time            TEXT,
+            note                 TEXT
         )
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_account_trades_account
+        ON account_trades (account_id, status)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_account_trades_rec
+        ON account_trades (recommended_trade_id)
+    """)
+    print("  ✓  Table ready: account_trades")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS account_trade_legs (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_trade_id INTEGER NOT NULL REFERENCES account_trades(id),
+            action           TEXT    NOT NULL,
+            side             TEXT    NOT NULL,
+            instrument_type  TEXT    NOT NULL,
+            instrument_key   TEXT,
+            strike           REAL,
+            expiry_str       TEXT,
+            lots             INTEGER NOT NULL DEFAULT 1,
+            lot_size         INTEGER NOT NULL DEFAULT 0,
+            price            REAL,
+            ts               TEXT    NOT NULL
+        )
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_account_trade_legs_trade
+        ON account_trade_legs (account_trade_id)
+    """)
+    print("  ✓  Table ready: account_trade_legs")
 
     conn.commit()
     conn.close()

@@ -182,9 +182,19 @@ _TRADE_COLS = [
     "id", "trigger_name", "symbol", "parent_trade_id",
     "entry_level", "entry_ltp", "entry_time",
     "exit_level", "status", "exit_ltp", "exit_time",
-    "margin_required", "margin_final", "account_id",
+    "margin_required", "margin_final",
 ]
 _TRADE_SELECT = ", ".join(_TRADE_COLS)
+
+_ACCT_TRADE_COLS = [
+    "id", "recommended_trade_id", "account_id", "status",
+    "entry_time", "exit_time", "note",
+]
+
+_ACCT_LEG_COLS = [
+    "id", "account_trade_id", "action", "side", "instrument_type",
+    "instrument_key", "strike", "expiry_str", "lots", "lot_size", "price", "ts",
+]
 
 _LEG_COLS = [
     "id", "trade_id", "action", "side", "instrument_type",
@@ -200,7 +210,6 @@ def open_recommended_trade(
     parent_trade_id:  int   | None = None,
     margin_required:  float | None = None,
     margin_final:     float | None = None,
-    account_id:       int   | None = None,
 ) -> int:
     """Insert a new open trade header. Returns the new row id."""
     conn = get_connection()
@@ -208,11 +217,11 @@ def open_recommended_trade(
         INSERT INTO recommended_trades
             (trigger_name, symbol, parent_trade_id,
              entry_level, entry_ltp, entry_time, exit_level, status,
-             margin_required, margin_final, account_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)
+             margin_required, margin_final)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
     """, (trigger_name, symbol, parent_trade_id,
           entry_level, entry_ltp, entry_time, exit_level,
-          margin_required, margin_final, account_id))
+          margin_required, margin_final))
     row_id = cur.lastrowid
     conn.commit()
     conn.close()
@@ -296,34 +305,39 @@ def get_all_open_recommended_trades(symbol: str) -> list:
     return [dict(zip(_TRADE_COLS, r)) for r in rows]
 
 
-def get_all_open_trades(account_id: int | None = None) -> list[dict]:
-    """Return all open trades across all symbols, ordered by entry time.
-    Optionally filter by account_id. Each dict includes account_label and trader_name."""
+def get_all_open_trades() -> list[dict]:
+    """Return all open recommended_trades (used by briefing)."""
     conn = get_connection()
-    where = "WHERE t.status = 'open'"
-    params: list = []
-    if account_id is not None:
-        where += " AND t.account_id = ?"
-        params.append(account_id)
     cur = conn.execute(f"""
-        SELECT {', '.join('t.' + c for c in _TRADE_COLS)},
-               a.label, tr.name, tr.mobile, b.name
-        FROM recommended_trades t
-        LEFT JOIN accounts a  ON a.id  = t.account_id
-        LEFT JOIN traders  tr ON tr.id = a.trader_id
-        LEFT JOIN brokers  b  ON b.id  = a.broker_id
-        {where}
-        ORDER BY t.entry_time
-    """, params)
+        SELECT {_TRADE_SELECT} FROM recommended_trades
+        WHERE status = 'open'
+        ORDER BY entry_time
+    """)
     rows = cur.fetchall()
     conn.close()
+    return [dict(zip(_TRADE_COLS, r)) for r in rows]
+
+
+def get_all_recommendations() -> list[dict]:
+    """All recommended_trades newest-first, with leg count and account push count."""
+    conn = get_connection()
+    rows = conn.execute(f"""
+        SELECT {', '.join('rt.' + c for c in _TRADE_COLS)},
+               COUNT(DISTINCT tl.id)  AS leg_count,
+               COUNT(DISTINCT at.id)  AS account_count
+        FROM recommended_trades rt
+        LEFT JOIN trade_legs    tl ON tl.trade_id = rt.id AND tl.action = 'entry'
+        LEFT JOIN account_trades at ON at.recommended_trade_id = rt.id
+        GROUP BY rt.id
+        ORDER BY rt.entry_time DESC
+    """).fetchall()
+    conn.close()
+    n = len(_TRADE_COLS)
     result = []
     for r in rows:
-        d = dict(zip(_TRADE_COLS, r[:len(_TRADE_COLS)]))
-        d["account_label"]  = r[len(_TRADE_COLS)]
-        d["trader_name"]    = r[len(_TRADE_COLS) + 1]
-        d["trader_mobile"]  = r[len(_TRADE_COLS) + 2]
-        d["broker_name"]    = r[len(_TRADE_COLS) + 3]
+        d = dict(zip(_TRADE_COLS, r[:n]))
+        d["leg_count"]     = r[n]
+        d["account_count"] = r[n + 1]
         result.append(d)
     return result
 
@@ -434,6 +448,121 @@ def add_account(
     conn.commit()
     conn.close()
     return row_id
+
+
+# -----------------------------------------------------------
+# Account trades
+# -----------------------------------------------------------
+
+def create_account_trade(
+    account_id: int,
+    legs: list[dict],
+    recommended_trade_id: int | None = None,
+    note: str = "",
+    entry_time: str | None = None,
+) -> int:
+    """Insert account_trade + account_trade_legs. Returns new id."""
+    from datetime import datetime, timezone
+    now = entry_time or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection()
+    cur = conn.execute("""
+        INSERT INTO account_trades
+            (recommended_trade_id, account_id, status, entry_time, note)
+        VALUES (?, ?, 'open', ?, ?)
+    """, (recommended_trade_id, account_id, now, note or None))
+    at_id = cur.lastrowid
+    conn.executemany("""
+        INSERT INTO account_trade_legs
+            (account_trade_id, action, side, instrument_type, instrument_key,
+             strike, expiry_str, lots, lot_size, price, ts)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, [
+        (at_id, l["action"], l["side"], l["instrument_type"],
+         l.get("instrument_key"), _float_or_none(l.get("strike")),
+         l.get("expiry_str"), l.get("lots", 1), l.get("lot_size", 0),
+         _float_or_none(l.get("price")), l.get("ts", now))
+        for l in legs
+    ])
+    conn.commit()
+    conn.close()
+    return at_id
+
+
+def get_account_trade_legs(account_trade_id: int) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        f"SELECT {', '.join(_ACCT_LEG_COLS)} FROM account_trade_legs"
+        f" WHERE account_trade_id = ? ORDER BY id",
+        (account_trade_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(zip(_ACCT_LEG_COLS, r)) for r in rows]
+
+
+def get_open_account_trades(account_id: int | None = None) -> list[dict]:
+    """Open account_trades with account/trader/broker/symbol info."""
+    conn = get_connection()
+    where = "WHERE at.status = 'open'"
+    params: list = []
+    if account_id is not None:
+        where += " AND at.account_id = ?"
+        params.append(account_id)
+    rows = conn.execute(f"""
+        SELECT {', '.join('at.' + c for c in _ACCT_TRADE_COLS)},
+               a.label, a.account_no,
+               tr.name, tr.mobile,
+               b.name,
+               rt.symbol, rt.trigger_name
+        FROM account_trades at
+        LEFT JOIN accounts  a  ON a.id  = at.account_id
+        LEFT JOIN traders   tr ON tr.id = a.trader_id
+        LEFT JOIN brokers   b  ON b.id  = a.broker_id
+        LEFT JOIN recommended_trades rt ON rt.id = at.recommended_trade_id
+        {where}
+        ORDER BY at.entry_time DESC
+    """, params).fetchall()
+    conn.close()
+    n = len(_ACCT_TRADE_COLS)
+    result = []
+    for r in rows:
+        d = dict(zip(_ACCT_TRADE_COLS, r[:n]))
+        d["account_label"]  = r[n]
+        d["account_no"]     = r[n + 1]
+        d["trader_name"]    = r[n + 2]
+        d["trader_mobile"]  = r[n + 3]
+        d["broker_name"]    = r[n + 4]
+        d["symbol"]         = r[n + 5]
+        d["trigger_name"]   = r[n + 6]
+        result.append(d)
+    return result
+
+
+def mark_account_trade_closed(
+    account_trade_id: int,
+    exit_legs: list[dict],
+    now_utc: str,
+    note: str = "",
+) -> None:
+    """Persist exit legs and mark account_trade as exited."""
+    conn = get_connection()
+    conn.executemany("""
+        INSERT INTO account_trade_legs
+            (account_trade_id, action, side, instrument_type, instrument_key,
+             strike, expiry_str, lots, lot_size, price, ts)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, [
+        (account_trade_id, l["action"], l["side"], l["instrument_type"],
+         l.get("instrument_key"), _float_or_none(l.get("strike")),
+         l.get("expiry_str"), l.get("lots", 1), l.get("lot_size", 0),
+         _float_or_none(l.get("price")), now_utc)
+        for l in exit_legs
+    ])
+    conn.execute(
+        "UPDATE account_trades SET status='exited', exit_time=?, note=COALESCE(?,note) WHERE id=?",
+        (now_utc, note or None, account_trade_id)
+    )
+    conn.commit()
+    conn.close()
 
 
 def get_trade_chain(trade_id: int) -> list:
