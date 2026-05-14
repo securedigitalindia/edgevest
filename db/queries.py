@@ -182,7 +182,7 @@ _TRADE_COLS = [
     "id", "trigger_name", "symbol", "parent_trade_id",
     "entry_level", "entry_ltp", "entry_time",
     "exit_level", "status", "exit_ltp", "exit_time",
-    "margin_required", "margin_final",
+    "margin_required", "margin_final", "account_id",
 ]
 _TRADE_SELECT = ", ".join(_TRADE_COLS)
 
@@ -200,6 +200,7 @@ def open_recommended_trade(
     parent_trade_id:  int   | None = None,
     margin_required:  float | None = None,
     margin_final:     float | None = None,
+    account_id:       int   | None = None,
 ) -> int:
     """Insert a new open trade header. Returns the new row id."""
     conn = get_connection()
@@ -207,11 +208,11 @@ def open_recommended_trade(
         INSERT INTO recommended_trades
             (trigger_name, symbol, parent_trade_id,
              entry_level, entry_ltp, entry_time, exit_level, status,
-             margin_required, margin_final)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+             margin_required, margin_final, account_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)
     """, (trigger_name, symbol, parent_trade_id,
           entry_level, entry_ltp, entry_time, exit_level,
-          margin_required, margin_final))
+          margin_required, margin_final, account_id))
     row_id = cur.lastrowid
     conn.commit()
     conn.close()
@@ -295,17 +296,36 @@ def get_all_open_recommended_trades(symbol: str) -> list:
     return [dict(zip(_TRADE_COLS, r)) for r in rows]
 
 
-def get_all_open_trades() -> list[dict]:
-    """Return all open trades across all symbols, ordered by entry time."""
+def get_all_open_trades(account_id: int | None = None) -> list[dict]:
+    """Return all open trades across all symbols, ordered by entry time.
+    Optionally filter by account_id. Each dict includes account_label and trader_name."""
     conn = get_connection()
+    where = "WHERE t.status = 'open'"
+    params: list = []
+    if account_id is not None:
+        where += " AND t.account_id = ?"
+        params.append(account_id)
     cur = conn.execute(f"""
-        SELECT {_TRADE_SELECT} FROM recommended_trades
-        WHERE status = 'open'
-        ORDER BY entry_time
-    """)
+        SELECT {', '.join('t.' + c for c in _TRADE_COLS)},
+               a.label, tr.name, tr.mobile, b.name
+        FROM recommended_trades t
+        LEFT JOIN accounts a  ON a.id  = t.account_id
+        LEFT JOIN traders  tr ON tr.id = a.trader_id
+        LEFT JOIN brokers  b  ON b.id  = a.broker_id
+        {where}
+        ORDER BY t.entry_time
+    """, params)
     rows = cur.fetchall()
     conn.close()
-    return [dict(zip(_TRADE_COLS, r)) for r in rows]
+    result = []
+    for r in rows:
+        d = dict(zip(_TRADE_COLS, r[:len(_TRADE_COLS)]))
+        d["account_label"]  = r[len(_TRADE_COLS)]
+        d["trader_name"]    = r[len(_TRADE_COLS) + 1]
+        d["trader_mobile"]  = r[len(_TRADE_COLS) + 2]
+        d["broker_name"]    = r[len(_TRADE_COLS) + 3]
+        result.append(d)
+    return result
 
 
 def get_today_closed_trades(ist_date) -> list[dict]:
@@ -330,6 +350,90 @@ def get_today_closed_trades(ist_date) -> list[dict]:
     rows = cur.fetchall()
     conn.close()
     return [dict(zip(_TRADE_COLS, r)) for r in rows]
+
+
+# -----------------------------------------------------------
+# Brokers / Traders / Accounts
+# -----------------------------------------------------------
+
+def get_brokers() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute("SELECT id, name FROM brokers ORDER BY name").fetchall()
+    conn.close()
+    return [{"id": r[0], "name": r[1]} for r in rows]
+
+
+def add_broker(name: str) -> int:
+    conn = get_connection()
+    cur = conn.execute("INSERT INTO brokers (name) VALUES (?)", (name.strip(),))
+    row_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return row_id
+
+
+def get_traders() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT id, name, mobile, note FROM traders ORDER BY name"
+    ).fetchall()
+    conn.close()
+    return [{"id": r[0], "name": r[1], "mobile": r[2], "note": r[3]} for r in rows]
+
+
+def add_trader(name: str, mobile: str = "", note: str = "") -> int:
+    conn = get_connection()
+    cur = conn.execute(
+        "INSERT INTO traders (name, mobile, note) VALUES (?, ?, ?)",
+        (name.strip(), mobile.strip() or None, note.strip() or None),
+    )
+    row_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return row_id
+
+
+def get_accounts() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT a.id, a.label, a.account_no, a.active,
+               t.id, t.name, t.mobile,
+               b.id, b.name
+        FROM accounts a
+        LEFT JOIN traders t ON t.id = a.trader_id
+        LEFT JOIN brokers b ON b.id = a.broker_id
+        ORDER BY t.name, b.name
+    """).fetchall()
+    conn.close()
+    return [
+        {
+            "id":         r[0],
+            "label":      r[1],
+            "account_no": r[2],
+            "active":     bool(r[3]),
+            "trader_id":  r[4],
+            "trader":     r[5],
+            "mobile":     r[6],
+            "broker_id":  r[7],
+            "broker":     r[8],
+        }
+        for r in rows
+    ]
+
+
+def add_account(
+    trader_id: int, broker_id: int,
+    account_no: str = "", label: str = "",
+) -> int:
+    conn = get_connection()
+    cur = conn.execute(
+        "INSERT INTO accounts (trader_id, broker_id, account_no, label) VALUES (?, ?, ?, ?)",
+        (trader_id, broker_id, account_no.strip() or None, label.strip() or None),
+    )
+    row_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return row_id
 
 
 def get_trade_chain(trade_id: int) -> list:

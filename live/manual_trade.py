@@ -46,7 +46,7 @@ from live.alert import send_alert, send_telegram, _h, _DIV
 IST = ZoneInfo("Asia/Kolkata")
 
 
-def add_manual_trade(symbol: str, legs: list[dict], note: str = "") -> int:
+def add_manual_trade(symbol: str, legs: list[dict], note: str = "", account_id: int | None = None) -> int:
     """
     Create a manual trade: resolve instrument keys, fetch spot + margin,
     write to DB, and send a Telegram alert.
@@ -136,6 +136,7 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "") -> int:
         exit_level      = 0,
         margin_required = margin_required,
         margin_final    = margin_final,
+        account_id      = account_id,
     )
 
     # --- 5. Insert legs ---

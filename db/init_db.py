@@ -173,6 +173,48 @@ def init_db():
     """)
     print("  ✓  Table ready: recommended_trades + trade_legs")
 
+    # -------------------------------------------------------
+    # brokers / traders / accounts
+    # -------------------------------------------------------
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS brokers (
+            id    INTEGER PRIMARY KEY AUTOINCREMENT,
+            name  TEXT    NOT NULL UNIQUE
+        )
+    """)
+    print("  ✓  Table ready: brokers")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS traders (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            name    TEXT    NOT NULL,
+            mobile  TEXT,
+            note    TEXT
+        )
+    """)
+    print("  ✓  Table ready: traders")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS accounts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            trader_id  INTEGER REFERENCES traders(id),
+            broker_id  INTEGER REFERENCES brokers(id),
+            account_no TEXT,
+            label      TEXT,
+            active     INTEGER NOT NULL DEFAULT 1
+        )
+    """)
+    print("  ✓  Table ready: accounts")
+
+    # Add account_id to recommended_trades for existing DBs
+    existing_cols = {row[1] for row in cur.execute(
+        "SELECT * FROM pragma_table_info('recommended_trades')"
+    )}
+    if "account_id" not in existing_cols:
+        cur.execute(
+            "ALTER TABLE recommended_trades ADD COLUMN account_id INTEGER REFERENCES accounts(id)"
+        )
+
     conn.commit()
     conn.close()
     print("\nDatabase initialised →", DB_PATH)

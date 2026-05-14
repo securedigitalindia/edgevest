@@ -162,6 +162,49 @@
   .toast.ok  { background: #166534; color: #fff; }
   .toast.err { background: var(--red); color: #fff; }
   .skeleton { background: #e2e8f0; border-radius: 4px; height: 12px; }
+
+  /* ── Account badge ── */
+  .badge-account { font-size: 11px; padding: 2px 8px; border-radius: 20px;
+                   background: #f1f5f9; color: var(--muted); border: 1px solid var(--border); }
+
+  /* ── Settings drawer ── */
+  .drawer-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35);
+                    z-index: 400; }
+  .drawer-overlay.open { display: block; }
+  .drawer { position: fixed; top: 0; right: -480px; width: 480px; height: 100vh;
+            background: #fff; box-shadow: -4px 0 24px rgba(0,0,0,.12);
+            z-index: 500; transition: right .25s ease; display: flex; flex-direction: column; }
+  .drawer.open { right: 0; }
+  .drawer-header { padding: 16px 20px; border-bottom: 1px solid var(--border);
+                   display: flex; align-items: center; gap: 12px; }
+  .drawer-header h2 { font-size: 14px; font-weight: 700; flex: 1; }
+  .drawer-close { background: none; border: none; font-size: 20px; cursor: pointer;
+                  color: var(--muted); line-height: 1; }
+  .drawer-body { flex: 1; overflow-y: auto; padding: 20px; }
+
+  .stabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border);
+           padding-bottom: 0; }
+  .stab { padding: 8px 14px; font-size: 13px; font-weight: 500; cursor: pointer;
+          border: none; background: none; color: var(--muted); border-bottom: 2px solid transparent;
+          margin-bottom: -1px; }
+  .stab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  .stab-panel { display: none; }
+  .stab-panel.active { display: block; }
+
+  .settings-list { margin-bottom: 16px; }
+  .settings-item { padding: 10px 0; border-bottom: 1px solid #f1f5f9;
+                   font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+  .settings-item:last-child { border-bottom: none; }
+  .settings-item .s-name { font-weight: 600; }
+  .settings-item .s-meta { font-size: 12px; color: var(--muted); }
+
+  .inline-form { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px;
+                 padding: 14px; margin-top: 4px; }
+  .inline-form h4 { font-size: 12px; font-weight: 700; text-transform: uppercase;
+                    letter-spacing: .5px; color: var(--muted); margin-bottom: 12px; }
+  .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .inline-form .btn { margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -172,7 +215,90 @@
     <span class="last-updated" id="last-updated"></span>
   </div>
   <div class="live-dot" title="Live prices polling"></div>
+  <button onclick="openDrawer()" title="Settings"
+          style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;margin-left:8px">⚙</button>
 </header>
+
+<!-- Settings drawer -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-header">
+    <h2>Settings</h2>
+    <button class="drawer-close" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body">
+    <div class="stabs">
+      <button class="stab active" onclick="showStab('brokers',this)">Brokers</button>
+      <button class="stab" onclick="showStab('traders',this)">Traders</button>
+      <button class="stab" onclick="showStab('accounts',this)">Accounts</button>
+    </div>
+
+    <!-- Brokers -->
+    <div class="stab-panel active" id="stab-brokers">
+      <div class="settings-list" id="brokers-list"><div class="empty">Loading…</div></div>
+      <div class="inline-form">
+        <h4>Add Broker</h4>
+        <div class="form-row">
+          <label>Broker Name</label>
+          <input id="new-broker-name" placeholder="e.g. Upstox, Zerodha">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="addBroker()">Add</button>
+      </div>
+    </div>
+
+    <!-- Traders -->
+    <div class="stab-panel" id="stab-traders">
+      <div class="settings-list" id="traders-list"><div class="empty">Loading…</div></div>
+      <div class="inline-form">
+        <h4>Add Trader / Client</h4>
+        <div class="form-row">
+          <label>Name</label>
+          <input id="new-trader-name" placeholder="Full name">
+        </div>
+        <div class="form-grid-2">
+          <div class="form-row">
+            <label>Mobile</label>
+            <input id="new-trader-mobile" placeholder="+91 98765 43210">
+          </div>
+          <div class="form-row">
+            <label>Note</label>
+            <input id="new-trader-note" placeholder="Optional">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="addTrader()">Add</button>
+      </div>
+    </div>
+
+    <!-- Accounts -->
+    <div class="stab-panel" id="stab-accounts">
+      <div class="settings-list" id="accounts-list"><div class="empty">Loading…</div></div>
+      <div class="inline-form">
+        <h4>Add Account</h4>
+        <div class="form-grid-2">
+          <div class="form-row">
+            <label>Trader</label>
+            <select id="new-acc-trader"><option value="">Select…</option></select>
+          </div>
+          <div class="form-row">
+            <label>Broker</label>
+            <select id="new-acc-broker"><option value="">Select…</option></select>
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-row">
+            <label>Account No.</label>
+            <input id="new-acc-no" placeholder="Broker account ID">
+          </div>
+          <div class="form-row">
+            <label>Label</label>
+            <input id="new-acc-label" placeholder="e.g. Raj · Upstox">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="addAccount()">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="layout">
 
@@ -181,6 +307,13 @@
     <div class="card">
       <div class="card-header"><h2>New Trade</h2></div>
       <div class="card-body">
+        <div class="form-row">
+          <label>Account</label>
+          <select id="create-account">
+            <option value="">— No account —</option>
+          </select>
+        </div>
+
         <div class="legs-list" id="legs-list"></div>
         <button class="add-leg-btn" onclick="addLeg()">+ Add Leg</button>
 
@@ -202,7 +335,13 @@
     <div class="card">
       <div class="card-header">
         <h2>Open Positions</h2>
-        <button class="btn btn-ghost btn-sm" onclick="loadTrades()">↻ Refresh</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="filter-account" style="width:auto;font-size:12px;padding:4px 8px"
+                  onchange="loadTrades()">
+            <option value="">All Accounts</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadTrades()">↻ Refresh</button>
+        </div>
       </div>
       <div class="card-body" style="padding:12px">
         <div id="trades-list"><div class="empty">Loading...</div></div>
@@ -374,13 +513,18 @@ async function createTrade() {
     legs.push(leg);
   }
 
+  const accountId = document.getElementById('create-account').value || null;
   const btn = document.getElementById('create-btn');
   btn.disabled = true; btn.textContent = 'Creating…';
 
   try {
     const res  = await fetch('/api/trades/create', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ symbol, legs, note: document.getElementById('create-note').value }),
+      body: JSON.stringify({
+        symbol, legs,
+        note: document.getElementById('create-note').value,
+        account_id: accountId ? parseInt(accountId) : null,
+      }),
     });
     const data = await res.json();
     if (data.ok) {
@@ -413,7 +557,9 @@ let _trades = [];
 async function loadTrades() {
   document.getElementById('trades-list').innerHTML = '<div class="empty">Loading…</div>';
   try {
-    const res  = await fetch('/api/trades');
+    const acct = document.getElementById('filter-account').value;
+    const url  = acct ? `/api/trades?account_id=${acct}` : '/api/trades';
+    const res  = await fetch(url);
     const data = await res.json();
     _trades = data.trades;
     renderTrades();
@@ -460,10 +606,15 @@ function renderTradeCard(t) {
     </div>`;
   }).join('');
 
+  const acctBadge = t.account_label
+    ? `<span class="badge-account">${t.account_label}</span>`
+    : (t.trader_name ? `<span class="badge-account">${t.trader_name}</span>` : '');
+
   return `<div class="trade-card" id="card-${t.id}">
     <div class="trade-card-header">
       <span class="trade-symbol">${t.symbol}</span>
       <span class="badge-open">Open</span>
+      ${acctBadge}
       <span class="trade-since">${t.entry_ist}</span>
     </div>
     <table class="legs-table">
@@ -619,10 +770,164 @@ function showToast(msg, type) {
 }
 
 // ─────────────────────────────────────────────────────────
+// Settings drawer
+// ─────────────────────────────────────────────────────────
+
+let _brokers = [], _traders = [], _accounts = [];
+
+function openDrawer() {
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawer-overlay').classList.add('open');
+  loadSettings();
+}
+function closeDrawer() {
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-overlay').classList.remove('open');
+}
+function showStab(name, el) {
+  document.querySelectorAll('.stab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.stab-panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(`stab-${name}`).classList.add('active');
+}
+
+async function loadSettings() {
+  const [b, t, a] = await Promise.all([
+    fetch('/api/brokers').then(r => r.json()),
+    fetch('/api/traders').then(r => r.json()),
+    fetch('/api/accounts').then(r => r.json()),
+  ]);
+  _brokers  = b.brokers  || [];
+  _traders  = t.traders  || [];
+  _accounts = a.accounts || [];
+
+  renderBrokersList();
+  renderTradersList();
+  renderAccountsList();
+  populateAccountSelects();
+}
+
+function renderBrokersList() {
+  const el = document.getElementById('brokers-list');
+  if (!_brokers.length) { el.innerHTML = '<div class="empty">No brokers yet.</div>'; return; }
+  el.innerHTML = _brokers.map(b =>
+    `<div class="settings-item"><span class="s-name">${b.name}</span></div>`
+  ).join('');
+}
+
+function renderTradersList() {
+  const el = document.getElementById('traders-list');
+  if (!_traders.length) { el.innerHTML = '<div class="empty">No traders yet.</div>'; return; }
+  el.innerHTML = _traders.map(t =>
+    `<div class="settings-item">
+      <span class="s-name">${t.name}</span>
+      <span class="s-meta">${[t.mobile, t.note].filter(Boolean).join('  ·  ')}</span>
+    </div>`
+  ).join('');
+}
+
+function renderAccountsList() {
+  const el = document.getElementById('accounts-list');
+  if (!_accounts.length) { el.innerHTML = '<div class="empty">No accounts yet.</div>'; return; }
+  el.innerHTML = _accounts.map(a =>
+    `<div class="settings-item">
+      <span class="s-name">${a.label || [a.trader, a.broker].filter(Boolean).join(' · ')}</span>
+      <span class="s-meta">${[a.trader, a.broker, a.account_no].filter(Boolean).join('  ·  ')}</span>
+    </div>`
+  ).join('');
+}
+
+function populateAccountSelects() {
+  const opts = _accounts.map(a =>
+    `<option value="${a.id}">${a.label || [a.trader, a.broker].filter(Boolean).join(' · ')}</option>`
+  ).join('');
+
+  // New trade form dropdown
+  const createSel = document.getElementById('create-account');
+  const prevVal   = createSel.value;
+  createSel.innerHTML = '<option value="">— No account —</option>' + opts;
+  if (prevVal) createSel.value = prevVal;
+
+  // Filter dropdown
+  const filterSel = document.getElementById('filter-account');
+  const prevFilt  = filterSel.value;
+  filterSel.innerHTML = '<option value="">All Accounts</option>' + opts;
+  if (prevFilt) filterSel.value = prevFilt;
+
+  // Account add form selects
+  document.getElementById('new-acc-trader').innerHTML =
+    '<option value="">Select…</option>' +
+    _traders.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  document.getElementById('new-acc-broker').innerHTML =
+    '<option value="">Select…</option>' +
+    _brokers.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+}
+
+async function addBroker() {
+  const name = document.getElementById('new-broker-name').value.trim();
+  if (!name) { showToast('Enter a broker name', 'err'); return; }
+  const res  = await fetch('/api/brokers', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    document.getElementById('new-broker-name').value = '';
+    showToast('Broker added', 'ok');
+    loadSettings();
+  } else {
+    showToast(data.error || 'Failed', 'err');
+  }
+}
+
+async function addTrader() {
+  const name   = document.getElementById('new-trader-name').value.trim();
+  const mobile = document.getElementById('new-trader-mobile').value.trim();
+  const note   = document.getElementById('new-trader-note').value.trim();
+  if (!name) { showToast('Enter a trader name', 'err'); return; }
+  const res  = await fetch('/api/traders', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ name, mobile, note }),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    document.getElementById('new-trader-name').value   = '';
+    document.getElementById('new-trader-mobile').value = '';
+    document.getElementById('new-trader-note').value   = '';
+    showToast('Trader added', 'ok');
+    loadSettings();
+  } else {
+    showToast(data.error || 'Failed', 'err');
+  }
+}
+
+async function addAccount() {
+  const trader_id  = document.getElementById('new-acc-trader').value;
+  const broker_id  = document.getElementById('new-acc-broker').value;
+  const account_no = document.getElementById('new-acc-no').value.trim();
+  const label      = document.getElementById('new-acc-label').value.trim();
+  if (!trader_id || !broker_id) { showToast('Select trader and broker', 'err'); return; }
+  const res  = await fetch('/api/accounts', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ trader_id: parseInt(trader_id), broker_id: parseInt(broker_id), account_no, label }),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    document.getElementById('new-acc-no').value    = '';
+    document.getElementById('new-acc-label').value = '';
+    showToast('Account added', 'ok');
+    loadSettings();
+  } else {
+    showToast(data.error || 'Failed', 'err');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
 // Init & polling
 // ─────────────────────────────────────────────────────────
 
 addLeg();
+loadSettings();
 loadTrades().then(() => { updatePrices(); updateSpot(); });
 
 // Poll every 5 s
