@@ -178,6 +178,20 @@
   .exit-form-footer { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
   .exit-form-footer .note-wrap { flex: 1; }
 
+  /* ── Right-panel tabs (Open / History) ── */
+  .pos-tabs { display: flex; gap: 2px; }
+  .pos-tab { padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+             border: none; background: none; color: var(--muted);
+             border-bottom: 2px solid transparent; }
+  .pos-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  /* ── My Accounts card (client) ── */
+  .acct-row { display: flex; align-items: center; gap: 8px; padding: 7px 0;
+              border-bottom: 1px solid #f1f5f9; }
+  .acct-row:last-child { border-bottom: none; }
+  .acct-name { font-weight: 600; font-size: 13px; flex: 1; }
+  .acct-meta { font-size: 11px; color: var(--muted); }
+
   /* ── Settings drawer ── */
   .drawer-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 400; }
   .drawer-overlay.open { display: block; }
@@ -239,19 +253,36 @@
     </span>
     <a href="/logout" style="font-size:11px;color:#64748b;text-decoration:none">Logout</a>
   </div>
-  {% if user.role in ('super_admin', 'admin') %}
   <button class="hdr-btn" onclick="openDrawer()" title="Settings">⚙</button>
-  {% endif %}
 </header>
 
 <!-- Settings drawer -->
 <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
   <div class="drawer-header">
-    <h2>Settings</h2>
+    <h2>{% if user.role == 'client' %}My Accounts{% else %}Settings{% endif %}</h2>
     <button class="drawer-close" onclick="closeDrawer()">✕</button>
   </div>
   <div class="drawer-body">
+
+    {% if user.role == 'client' %}
+    <!-- Client: brokerage accounts only -->
+    <div class="settings-list" id="my-accounts-list"><div class="empty">Loading…</div></div>
+    <div class="inline-form" style="margin-top:12px">
+      <h4>Add Account</h4>
+      <div class="form-grid-2">
+        <div class="form-row"><label>Broker</label>
+          <select id="client-acc-broker"><option value="">Select…</option></select></div>
+        <div class="form-row"><label>Account No.</label>
+          <input id="client-acc-no" placeholder="Broker account ID"></div>
+      </div>
+      <div class="form-row"><label>Label (optional)</label>
+        <input id="client-acc-label" placeholder="e.g. Zerodha Main"></div>
+      <button class="btn btn-primary btn-sm" onclick="addClientAccount()">Add Account</button>
+    </div>
+
+    {% else %}
+    <!-- Admin / Super Admin: tabbed settings -->
     <div class="stabs">
       <button class="stab active" onclick="showStab('brokers',this)">Brokers</button>
       <button class="stab" onclick="showStab('traders',this)">Traders</button>
@@ -312,6 +343,8 @@
       <div class="settings-list" id="users-list"><div class="empty">Loading…</div></div>
     </div>
     {% endif %}
+    {% endif %}
+
   </div>
 </div>
 
@@ -319,6 +352,20 @@
 
   <!-- LEFT: Recommendations -->
   <div>
+    {% if user.role == 'client' %}
+    <!-- Setup banner: shown once until client adds their first account -->
+    <div id="setup-banner" class="card" style="display:none">
+      <div class="card-body" style="text-align:center;padding:28px 20px">
+        <div style="font-size:28px;margin-bottom:10px">🏦</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:6px">Set up your accounts</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:18px">
+          Add your brokerage accounts to start pushing trades from recommendations.
+        </div>
+        <button class="btn btn-primary" onclick="openDrawer()">Open Account Settings →</button>
+      </div>
+    </div>
+    {% endif %}
+
     {% if user.role in ('super_admin', 'admin') %}
     <!-- New recommendation form -->
     <div class="card">
@@ -343,8 +390,12 @@
     <!-- Recommendations list -->
     <div class="card">
       <div class="card-header">
-        <h2>Recommendations</h2>
-        <button class="btn btn-ghost btn-sm" onclick="loadRecs()">↻</button>
+        <div class="pos-tabs">
+          <button class="pos-tab active" id="rec-tab-open"   onclick="switchRecTab('open')">Open</button>
+          <button class="pos-tab"        id="rec-tab-exited" onclick="switchRecTab('exited')">Exited</button>
+          <button class="pos-tab"        id="rec-tab-all"    onclick="switchRecTab('all')">All</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="loadRecs()">↻</button>
       </div>
       <div class="card-body" style="padding:10px">
         <div id="recs-list"><div class="empty">Loading…</div></div>
@@ -352,19 +403,23 @@
     </div>
   </div>
 
-  <!-- RIGHT: Account Positions -->
+  <!-- RIGHT: Account Positions + History -->
   <div>
     <div class="card">
       <div class="card-header">
-        <h2>Account Positions</h2>
-        <select id="filter-account" style="width:auto;font-size:12px;padding:4px 8px"
-                onchange="loadAccountTrades()">
+        <div class="pos-tabs">
+          <button class="pos-tab active" id="tab-open" onclick="switchPosTab('open')">Open Positions</button>
+          <button class="pos-tab" id="tab-history" onclick="switchPosTab('history')">Trade History</button>
+        </div>
+        <select id="filter-account" style="width:auto;font-size:12px;padding:4px 8px;margin-left:auto"
+                onchange="loadCurrentTab()">
           <option value="">All Accounts</option>
         </select>
-        <button class="btn btn-ghost btn-sm" onclick="loadAccountTrades()">↻</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadCurrentTab()">↻</button>
       </div>
       <div class="card-body" style="padding:10px">
         <div id="trades-list"><div class="empty">Loading…</div></div>
+        <div id="history-list" style="display:none"><div class="empty">Loading…</div></div>
       </div>
     </div>
   </div>
@@ -554,7 +609,15 @@ function resetCreateForm() {
 // Recommendations list
 // ─────────────────────────────────────────────────────────
 
-let _recs = [];
+let _recs = [], _recTab = 'open';
+
+function switchRecTab(tab) {
+  _recTab = tab;
+  ['open','exited','all'].forEach(t => {
+    document.getElementById(`rec-tab-${t}`).classList.toggle('active', t === tab);
+  });
+  renderRecs();
+}
 
 async function loadRecs() {
   try {
@@ -569,8 +632,16 @@ async function loadRecs() {
 
 function renderRecs() {
   const el = document.getElementById('recs-list');
-  if (!_recs.length) { el.innerHTML = '<div class="empty">No recommendations yet.</div>'; return; }
-  el.innerHTML = _recs.map(renderRecItem).join('');
+  const filtered = _recTab === 'all' ? _recs
+    : _recs.filter(r => {
+        if (_recTab === 'exited') return r.status !== 'open';
+        return r.status === 'open';
+      });
+  if (!filtered.length) {
+    el.innerHTML = `<div class="empty">No ${_recTab === 'all' ? '' : _recTab + ' '}recommendations.</div>`;
+    return;
+  }
+  el.innerHTML = filtered.map(renderRecItem).join('');
 }
 
 function renderRecItem(r) {
@@ -826,6 +897,146 @@ async function submitExit(id, legCount) {
 }
 
 // ─────────────────────────────────────────────────────────
+// Right-panel tab switching
+// ─────────────────────────────────────────────────────────
+
+let _posTab = 'open';
+
+function switchPosTab(tab) {
+  _posTab = tab;
+  document.getElementById('tab-open').classList.toggle('active', tab === 'open');
+  document.getElementById('tab-history').classList.toggle('active', tab === 'history');
+  document.getElementById('trades-list').style.display = tab === 'open' ? '' : 'none';
+  document.getElementById('history-list').style.display = tab === 'history' ? '' : 'none';
+  if (tab === 'open') loadAccountTrades();
+  else loadHistory();
+}
+
+function loadCurrentTab() {
+  if (_posTab === 'open') loadAccountTrades();
+  else loadHistory();
+}
+
+// ─────────────────────────────────────────────────────────
+// Trade History
+// ─────────────────────────────────────────────────────────
+
+let _history = [];
+
+async function loadHistory() {
+  document.getElementById('history-list').innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const acct = document.getElementById('filter-account').value;
+    const url  = acct ? `/api/account-trades/history?account_id=${acct}` : '/api/account-trades/history';
+    const res  = await fetch(url);
+    const data = await res.json();
+    _history = data.trades;
+    renderHistory();
+  } catch(e) {
+    document.getElementById('history-list').innerHTML = '<div class="empty">Failed to load.</div>';
+  }
+}
+
+function renderHistory() {
+  const el = document.getElementById('history-list');
+  if (!_history.length) { el.innerHTML = '<div class="empty">No closed trades.</div>'; return; }
+  el.innerHTML = _history.map(renderHistoryCard).join('');
+}
+
+function renderHistoryCard(t) {
+  const pnl    = t.realized_pnl || 0;
+  const pnlCls = pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : 'pnl-neu';
+  const legRows = t.entry_legs.map((e, i) => {
+    const x      = t.exit_legs[i] || {};
+    const sc     = e.side === 'BUY' ? 'side-buy' : 'side-sell';
+    const strike = e.strike ? `${Number(e.strike).toLocaleString('en-IN')} ` : '';
+    const ep     = e.price != null ? fmtRs(e.price) : '—';
+    const xp     = x.price != null ? fmtRs(x.price) : '—';
+    let legPnl   = '—';
+    if (e.price != null && x.price != null) {
+      const qty = e.lots * (e.lot_size || 1);
+      const lp  = e.side === 'SELL' ? (e.price - x.price)*qty : (x.price - e.price)*qty;
+      legPnl = `<span class="${lp >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtPnl(lp)}</span>`;
+    }
+    return `<tr>
+      <td class="${sc}">${e.side}</td>
+      <td>${strike}${e.instrument_type}</td>
+      <td>${e.lots}L</td>
+      <td>${ep}</td>
+      <td>${xp}</td>
+      <td>${legPnl}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="trade-card" id="hcard-${t.id}">
+    <div class="trade-card-header">
+      <span class="trade-symbol">${t.symbol}</span>
+      <span style="font-size:11px;padding:2px 8px;border-radius:20px;
+                   background:#f1f5f9;color:var(--muted);font-weight:600">Closed</span>
+      <span class="badge-account">${t.account_label}</span>
+      <span class="trade-since" style="display:flex;flex-direction:column;align-items:flex-end;gap:1px">
+        <span>In: ${t.entry_ist}</span>
+        <span>Out: ${t.exit_ist}</span>
+      </span>
+    </div>
+    <table class="legs-table">
+      <thead><tr>
+        <th>Side</th><th>Instrument</th><th>Lots</th>
+        <th>Entry</th><th>Exit</th><th>P&amp;L</th>
+      </tr></thead>
+      <tbody>${legRows}</tbody>
+    </table>
+    <div class="net-pnl-bar">
+      <span class="net-pnl-label">Realized P&amp;L</span>
+      <span class="net-pnl-value ${pnlCls}">${fmtPnl(pnl)}</span>
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────────
+// My Accounts (client)
+// ─────────────────────────────────────────────────────────
+
+function loadMyAccounts() {
+  const el = document.getElementById('my-accounts-list');
+  if (!el) return;
+  if (!_accounts.length) {
+    el.innerHTML = '<div class="empty">No accounts yet. Add one below.</div>';
+    return;
+  }
+  el.innerHTML = _accounts.map(a => {
+    const name = a.label || [a.broker, a.account_no].filter(Boolean).join(' · ');
+    const meta = [a.broker, a.account_no].filter(Boolean).join('  ·  ');
+    return `<div class="acct-row">
+      <div style="flex:1">
+        <div class="acct-name">${name}</div>
+        ${meta ? `<div class="acct-meta">${meta}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function addClientAccount() {
+  const broker_id  = document.getElementById('client-acc-broker').value;
+  const account_no = document.getElementById('client-acc-no').value.trim();
+  const label      = document.getElementById('client-acc-label').value.trim();
+  if (!broker_id) { showToast('Select a broker', 'err'); return; }
+  const res = await fetch('/api/accounts', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ broker_id: parseInt(broker_id), account_no, label }),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    ['client-acc-no','client-acc-label'].forEach(id => document.getElementById(id).value = '');
+    showToast('Account added ✓', 'ok');
+    await loadSettings();
+    loadMyAccounts();
+  } else {
+    showToast(data.error || 'Failed', 'err');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
 // Live prices
 // ─────────────────────────────────────────────────────────
 
@@ -908,36 +1119,52 @@ function showStab(name, el) {
 }
 
 async function loadSettings() {
-  const requests = [
-    fetch('/api/brokers').then(r => r.json()),
-    fetch('/api/traders').then(r => r.json()),
-    fetch('/api/accounts').then(r => r.json()),
-  ];
-  if (_role === 'super_admin') requests.push(fetch('/api/users').then(r => r.json()));
-
-  const results = await Promise.all(requests);
-  _brokers  = results[0].brokers  || [];
-  _traders  = results[1].traders  || [];
-  _accounts = results[2].accounts || [];
-  renderBrokersList(); renderTradersList(); renderAccountsList();
-  populateAccountSelects();
-  if (_role === 'super_admin') renderUsersList(results[3].users || []);
+  if (_isAdmin) {
+    const requests = [
+      fetch('/api/brokers').then(r => r.json()),
+      fetch('/api/traders').then(r => r.json()),
+      fetch('/api/accounts').then(r => r.json()),
+    ];
+    if (_role === 'super_admin') requests.push(fetch('/api/users').then(r => r.json()));
+    const results = await Promise.all(requests);
+    _brokers  = results[0].brokers  || [];
+    _traders  = results[1].traders  || [];
+    _accounts = results[2].accounts || [];
+    renderBrokersList(); renderTradersList(); renderAccountsList();
+    populateAccountSelects();
+    if (_role === 'super_admin') renderUsersList(results[3].users || []);
+  } else {
+    // Clients only need brokers (for add-account form) and their own accounts
+    const [bRes, aRes] = await Promise.all([
+      fetch('/api/brokers').then(r => r.json()),
+      fetch('/api/accounts').then(r => r.json()),
+    ]);
+    _brokers  = bRes.brokers  || [];
+    _accounts = aRes.accounts || [];
+    populateAccountSelects();
+    loadMyAccounts();
+    updateSetupBanner();
+  }
 }
 
 function renderUsersList(users) {
   const el = document.getElementById('users-list');
   if (!el) return;
   if (!users.length) { el.innerHTML = '<div class="empty">No users yet.</div>'; return; }
-  const roleOpts = ['super_admin','admin','client'].map(r =>
-    `<option value="${r}">${r.replace('_',' ')}</option>`).join('');
-  const traderOpts = '<option value="">— none —</option>' +
-    _traders.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-  el.innerHTML = users.map(u => `
-    <div class="settings-item">
+  el.innerHTML = users.map(u => {
+    const traderOpts = '<option value="">— none —</option>' +
+      _traders.map(t => {
+        const sel     = u.trader_id === t.id ? ' selected' : '';
+        const autoTag = t.name === u.name ? ' (auto)' : '';
+        return `<option value="${t.id}"${sel}>${t.name}${autoTag}</option>`;
+      }).join('');
+    const noLink = u.trader_id == null;
+    return `<div class="settings-item">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         ${u.picture ? `<img src="${u.picture}" style="width:24px;height:24px;border-radius:50%">` : ''}
         <span class="s-name">${u.name}</span>
         <span style="font-size:11px;color:var(--muted)">${u.email}</span>
+        ${noLink ? '<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:10px;font-weight:600">no trader</span>' : ''}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div>
@@ -949,13 +1176,12 @@ function renderUsersList(users) {
           </select>
         </div>
         <div>
-          <label>Linked Trader</label>
-          <select onchange="setUserTrader(${u.id},this.value)">
-            ${traderOpts.replace(`value="${u.trader_id}"`, `value="${u.trader_id}" selected`)}
-          </select>
+          <label>Brokerage Account Holder</label>
+          <select onchange="setUserTrader(${u.id},this.value)">${traderOpts}</select>
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function setUserRole(uid, role) {
@@ -987,11 +1213,51 @@ function renderBrokersList() {
 function renderTradersList() {
   const el = document.getElementById('traders-list');
   el.innerHTML = _traders.length
-    ? _traders.map(t => `<div class="settings-item">
-        <span class="s-name">${t.name}</span>
-        <div class="s-meta">${[t.mobile, t.note].filter(Boolean).join('  ·  ')}</div>
-      </div>`).join('')
+    ? _traders.map(t => {
+        const meta = [t.mobile, t.note, t.user_email ? `(${t.user_email})` : ''].filter(Boolean).join('  ·  ');
+        const mob  = (t.mobile || '').replace(/'/g, "\\'");
+        const nt   = (t.note   || '').replace(/'/g, "\\'");
+        return `<div class="settings-item">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="flex:1">
+              <span class="s-name">${t.name}</span>
+              ${meta ? `<div class="s-meta">${meta}</div>` : '<div class="s-meta" style="color:#f59e0b;font-size:11px">no mobile/note</div>'}
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="toggleTraderEdit(${t.id})">Edit</button>
+          </div>
+          <div id="tedit-${t.id}" style="display:none;margin-top:10px">
+            <div class="form-grid-2">
+              <div class="form-row"><label>Mobile</label>
+                <input id="tmob-${t.id}" value="${mob}" placeholder="+91 …"></div>
+              <div class="form-row"><label>Note</label>
+                <input id="tnote-${t.id}" value="${nt}" placeholder="Optional"></div>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn btn-primary btn-sm" onclick="saveTrader(${t.id})">Save</button>
+              <button class="btn btn-ghost btn-sm" onclick="toggleTraderEdit(${t.id})">Cancel</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('')
     : '<div class="empty">No traders yet.</div>';
+}
+
+function toggleTraderEdit(id) {
+  const el = document.getElementById(`tedit-${id}`);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function saveTrader(id) {
+  const mobile = document.getElementById(`tmob-${id}`).value.trim();
+  const note   = document.getElementById(`tnote-${id}`).value.trim();
+  const res  = await fetch(`/api/traders/${id}`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ mobile, note }),
+  });
+  const data = await res.json();
+  if (data.ok) { showToast('Trader updated ✓', 'ok'); loadSettings(); }
+  else showToast(data.error || 'Failed', 'err');
 }
 function renderAccountsList() {
   const el = document.getElementById('accounts-list');
@@ -1007,14 +1273,26 @@ function populateAccountSelects() {
   const opts = _accounts.map(a =>
     `<option value="${a.id}">${a.label || [a.trader, a.broker].filter(Boolean).join(' · ')}</option>`
   ).join('');
-  const filterSel  = document.getElementById('filter-account');
-  const prevFilt   = filterSel.value;
+  const filterSel = document.getElementById('filter-account');
+  const prevFilt  = filterSel.value;
   filterSel.innerHTML = '<option value="">All Accounts</option>' + opts;
   if (prevFilt) filterSel.value = prevFilt;
-  document.getElementById('new-acc-trader').innerHTML =
-    '<option value="">Select…</option>' + _traders.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-  document.getElementById('new-acc-broker').innerHTML =
-    '<option value="">Select…</option>' + _brokers.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+
+  const brokerOpts = '<option value="">Select…</option>' +
+    _brokers.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+
+  // Admin selects inside settings drawer
+  const newAccTrader = document.getElementById('new-acc-trader');
+  if (newAccTrader) {
+    newAccTrader.innerHTML =
+      '<option value="">Select…</option>' + _traders.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  }
+  const newAccBroker = document.getElementById('new-acc-broker');
+  if (newAccBroker) newAccBroker.innerHTML = brokerOpts;
+
+  // Client broker select in My Accounts card
+  const clientBroker = document.getElementById('client-acc-broker');
+  if (clientBroker) clientBroker.innerHTML = brokerOpts;
 }
 
 async function addBroker() {
@@ -1062,6 +1340,12 @@ async function addAccount() {
   } else showToast(data.error || 'Failed', 'err');
 }
 
+function updateSetupBanner() {
+  const el = document.getElementById('setup-banner');
+  if (!el) return;
+  el.style.display = _accounts.length === 0 ? '' : 'none';
+}
+
 // ─────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────
@@ -1087,7 +1371,7 @@ function showToast(msg, type) {
 // Init
 // ─────────────────────────────────────────────────────────
 
-addLeg('legs-list', 'c');
+if (document.getElementById('legs-list')) addLeg('legs-list', 'c');
 loadSettings();
 loadRecs();
 loadAccountTrades().then(() => { updatePrices(); updateSpot(); });

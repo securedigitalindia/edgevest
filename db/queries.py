@@ -4,6 +4,7 @@
 #  No raw SQL anywhere else in the codebase.
 # ============================================================
 
+import itertools
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -388,7 +389,7 @@ def upsert_user(google_id: str, email: str, name: str, picture: str) -> dict:
     conn = get_connection()
 
     existing = conn.execute(
-        "SELECT id,role FROM users WHERE google_id=?", (google_id,)
+        "SELECT id, role, trader_id FROM users WHERE google_id=?", (google_id,)
     ).fetchone()
 
     if existing:
@@ -396,13 +397,29 @@ def upsert_user(google_id: str, email: str, name: str, picture: str) -> dict:
             "UPDATE users SET name=?,picture=? WHERE google_id=?",
             (name, picture, google_id)
         )
+        # If this user has no trader linked yet, auto-link or auto-create
+        if existing[2] is None:
+            found = conn.execute(
+                "SELECT id FROM traders WHERE name=? LIMIT 1", (name,)
+            ).fetchone()
+            tid = found[0] if found else conn.execute(
+                "INSERT INTO traders (name) VALUES (?)", (name,)
+            ).lastrowid
+            conn.execute(
+                "UPDATE users SET trader_id=? WHERE google_id=?", (tid, google_id)
+            )
         conn.commit()
     else:
         count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         role  = "super_admin" if count == 0 else "client"
+        # Auto-create a trader record so the user can add accounts immediately
+        trader_cur = conn.execute(
+            "INSERT INTO traders (name) VALUES (?)", (name,)
+        )
+        trader_id = trader_cur.lastrowid
         conn.execute(
-            "INSERT INTO users (google_id,email,name,picture,role,created_at) VALUES (?,?,?,?,?,?)",
-            (google_id, email, name, picture, role, now)
+            "INSERT INTO users (google_id,email,name,picture,role,trader_id,created_at) VALUES (?,?,?,?,?,?,?)",
+            (google_id, email, name, picture, role, trader_id, now)
         )
         conn.commit()
 
@@ -489,11 +506,26 @@ def add_broker(name: str) -> int:
 
 def get_traders() -> list[dict]:
     conn = get_connection()
-    rows = conn.execute(
-        "SELECT id, name, mobile, note FROM traders ORDER BY name"
-    ).fetchall()
+    rows = conn.execute("""
+        SELECT t.id, t.name, t.mobile, t.note, u.email
+        FROM traders t
+        LEFT JOIN users u ON u.trader_id = t.id
+        ORDER BY t.name
+    """).fetchall()
     conn.close()
-    return [{"id": r[0], "name": r[1], "mobile": r[2], "note": r[3]} for r in rows]
+    return [{"id": r[0], "name": r[1], "mobile": r[2], "note": r[3], "user_email": r[4]} for r in rows]
+
+
+def update_trader(trader_id: int, mobile: str = "", note: str = "") -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE traders SET mobile=?, note=? WHERE id=?",
+            (mobile.strip() or None, note.strip() or None, trader_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def add_trader(name: str, mobile: str = "", note: str = "") -> int:
@@ -541,6 +573,13 @@ def add_account(
     account_no: str = "", label: str = "",
 ) -> int:
     conn = get_connection()
+    exists = conn.execute(
+        "SELECT id FROM accounts WHERE trader_id=? AND broker_id=?",
+        (trader_id, broker_id),
+    ).fetchone()
+    if exists:
+        conn.close()
+        raise ValueError("An account for this trader with this broker already exists.")
     cur = conn.execute(
         "INSERT INTO accounts (trader_id, broker_id, account_no, label) VALUES (?, ?, ?, ?)",
         (trader_id, broker_id, account_no.strip() or None, label.strip() or None),
@@ -636,6 +675,68 @@ def get_open_account_trades(account_id: int | None = None) -> list[dict]:
         d["trigger_name"]   = r[n + 6]
         result.append(d)
     return result
+
+
+def get_closed_account_trades(account_id: int | None = None, trader_id: int | None = None) -> list[dict]:
+    """Exited account_trades with entry+exit legs for P&L. Filter by account or trader."""
+    conn = get_connection()
+    where = "WHERE at.status = 'exited'"
+    params: list = []
+    if account_id is not None:
+        where += " AND at.account_id = ?"
+        params.append(account_id)
+    elif trader_id is not None:
+        where += " AND a.trader_id = ?"
+        params.append(trader_id)
+    rows = conn.execute(f"""
+        SELECT {', '.join('at.' + c for c in _ACCT_TRADE_COLS)},
+               a.label, a.account_no,
+               tr.name, tr.mobile,
+               b.name,
+               rt.symbol, rt.trigger_name
+        FROM account_trades at
+        LEFT JOIN accounts  a  ON a.id  = at.account_id
+        LEFT JOIN traders   tr ON tr.id = a.trader_id
+        LEFT JOIN brokers   b  ON b.id  = a.broker_id
+        LEFT JOIN recommended_trades rt ON rt.id = at.recommended_trade_id
+        {where}
+        ORDER BY at.exit_time DESC
+    """, params).fetchall()
+
+    n = len(_ACCT_TRADE_COLS)
+    trades = []
+    for r in rows:
+        d = dict(zip(_ACCT_TRADE_COLS, r[:n]))
+        d["account_label"] = r[n]
+        d["account_no"]    = r[n + 1]
+        d["trader_name"]   = r[n + 2]
+        d["trader_mobile"] = r[n + 3]
+        d["broker_name"]   = r[n + 4]
+        d["symbol"]        = r[n + 5]
+        d["trigger_name"]  = r[n + 6]
+
+        # Fetch legs for this trade
+        leg_rows = conn.execute(
+            f"SELECT {', '.join(_ACCT_LEG_COLS)} FROM account_trade_legs"
+            f" WHERE account_trade_id = ? ORDER BY id",
+            (d["id"],)
+        ).fetchall()
+        legs = [dict(zip(_ACCT_LEG_COLS, lr)) for lr in leg_rows]
+        d["entry_legs"] = [l for l in legs if l["action"] == "entry"]
+        d["exit_legs"]  = [l for l in legs if l["action"] == "exit"]
+
+        # Compute realized P&L
+        pnl = 0.0
+        for e, x in itertools.zip_longest(d["entry_legs"], d["exit_legs"], fillvalue={}):
+            if e["price"] is not None and x["price"] is not None:
+                qty  = e["lots"] * (e["lot_size"] or 1)
+                pnl += (e["price"] - x["price"]) * qty if e["side"] == "SELL" \
+                       else (x["price"] - e["price"]) * qty
+        d["realized_pnl"] = pnl
+        trades.append(d)
+
+    conn.close()
+    return trades
 
 
 def mark_account_trade_closed(

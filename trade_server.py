@@ -86,6 +86,26 @@ def _ist_str(utc_str: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────
+# Session refresh — keeps role/trader_id always current
+# ─────────────────────────────────────────────────────────
+
+_NO_REFRESH = {"login", "auth_google", "auth_callback", "logout", "static",
+               "api_prices", "api_spot"}
+
+@app.before_request
+def refresh_session():
+    user = session.get("user")
+    if not user or request.endpoint in _NO_REFRESH:
+        return
+    from db.queries import get_user_by_google_id
+    fresh = get_user_by_google_id(user["google_id"])
+    if fresh:
+        session["user"] = fresh
+    else:
+        session.clear()
+
+
+# ─────────────────────────────────────────────────────────
 # Auth routes
 # ─────────────────────────────────────────────────────────
 
@@ -227,11 +247,25 @@ def api_traders():
         note   = data.get("note", "")
         if not name:
             return jsonify(ok=False, error="name is required"), 400
-        tid = add_trader(name, mobile, note)
+        try:
+            tid = add_trader(name, mobile, note)
+        except Exception as e:
+            return jsonify(ok=False, error=str(e)), 400
         return jsonify(ok=True, id=tid)
     if not is_admin():
         return jsonify(ok=False, error="Forbidden"), 403
     return jsonify(traders=get_traders())
+
+
+@app.route("/api/traders/<int:tid>", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_trader_update(tid):
+    data   = request.json or {}
+    mobile = data.get("mobile", "")
+    note   = data.get("note", "")
+    from db.queries import update_trader
+    update_trader(tid, mobile, note)
+    return jsonify(ok=True)
 
 
 @app.route("/api/accounts", methods=["GET", "POST"])
@@ -240,17 +274,24 @@ def api_accounts():
     from db.queries import get_accounts, get_accounts_for_trader, add_account
     user = current_user()
     if request.method == "POST":
-        if not is_admin():
-            return jsonify(ok=False, error="Forbidden"), 403
         data       = request.json or {}
         trader_id  = data.get("trader_id")
         broker_id  = data.get("broker_id")
         account_no = data.get("account_no", "")
         label      = data.get("label", "")
+        if user["role"] == "client":
+            if not user.get("trader_id"):
+                return jsonify(ok=False, error="No trader linked to your account"), 403
+            trader_id = user["trader_id"]
+        elif not is_admin():
+            return jsonify(ok=False, error="Forbidden"), 403
         if not trader_id or not broker_id:
             return jsonify(ok=False, error="trader_id and broker_id are required"), 400
-        aid = add_account(trader_id, broker_id, account_no, label)
-        return jsonify(ok=True, id=aid)
+        try:
+            aid = add_account(trader_id, broker_id, account_no, label)
+            return jsonify(ok=True, id=aid)
+        except ValueError as e:
+            return jsonify(ok=False, error=str(e)), 400
     # Clients only see their own accounts
     if user["role"] == "client":
         if not user.get("trader_id"):
@@ -403,6 +444,40 @@ def api_account_trade_exit(at_id):
         return jsonify(ok=False, error=str(e)), 400
 
 
+@app.route("/api/account-trades/history")
+@require_login
+def api_account_trades_history():
+    from db.queries import get_closed_account_trades
+    user       = current_user()
+    account_id = request.args.get("account_id", type=int)
+
+    if user["role"] == "client":
+        if not user.get("trader_id"):
+            return jsonify(trades=[])
+        trades = get_closed_account_trades(trader_id=user["trader_id"])
+    else:
+        trades = get_closed_account_trades(account_id=account_id)
+
+    out = []
+    for t in trades:
+        out.append({
+            "id":            t["id"],
+            "symbol":        t["symbol"] or "—",
+            "trigger":       t["trigger_name"],
+            "rec_id":        t["recommended_trade_id"],
+            "account_id":    t["account_id"],
+            "account_label": t["account_label"] or f"Account {t['account_id']}",
+            "trader_name":   t["trader_name"],
+            "broker_name":   t["broker_name"],
+            "entry_ist":     _ist_str(t["entry_time"]),
+            "exit_ist":      _ist_str(t["exit_time"]) if t.get("exit_time") else "—",
+            "entry_legs":    t["entry_legs"],
+            "exit_legs":     t["exit_legs"],
+            "realized_pnl":  t["realized_pnl"],
+        })
+    return jsonify(trades=out)
+
+
 # ─────────────────────────────────────────────────────────
 # API: prices / spot
 # ─────────────────────────────────────────────────────────
@@ -469,4 +544,4 @@ if __name__ == "__main__":
     _preload()
 
     threading.Timer(1.2, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
-    app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False)
+    app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False, threaded=True)

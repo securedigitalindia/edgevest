@@ -204,6 +204,10 @@ def init_db():
             active     INTEGER NOT NULL DEFAULT 1
         )
     """)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_trader_broker
+        ON accounts (trader_id, broker_id)
+    """)
     print("  ✓  Table ready: accounts")
 
     # -------------------------------------------------------
