@@ -132,9 +132,10 @@ def auth_callback():
     if not user["active"]:
         return redirect(url_for("index", error="deactivated"))
     session["user"] = user
-    profile = get_user_trading_profile(user["id"])
-    if not profile or not profile.get("setup_done"):
-        return redirect(url_for("profile_setup"))
+    if user["role"] == "client":
+        profile = get_user_trading_profile(user["id"])
+        if not profile or not profile.get("setup_done"):
+            return redirect(url_for("profile_setup"))
     return redirect(url_for("app_index"))
 
 @app.route("/logout")

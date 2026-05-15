@@ -299,10 +299,12 @@
   </div>
   <div class="live-dot" title="Live prices"></div>
   <div style="display:flex;align-items:center;gap:10px;margin-left:8px">
-    {% if user.picture %}
-    <img src="{{ user.picture }}" style="width:28px;height:28px;border-radius:50%;border:2px solid #334155">
-    {% endif %}
-    <span style="font-size:12px;color:#94a3b8">{{ user.name }}</span>
+    <a href="/profile" style="display:flex;align-items:center;gap:7px;text-decoration:none">
+      {% if user.picture %}
+      <img src="{{ user.picture }}" style="width:28px;height:28px;border-radius:50%;border:2px solid #334155">
+      {% endif %}
+      <span style="font-size:12px;color:#94a3b8">{{ user.name }}</span>
+    </a>
     <span style="font-size:10px;padding:2px 7px;border-radius:20px;font-weight:700;
       background:{% if user.role == 'super_admin' %}#7c3aed{% elif user.role == 'admin' %}#1d4ed8{% else %}#064e3b{% endif %};
       color:#fff">
