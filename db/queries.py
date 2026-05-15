@@ -495,6 +495,53 @@ def update_user_profile(user_id: int, mobile: str = "", note: str = "") -> None:
 
 
 # -----------------------------------------------------------
+# User trading profiles (onboarding wizard)
+# -----------------------------------------------------------
+
+def get_user_trading_profile(user_id: int) -> dict | None:
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT user_id, segment, risk_type, trader_type, focus, setup_done, updated_at"
+            " FROM user_profiles WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if not row:
+            return None
+        cols = ["user_id", "segment", "risk_type", "trader_type", "focus", "setup_done", "updated_at"]
+        return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+
+def upsert_user_trading_profile(
+    user_id: int,
+    segment: str,
+    risk_type: str,
+    trader_type: str,
+    focus: str,
+    setup_done: bool = True,
+) -> None:
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection()
+    try:
+        conn.execute("""
+            INSERT INTO user_profiles (user_id, segment, risk_type, trader_type, focus, setup_done, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                segment     = excluded.segment,
+                risk_type   = excluded.risk_type,
+                trader_type = excluded.trader_type,
+                focus       = excluded.focus,
+                setup_done  = excluded.setup_done,
+                updated_at  = excluded.updated_at
+        """, (user_id, segment, risk_type, trader_type, focus, int(setup_done), now))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# -----------------------------------------------------------
 # Brokers / Accounts
 # -----------------------------------------------------------
 

@@ -455,6 +455,20 @@ def init_db():
 
     print("  ✓  Table ready: users")
 
+    # user_profiles — trading preferences set during onboarding wizard
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            user_id      INTEGER PRIMARY KEY REFERENCES users(id),
+            segment      TEXT,
+            risk_type    TEXT,
+            trader_type  TEXT,
+            focus        TEXT,
+            setup_done   INTEGER NOT NULL DEFAULT 0,
+            updated_at   TEXT    NOT NULL
+        )
+    """)
+    print("  ✓  Table ready: user_profiles")
+
     # account_trades — one row per account per recommendation
     cur.execute("""
         CREATE TABLE IF NOT EXISTS account_trades (

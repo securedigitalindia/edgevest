@@ -45,7 +45,7 @@ def require_login(f):
         if not current_user():
             if request.path.startswith("/api/"):
                 return jsonify(error="Unauthorized"), 401
-            return redirect(url_for("login"))
+            return redirect(url_for("index"))
         return f(*args, **kwargs)
     return wrapped
 
@@ -112,7 +112,7 @@ def refresh_session():
 @app.route("/login")
 def login():
     if current_user():
-        return redirect(url_for("index"))
+        return redirect(url_for("app_index"))
     return render_template("login.html")
 
 @app.route("/auth/google")
@@ -124,7 +124,7 @@ def auth_google():
 def auth_callback():
     token    = google.authorize_access_token()
     userinfo = token.get("userinfo") or google.userinfo()
-    from db.queries import upsert_user
+    from db.queries import upsert_user, get_user_trading_profile
     user = upsert_user(
         google_id = userinfo["sub"],
         email     = userinfo["email"],
@@ -134,7 +134,10 @@ def auth_callback():
     if not user["active"]:
         return render_template("login.html", error="Your account has been deactivated.")
     session["user"] = user
-    return redirect(url_for("index"))
+    profile = get_user_trading_profile(user["id"])
+    if not profile or not profile.get("setup_done"):
+        return redirect(url_for("profile_setup"))
+    return redirect(url_for("app_index"))
 
 @app.route("/logout")
 def logout():
@@ -604,9 +607,48 @@ def api_spot():
 # ─────────────────────────────────────────────────────────
 
 @app.route("/")
-@require_login
 def index():
+    if current_user():
+        return redirect(url_for("app_index"))
+    return render_template("landing.html")
+
+
+@app.route("/app")
+@require_login
+def app_index():
     return render_template("index.html", user=current_user())
+
+
+@app.route("/profile/setup")
+@require_login
+def profile_setup():
+    from db.queries import get_user_trading_profile
+    profile = get_user_trading_profile(current_user()["id"])
+    return render_template("profile_setup.html", user=current_user(), profile=profile)
+
+
+@app.route("/profile")
+@require_login
+def profile_page():
+    from db.queries import get_user_trading_profile
+    profile = get_user_trading_profile(current_user()["id"])
+    return render_template("profile.html", user=current_user(), profile=profile)
+
+
+@app.route("/api/profile", methods=["POST"])
+@require_login
+def api_profile_save():
+    data = request.json or {}
+    from db.queries import upsert_user_trading_profile
+    upsert_user_trading_profile(
+        user_id     = current_user()["id"],
+        segment     = data.get("segment", ""),
+        risk_type   = data.get("risk_type", ""),
+        trader_type = data.get("trader_type", ""),
+        focus       = data.get("focus", ""),
+        setup_done  = bool(data.get("setup_done", True)),
+    )
+    return jsonify(ok=True)
 
 
 # ─────────────────────────────────────────────────────────
