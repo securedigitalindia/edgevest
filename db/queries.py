@@ -427,16 +427,37 @@ def upsert_user(google_id: str, email: str, name: str, picture: str) -> dict:
 
 
 def get_all_users() -> list[dict]:
+    from datetime import date
+    today = date.today().isoformat()
     conn = get_connection()
     rows = conn.execute("""
-        SELECT u.id, u.email, u.name, u.picture, u.role, u.active, u.mobile, u.note
+        SELECT u.id, u.email, u.name, u.picture, u.role, u.active, u.mobile, u.note,
+               p.segment, p.risk_type, p.trader_type, p.focus, p.setup_done,
+               sp.name, s.status, s.end_date, s.amount_paid
         FROM users u
+        LEFT JOIN user_profiles p  ON p.user_id = u.id
+        LEFT JOIN subscriptions s  ON s.user_id = u.id AND s.status = 'active'
+                                   AND s.end_date >= ?
+        LEFT JOIN subscription_plans sp ON sp.id = s.plan_id
         ORDER BY u.created_at
-    """).fetchall()
+    """, (today,)).fetchall()
     users = [
         {"id": r[0], "email": r[1], "name": r[2], "picture": r[3],
-         "role": r[4], "active": bool(r[5]),
-         "mobile": r[6], "note": r[7], "accounts": []}
+         "role": r[4], "active": bool(r[5]), "mobile": r[6], "note": r[7],
+         "profile": {
+             "segment":     r[8],
+             "risk_type":   r[9],
+             "trader_type": r[10],
+             "focus":       r[11],
+             "setup_done":  bool(r[12]) if r[12] is not None else False,
+         },
+         "subscription": {
+             "plan_name":   r[13],
+             "status":      r[14],
+             "end_date":    r[15],
+             "amount_paid": r[16],
+         } if r[13] else None,
+         "accounts": []}
         for r in rows
     ]
     uid_index = {u["id"]: u for u in users}

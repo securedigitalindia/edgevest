@@ -1512,26 +1512,64 @@ function renderUsersList(users) {
   const el = document.getElementById('users-list');
   if (!el) return;
   if (!users.length) { el.innerHTML = '<div class="empty">No users yet.</div>'; return; }
+
+  const _chip = (val, label) => val
+    ? `<span style="font-size:10px;background:#f1f5f9;color:#334155;padding:2px 7px;border-radius:10px;font-weight:600">${label || val}</span>`
+    : '';
+
   el.innerHTML = users.map(u => {
-    const mob = (u.mobile || '').replace(/'/g, "\\'");
-    const nt  = (u.note   || '').replace(/'/g, "\\'");
+    const mob  = (u.mobile || '').replace(/'/g, "\\'");
+    const nt   = (u.note   || '').replace(/'/g, "\\'");
+    const prof = u.profile || {};
+    const sub  = u.subscription;
+
+    // Subscription badge
+    const subBadge = sub
+      ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:#dcfce7;color:#166534">${sub.plan_name} · ${sub.end_date}</span>`
+      : (u.role === 'client'
+          ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:#fef2f2;color:#dc2626">No active plan</span>`
+          : '');
+
+    // Profile chips
+    const profileRow = (prof.segment || prof.risk_type || prof.trader_type || prof.focus)
+      ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">
+          ${prof.segment ? prof.segment.split(',').map(s => _chip(s)).join('') : ''}
+          ${_chip(prof.risk_type)}
+          ${_chip(prof.trader_type)}
+          ${_chip(prof.focus?.replace('_',' '))}
+        </div>`
+      : (u.role === 'client' && !prof.setup_done
+          ? `<div style="font-size:11px;color:#94a3b8;margin-top:4px">Profile not set up</div>`
+          : '');
+
     return `<div class="settings-item">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        ${u.picture ? `<img src="${u.picture}" style="width:24px;height:24px;border-radius:50%">` : ''}
-        <span class="s-name">${u.name}</span>
-        <span style="font-size:11px;color:var(--muted)">${u.email}</span>
-        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="toggleUserEdit(${u.id})">Edit</button>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+        ${u.picture ? `<img src="${u.picture}" style="width:26px;height:26px;border-radius:50%;flex-shrink:0">` : ''}
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span class="s-name">${u.name}</span>
+            <span style="font-size:11px;color:var(--muted)">${u.email}</span>
+            <span style="font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;
+              background:${u.role==='super_admin'?'#7c3aed':u.role==='admin'?'#1d4ed8':'#0369a1'};color:#fff">
+              ${u.role.replace('_',' ')}
+            </span>
+            ${!u.active ? '<span style="font-size:10px;background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:10px;font-weight:700">Inactive</span>' : ''}
+          </div>
+          ${u.mobile || u.note ? `<div class="s-meta" style="margin-top:2px">${[u.mobile,u.note].filter(Boolean).join(' · ')}</div>` : ''}
+        </div>
+        <button class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="toggleUserEdit(${u.id})">Edit</button>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
-        <span class="s-meta">${u.role.replace('_',' ')}</span>
-        ${u.mobile || u.note ? `<span class="s-meta">${[u.mobile, u.note].filter(Boolean).join('  ·  ')}</span>` : ''}
-      </div>
-      ${u.accounts && u.accounts.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">${
-        u.accounts.map(a => `<span style="font-size:11px;background:var(--surface2);padding:2px 8px;border-radius:10px">${
+
+      ${subBadge ? `<div style="margin-bottom:4px">${subBadge}</div>` : ''}
+      ${profileRow}
+
+      ${u.accounts && u.accounts.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">${
+        u.accounts.map(a => `<span style="font-size:11px;background:#f8fafc;border:1px solid #e2e8f0;padding:2px 8px;border-radius:10px">${
           a.label || [a.broker, a.account_no].filter(Boolean).join(' · ')
         }</span>`).join('')
       }</div>` : ''}
-      <div id="uedit-${u.id}" style="display:none;margin-top:10px">
+
+      <div id="uedit-${u.id}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid #f1f5f9">
         <div class="form-grid-2">
           <div class="form-row"><label>Mobile</label>
             <input id="umob-${u.id}" value="${mob}" placeholder="+91 …"></div>
