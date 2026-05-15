@@ -469,6 +469,48 @@ def init_db():
     """)
     print("  ✓  Table ready: user_profiles")
 
+    # subscription_plans — admin-managed plan catalogue
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS subscription_plans (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            name           TEXT    NOT NULL,
+            description    TEXT,
+            price          INTEGER NOT NULL DEFAULT 0,
+            duration_days  INTEGER NOT NULL DEFAULT 30,
+            active         INTEGER NOT NULL DEFAULT 1,
+            created_at     TEXT    NOT NULL
+        )
+    """)
+    # Seed the default free plan if no plans exist
+    existing_plans = cur.execute("SELECT COUNT(*) FROM subscription_plans").fetchone()[0]
+    if existing_plans == 0:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cur.execute("""
+            INSERT INTO subscription_plans (name, description, price, duration_days, active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, ("Free", "Full access — introductory free plan", 0, 30, 1, now))
+    print("  ✓  Table ready: subscription_plans")
+
+    # subscriptions — one active row per client
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            plan_id     INTEGER NOT NULL REFERENCES subscription_plans(id),
+            status      TEXT    NOT NULL DEFAULT 'active',
+            start_date  TEXT    NOT NULL,
+            end_date    TEXT    NOT NULL,
+            amount_paid INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT    NOT NULL
+        )
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_user
+        ON subscriptions(user_id, status)
+    """)
+    print("  ✓  Table ready: subscriptions")
+
     # account_trades — one row per account per recommendation
     cur.execute("""
         CREATE TABLE IF NOT EXISTS account_trades (

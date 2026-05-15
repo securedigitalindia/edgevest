@@ -542,6 +542,155 @@ def upsert_user_trading_profile(
 
 
 # -----------------------------------------------------------
+# Subscription plans
+# -----------------------------------------------------------
+
+def get_active_plans() -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT id, name, description, price, duration_days, active, created_at
+            FROM subscription_plans WHERE active = 1 ORDER BY price ASC
+        """).fetchall()
+        cols = ["id", "name", "description", "price", "duration_days", "active", "created_at"]
+        return [dict(zip(cols, r)) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_all_plans() -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT id, name, description, price, duration_days, active, created_at
+            FROM subscription_plans ORDER BY id DESC
+        """).fetchall()
+        cols = ["id", "name", "description", "price", "duration_days", "active", "created_at"]
+        return [dict(zip(cols, r)) for r in rows]
+    finally:
+        conn.close()
+
+
+def create_plan(name: str, description: str, price: int, duration_days: int) -> int:
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection()
+    try:
+        cur = conn.execute("""
+            INSERT INTO subscription_plans (name, description, price, duration_days, active, created_at)
+            VALUES (?, ?, ?, ?, 1, ?)
+        """, (name.strip(), description.strip(), price, duration_days, now))
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def set_plan_active(plan_id: int, active: bool) -> None:
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE subscription_plans SET active=? WHERE id=?",
+                     (int(active), plan_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_subscription(user_id: int) -> dict | None:
+    """Return the user's current active subscription, or None."""
+    conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT s.id, s.user_id, s.plan_id, s.status, s.start_date, s.end_date,
+                   s.amount_paid, s.created_at, p.name, p.price, p.duration_days
+            FROM subscriptions s
+            JOIN subscription_plans p ON p.id = s.plan_id
+            WHERE s.user_id = ? AND s.status = 'active'
+            ORDER BY s.end_date DESC LIMIT 1
+        """, (user_id,)).fetchone()
+        if not row:
+            return None
+        cols = ["id", "user_id", "plan_id", "status", "start_date", "end_date",
+                "amount_paid", "created_at", "plan_name", "plan_price", "plan_duration_days"]
+        return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+
+def is_subscription_valid(user_id: int) -> bool:
+    """True if the user has an active subscription that hasn't expired."""
+    sub = get_user_subscription(user_id)
+    if not sub:
+        return False
+    from datetime import date
+    end = datetime.strptime(sub["end_date"], "%Y-%m-%d").date()
+    return end >= date.today()
+
+
+def activate_subscription(user_id: int, plan_id: int, amount_paid: int = 0) -> int:
+    """Expire any existing active sub then create a new active one. Returns new sub id."""
+    now_str  = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    today    = datetime.now(timezone.utc).date()
+    conn = get_connection()
+    try:
+        plan = conn.execute(
+            "SELECT duration_days FROM subscription_plans WHERE id=?", (plan_id,)
+        ).fetchone()
+        if not plan:
+            raise ValueError(f"Plan {plan_id} not found")
+        duration = plan[0]
+        from datetime import timedelta
+        end_date = (today + timedelta(days=duration)).isoformat()
+        conn.execute("""
+            UPDATE subscriptions SET status='expired'
+            WHERE user_id=? AND status='active'
+        """, (user_id,))
+        cur = conn.execute("""
+            INSERT INTO subscriptions
+                (user_id, plan_id, status, start_date, end_date, amount_paid, created_at)
+            VALUES (?, ?, 'active', ?, ?, ?, ?)
+        """, (user_id, plan_id, today.isoformat(), end_date, amount_paid, now_str))
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def expire_stale_subscriptions() -> int:
+    """Mark subscriptions past their end_date as expired. Returns count updated."""
+    from datetime import date
+    today = date.today().isoformat()
+    conn = get_connection()
+    try:
+        cur = conn.execute("""
+            UPDATE subscriptions SET status='expired'
+            WHERE status='active' AND end_date < ?
+        """, (today,))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def get_all_subscriptions() -> list[dict]:
+    """All subscriptions with user and plan info — for admin view."""
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT s.id, u.name, u.email, p.name, s.status,
+                   s.start_date, s.end_date, s.amount_paid
+            FROM subscriptions s
+            JOIN users u ON u.id = s.user_id
+            JOIN subscription_plans p ON p.id = s.plan_id
+            ORDER BY s.id DESC
+        """).fetchall()
+        cols = ["id", "user_name", "email", "plan_name", "status",
+                "start_date", "end_date", "amount_paid"]
+        return [dict(zip(cols, r)) for r in rows]
+    finally:
+        conn.close()
+
+
+# -----------------------------------------------------------
 # Brokers / Accounts
 # -----------------------------------------------------------
 

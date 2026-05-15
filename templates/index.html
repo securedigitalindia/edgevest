@@ -345,6 +345,8 @@
     <div class="stabs">
       <button class="stab active" onclick="showStab('brokers',this)">Brokers</button>
       <button class="stab" onclick="showStab('users',this)">Users</button>
+      <button class="stab" onclick="showStab('plans',this);loadPlans()">Plans</button>
+      <button class="stab" onclick="showStab('subs',this);loadSubs()">Subscriptions</button>
     </div>
 
     <div class="stab-panel active" id="stab-brokers">
@@ -359,6 +361,30 @@
 
     <div class="stab-panel" id="stab-users">
       <div class="settings-list" id="users-list"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="stab-panel" id="stab-plans">
+      <div class="settings-list" id="plans-list-admin"><div class="empty">Loading…</div></div>
+      <div class="inline-form" style="margin-top:12px">
+        <h4>New Plan</h4>
+        <div class="form-grid-2">
+          <div class="form-row"><label>Name</label>
+            <input id="plan-name" placeholder="e.g. Pro Monthly"></div>
+          <div class="form-row"><label>Price (₹)</label>
+            <input id="plan-price" type="number" min="0" value="0" placeholder="0 for free"></div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-row"><label>Duration (days)</label>
+            <input id="plan-duration" type="number" min="1" value="30"></div>
+          <div class="form-row"><label>Description</label>
+            <input id="plan-desc" placeholder="Short description"></div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="createPlan()">Create Plan</button>
+      </div>
+    </div>
+
+    <div class="stab-panel" id="stab-subs">
+      <div class="settings-list" id="subs-list-admin"><div class="empty">Loading…</div></div>
     </div>
     {% endif %}
 
@@ -1580,6 +1606,79 @@ async function addBroker() {
   else showToast(data.error || 'Failed', 'err');
 }
 
+
+async function loadPlans() {
+  const el = document.getElementById('plans-list-admin');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  const res  = await fetch('/api/plans');
+  const data = await res.json();
+  if (!data.plans.length) { el.innerHTML = '<div class="empty">No plans yet.</div>'; return; }
+  el.innerHTML = data.plans.map(p => `
+    <div class="settings-item">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1">
+          <span class="s-name">${p.name}</span>
+          ${p.price === 0 ? '<span style="font-size:10px;background:#dcfce7;color:#166534;padding:1px 6px;border-radius:10px;font-weight:700;margin-left:6px">Free</span>' : ''}
+          ${!p.active ? '<span style="font-size:10px;background:#f1f5f9;color:#94a3b8;padding:1px 6px;border-radius:10px;font-weight:700;margin-left:6px">Inactive</span>' : ''}
+          <div class="s-meta">₹${p.price} · ${p.duration_days} days${p.description ? ' · ' + p.description : ''}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px"
+          onclick="togglePlan(${p.id}, ${p.active ? 0 : 1})">
+          ${p.active ? 'Deactivate' : 'Activate'}
+        </button>
+      </div>
+    </div>`).join('');
+}
+
+async function createPlan() {
+  const name     = document.getElementById('plan-name').value.trim();
+  const price    = parseInt(document.getElementById('plan-price').value) || 0;
+  const duration = parseInt(document.getElementById('plan-duration').value) || 30;
+  const desc     = document.getElementById('plan-desc').value.trim();
+  if (!name) { showToast('Plan name required', 'err'); return; }
+  const res  = await fetch('/api/plans', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ name, price, duration_days: duration, description: desc }),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    ['plan-name','plan-price','plan-duration','plan-desc'].forEach(id => {
+      const el = document.getElementById(id);
+      el.value = id === 'plan-price' ? '0' : id === 'plan-duration' ? '30' : '';
+    });
+    showToast('Plan created', 'ok');
+    loadPlans();
+  } else showToast(data.error || 'Failed', 'err');
+}
+
+async function togglePlan(id, active) {
+  await fetch(`/api/plans/${id}/toggle`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ active: !!active }),
+  });
+  loadPlans();
+}
+
+async function loadSubs() {
+  const el = document.getElementById('subs-list-admin');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  const res  = await fetch('/api/subscriptions');
+  const data = await res.json();
+  if (!data.subscriptions.length) { el.innerHTML = '<div class="empty">No subscriptions yet.</div>'; return; }
+  el.innerHTML = data.subscriptions.map(s => {
+    const expired  = s.status !== 'active';
+    const sc       = expired ? 'color:#94a3b8' : 'color:#16a34a';
+    return `<div class="settings-item">
+      <div class="s-name">${s.user_name} <span style="font-weight:400;color:var(--muted);font-size:12px">${s.email}</span></div>
+      <div class="s-meta" style="display:flex;gap:12px;margin-top:3px">
+        <span>${s.plan_name}</span>
+        <span style="${sc};font-weight:600">${s.status}</span>
+        <span>${s.start_date} → ${s.end_date}</span>
+        ${s.amount_paid > 0 ? `<span>₹${s.amount_paid}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
 
 function updateSetupBanner() {
   const el = document.getElementById('setup-banner');

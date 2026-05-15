@@ -66,6 +66,21 @@ def require_role(*roles):
         return wrapped
     return decorator
 
+def require_subscription(f):
+    """For client-role users: redirect to /subscribe if no valid active subscription."""
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        user = current_user()
+        if user and user["role"] == "client":
+            from db.queries import is_subscription_valid, expire_stale_subscriptions
+            expire_stale_subscriptions()
+            if not is_subscription_valid(user["id"]):
+                if request.path.startswith("/api/"):
+                    return jsonify(error="No active subscription"), 402
+                return redirect(url_for("subscribe_page", expired=1))
+        return f(*args, **kwargs)
+    return wrapped
+
 def is_admin(user=None):
     u = user or current_user()
     return u and u["role"] in ("super_admin", "admin")
@@ -136,6 +151,10 @@ def auth_callback():
         profile = get_user_trading_profile(user["id"])
         if not profile or not profile.get("setup_done"):
             return redirect(url_for("profile_setup"))
+        from db.queries import is_subscription_valid, expire_stale_subscriptions
+        expire_stale_subscriptions()
+        if not is_subscription_valid(user["id"]):
+            return redirect(url_for("subscribe_page"))
     return redirect(url_for("app_index"))
 
 @app.route("/logout")
@@ -192,6 +211,47 @@ def api_user_profile(uid):
             return jsonify(ok=False, error="Invalid role"), 400
         update_user_role(uid, role)
     return jsonify(ok=True)
+
+
+# ─────────────────────────────────────────────────────────
+# API: subscription plans (admin)
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/plans")
+@require_login
+def api_plans_list():
+    from db.queries import get_all_plans, get_active_plans
+    if is_admin():
+        return jsonify(plans=get_all_plans())
+    return jsonify(plans=get_active_plans())
+
+@app.route("/api/plans", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_plans_create():
+    data = request.json or {}
+    name     = data.get("name", "").strip()
+    desc     = data.get("description", "").strip()
+    price    = int(data.get("price", 0))
+    duration = int(data.get("duration_days", 30))
+    if not name:
+        return jsonify(ok=False, error="name required"), 400
+    from db.queries import create_plan
+    pid = create_plan(name, desc, price, duration)
+    return jsonify(ok=True, id=pid)
+
+@app.route("/api/plans/<int:plan_id>/toggle", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_plans_toggle(plan_id):
+    active = (request.json or {}).get("active", True)
+    from db.queries import set_plan_active
+    set_plan_active(plan_id, bool(active))
+    return jsonify(ok=True)
+
+@app.route("/api/subscriptions")
+@require_role("super_admin", "admin")
+def api_subscriptions_list():
+    from db.queries import get_all_subscriptions
+    return jsonify(subscriptions=get_all_subscriptions())
 
 
 # ─────────────────────────────────────────────────────────
@@ -614,6 +674,7 @@ def index():
 
 @app.route("/app")
 @require_login
+@require_subscription
 def app_index():
     return render_template("index.html", user=current_user())
 
@@ -632,6 +693,35 @@ def profile_page():
     from db.queries import get_user_trading_profile
     profile = get_user_trading_profile(current_user()["id"])
     return render_template("profile.html", user=current_user(), profile=profile)
+
+
+@app.route("/subscribe")
+@require_login
+def subscribe_page():
+    from db.queries import get_active_plans, get_user_subscription
+    plans   = get_active_plans()
+    sub     = get_user_subscription(current_user()["id"])
+    expired = request.args.get("expired", 0)
+    return render_template("subscribe.html", user=current_user(),
+                           plans=plans, subscription=sub, expired=expired)
+
+
+@app.route("/api/subscribe", methods=["POST"])
+@require_login
+def api_subscribe():
+    data    = request.json or {}
+    plan_id = data.get("plan_id")
+    if not plan_id:
+        return jsonify(ok=False, error="plan_id required"), 400
+    from db.queries import get_active_plans, activate_subscription
+    plans = {p["id"]: p for p in get_active_plans()}
+    plan  = plans.get(int(plan_id))
+    if not plan:
+        return jsonify(ok=False, error="Invalid or inactive plan"), 400
+    if plan["price"] > 0:
+        return jsonify(ok=False, error="Payment not yet supported"), 402
+    activate_subscription(current_user()["id"], plan["id"], amount_paid=0)
+    return jsonify(ok=True)
 
 
 @app.route("/api/profile", methods=["POST"])
