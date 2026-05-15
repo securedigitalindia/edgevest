@@ -111,9 +111,7 @@ def refresh_session():
 
 @app.route("/login")
 def login():
-    if current_user():
-        return redirect(url_for("app_index"))
-    return render_template("login.html")
+    return redirect(url_for("index"))
 
 @app.route("/auth/google")
 def auth_google():
@@ -132,7 +130,7 @@ def auth_callback():
         picture   = userinfo.get("picture", ""),
     )
     if not user["active"]:
-        return render_template("login.html", error="Your account has been deactivated.")
+        return redirect(url_for("index", error="deactivated"))
     session["user"] = user
     profile = get_user_trading_profile(user["id"])
     if not profile or not profile.get("setup_done"):
@@ -142,7 +140,7 @@ def auth_callback():
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("login"))
+    return redirect(url_for("index"))
 
 
 # ─────────────────────────────────────────────────────────
