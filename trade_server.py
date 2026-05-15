@@ -86,7 +86,7 @@ def _ist_str(utc_str: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────
-# Session refresh — keeps role/trader_id always current
+# Session refresh — keeps role always current
 # ─────────────────────────────────────────────────────────
 
 _NO_REFRESH = {"login", "auth_google", "auth_callback", "logout", "static",
@@ -157,7 +157,7 @@ def api_me():
 # ─────────────────────────────────────────────────────────
 
 @app.route("/api/users")
-@require_role("super_admin")
+@require_role("super_admin", "admin")
 def api_users():
     from db.queries import get_all_users
     return jsonify(users=get_all_users())
@@ -172,12 +172,23 @@ def api_user_role(uid):
     update_user_role(uid, role)
     return jsonify(ok=True)
 
-@app.route("/api/users/<int:uid>/trader", methods=["POST"])
-@require_role("super_admin")
-def api_user_trader(uid):
-    trader_id = (request.json or {}).get("trader_id")
-    from db.queries import update_user_trader
-    update_user_trader(uid, trader_id)
+@app.route("/api/users/<int:uid>/profile", methods=["POST"])
+@require_login
+def api_user_profile(uid):
+    user = current_user()
+    if not is_admin() and user["id"] != uid:
+        return jsonify(ok=False, error="Forbidden"), 403
+    data   = request.json or {}
+    mobile = data.get("mobile", "")
+    note   = data.get("note", "")
+    role   = data.get("role", "")
+    from db.queries import update_user_profile, update_user_role
+    update_user_profile(uid, mobile, note)
+    if role and is_admin():
+        valid = {"super_admin", "admin", "client"}
+        if role not in valid:
+            return jsonify(ok=False, error="Invalid role"), 400
+        update_user_role(uid, role)
     return jsonify(ok=True)
 
 
@@ -201,6 +212,8 @@ def api_search():
             label = f"{r['symbol']}  {r['instrument_type']}  {r['expiry_str']}"
         if r["weekly"]:
             label += "  (weekly)"
+        if r.get("lot_size"):
+            label += f"  · lot {r['lot_size']}"
         results.append({
             "label":           label,
             "symbol":          r["symbol"],
@@ -208,12 +221,13 @@ def api_search():
             "strike":          r["strike"],
             "expiry_str":      r["expiry_str"],
             "weekly":          r["weekly"],
+            "lot_size":        r.get("lot_size") or 0,
         })
     return jsonify(results=results)
 
 
 # ─────────────────────────────────────────────────────────
-# API: brokers / traders / accounts
+# API: brokers / accounts
 # ─────────────────────────────────────────────────────────
 
 @app.route("/api/brokers", methods=["GET", "POST"])
@@ -234,69 +248,30 @@ def api_brokers():
     return jsonify(brokers=get_brokers())
 
 
-@app.route("/api/traders", methods=["GET", "POST"])
-@require_login
-def api_traders():
-    from db.queries import get_traders, add_trader
-    if request.method == "POST":
-        if not is_admin():
-            return jsonify(ok=False, error="Forbidden"), 403
-        data   = request.json or {}
-        name   = data.get("name", "").strip()
-        mobile = data.get("mobile", "")
-        note   = data.get("note", "")
-        if not name:
-            return jsonify(ok=False, error="name is required"), 400
-        try:
-            tid = add_trader(name, mobile, note)
-        except Exception as e:
-            return jsonify(ok=False, error=str(e)), 400
-        return jsonify(ok=True, id=tid)
-    if not is_admin():
-        return jsonify(ok=False, error="Forbidden"), 403
-    return jsonify(traders=get_traders())
-
-
-@app.route("/api/traders/<int:tid>", methods=["POST"])
-@require_role("super_admin", "admin")
-def api_trader_update(tid):
-    data   = request.json or {}
-    mobile = data.get("mobile", "")
-    note   = data.get("note", "")
-    from db.queries import update_trader
-    update_trader(tid, mobile, note)
-    return jsonify(ok=True)
-
-
 @app.route("/api/accounts", methods=["GET", "POST"])
 @require_login
 def api_accounts():
-    from db.queries import get_accounts, get_accounts_for_trader, add_account
+    from db.queries import get_accounts, get_accounts_for_user, add_account
     user = current_user()
     if request.method == "POST":
         data       = request.json or {}
-        trader_id  = data.get("trader_id")
+        user_id    = data.get("user_id")
         broker_id  = data.get("broker_id")
         account_no = data.get("account_no", "")
         label      = data.get("label", "")
         if user["role"] == "client":
-            if not user.get("trader_id"):
-                return jsonify(ok=False, error="No trader linked to your account"), 403
-            trader_id = user["trader_id"]
-        elif not is_admin():
-            return jsonify(ok=False, error="Forbidden"), 403
-        if not trader_id or not broker_id:
-            return jsonify(ok=False, error="trader_id and broker_id are required"), 400
+            user_id = user["id"]
+        else:
+            return jsonify(ok=False, error="Only clients can add accounts"), 403
+        if not broker_id:
+            return jsonify(ok=False, error="user_id and broker_id are required"), 400
         try:
-            aid = add_account(trader_id, broker_id, account_no, label)
+            aid = add_account(user_id, broker_id, account_no, label)
             return jsonify(ok=True, id=aid)
         except ValueError as e:
             return jsonify(ok=False, error=str(e)), 400
-    # Clients only see their own accounts
     if user["role"] == "client":
-        if not user.get("trader_id"):
-            return jsonify(accounts=[])
-        return jsonify(accounts=get_accounts_for_trader(user["trader_id"]))
+        return jsonify(accounts=get_accounts_for_user(user["id"]))
     return jsonify(accounts=get_accounts())
 
 
@@ -307,22 +282,107 @@ def api_accounts():
 @app.route("/api/recommendations")
 @require_login
 def api_recommendations():
-    from db.queries import get_all_recommendations, get_trade_legs
+    from db.queries import get_all_recommendations, get_current_legs, get_trade_adjustments, get_trade_legs
     recs = get_all_recommendations()
     out  = []
     for r in recs:
-        legs = [l for l in get_trade_legs(r["id"]) if l["action"] == "entry"]
+        current_legs = get_current_legs(r["id"])
+        adjustments  = get_trade_adjustments(r["id"])
+
+        exit_legs, realized_pnl = [], None
+        if r["status"] == "exited":
+            all_legs   = get_trade_legs(r["id"])
+            entry_legs = [l for l in all_legs if l["action"] == "entry" and l["adjustment_id"] is None]
+            exit_legs  = [l for l in all_legs if l["action"] == "exit"]
+            if entry_legs and exit_legs:
+                total, has_pnl = 0.0, False
+                for e, x in zip(entry_legs, exit_legs):
+                    if e["price"] is not None and x["price"] is not None:
+                        qty = e["lots"] * e["lot_size"] if e["lot_size"] else e["lots"]
+                        total += (e["price"] - x["price"]) * qty if e["side"] == "SELL" \
+                                 else (x["price"] - e["price"]) * qty
+                        has_pnl = True
+                realized_pnl = total if has_pnl else None
+
         out.append({
             "id":            r["id"],
             "symbol":        r["symbol"],
             "trigger":       r["trigger_name"],
             "status":        r["status"],
             "entry_ist":     _ist_str(r["entry_time"]),
-            "leg_count":     r["leg_count"],
+            "exit_ist":      _ist_str(r["exit_time"]) if r.get("exit_time") else None,
             "account_count": r["account_count"],
-            "legs":          legs,
+            "adj_count":     len(adjustments),
+            "legs":          current_legs,
+            "exit_legs":     exit_legs,
+            "realized_pnl":  realized_pnl,
+            "adjustments":   adjustments,
         })
     return jsonify(recommendations=out)
+
+
+@app.route("/api/recommendations/<int:rec_id>/exit", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_rec_exit(rec_id):
+    from datetime import datetime, timezone
+    from db.queries import get_recommendation, get_trade_legs, close_recommended_trade
+    trade = get_recommendation(rec_id)
+    if not trade:
+        return jsonify(ok=False, error="Recommendation not found"), 404
+    if trade["status"] != "open":
+        return jsonify(ok=False, error="Trade is already closed"), 400
+    data       = request.json or {}
+    prices     = data.get("prices", [])
+    now        = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    entry_legs = [l for l in get_trade_legs(rec_id) if l["action"] == "entry"]
+
+    if len(prices) != len(entry_legs):
+        return jsonify(ok=False, error="Price required for every leg"), 400
+
+    exit_legs = [{**l, "action": "exit", "price": prices[i], "ts": now,
+                  "side": "SELL" if l["side"] == "BUY" else "BUY"}
+                 for i, l in enumerate(entry_legs)]
+    exit_ltp  = prices[0] if prices else trade["entry_ltp"]
+
+    close_recommended_trade(rec_id, exit_ltp, now, exit_legs=exit_legs)
+    try:
+        from live.alert import send_rec_exit_alert
+        exit_info = [{**l, "price": prices[i]} for i, l in enumerate(entry_legs)]
+        send_rec_exit_alert(trade["symbol"], exit_info, exit_ltp)
+    except Exception as e:
+        print(f"  [exit alert failed]  {e}", flush=True)
+    return jsonify(ok=True)
+
+
+@app.route("/api/recommendations/<int:rec_id>/adjust", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_rec_adjust(rec_id):
+    from datetime import datetime, timezone
+    from db.queries import get_recommendation, add_trade_adjustment
+    trade = get_recommendation(rec_id)
+    if not trade:
+        return jsonify(ok=False, error="Recommendation not found"), 404
+    if trade["status"] != "open":
+        return jsonify(ok=False, error="Trade is already closed"), 400
+
+    data = request.json or {}
+    note = data.get("note", "")
+    legs = data.get("legs", [])
+
+    if not legs:
+        return jsonify(ok=False, error="Provide at least one leg"), 400
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        adj_id = add_trade_adjustment(rec_id, "adjustment", note or None, now, legs)
+        try:
+            from live.alert import send_adjustment_alert
+            send_adjustment_alert(trade["symbol"], "adjustment", legs, note)
+        except Exception as e:
+            print(f"  [adjust alert failed]  {e}", flush=True)
+        return jsonify(ok=True, adjustment_id=adj_id)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)), 400
 
 
 @app.route("/api/recommendations/create", methods=["POST"])
@@ -354,30 +414,34 @@ def api_account_trades():
     account_id = request.args.get("account_id", type=int)
 
     if user["role"] == "client":
-        # Only own accounts — ignore any account_id filter from client
-        if not user.get("trader_id"):
-            return jsonify(trades=[])
-        from db.queries import get_accounts_for_trader
-        own_ids = {a["id"] for a in get_accounts_for_trader(user["trader_id"])}
+        from db.queries import get_accounts_for_user
+        own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
         trades  = [t for t in get_open_account_trades()
                    if t["account_id"] in own_ids]
     else:
         trades = get_open_account_trades(account_id=account_id)
 
+    from db.queries import get_pending_adjustments_for_account_trade
     out = []
     for t in trades:
-        legs = [l for l in get_account_trade_legs(t["id"]) if l["action"] == "entry"]
+        all_at_legs  = get_account_trade_legs(t["id"])
+        exited_keys  = {l["instrument_key"] for l in all_at_legs if l["action"] == "exit"}
+        current_legs = [l for l in all_at_legs
+                        if l["action"] == "entry" and l["instrument_key"] not in exited_keys]
+        pending_adjs = get_pending_adjustments_for_account_trade(t["id"])
         out.append({
-            "id":            t["id"],
-            "symbol":        t["symbol"] or "—",
-            "trigger":       t["trigger_name"],
-            "rec_id":        t["recommended_trade_id"],
-            "account_id":    t["account_id"],
-            "account_label": t["account_label"] or f"Account {t['account_id']}",
-            "trader_name":   t["trader_name"],
-            "broker_name":   t["broker_name"],
-            "entry_ist":     _ist_str(t["entry_time"]),
-            "legs":          legs,
+            "id":               t["id"],
+            "symbol":           t["symbol"] or "—",
+            "trigger":          t["trigger_name"],
+            "rec_id":           t["recommended_trade_id"],
+            "account_id":       t["account_id"],
+            "account_label":    t["account_label"] or t["broker_name"] or f"Account {t['account_id']}",
+            "trader_name":      t["trader_name"],
+            "broker_name":      t["broker_name"],
+            "entry_ist":        _ist_str(t["entry_time"]),
+            "legs":             current_legs,
+            "pending_adj_count": len(pending_adjs),
+            "pending_adjustments": pending_adjs,
         })
     return jsonify(trades=out)
 
@@ -385,7 +449,6 @@ def api_account_trades():
 @app.route("/api/account-trades/create", methods=["POST"])
 @require_login
 def api_account_trade_create():
-    from db.queries import get_accounts_for_trader
     data       = request.json or {}
     rec_id     = data.get("recommended_trade_id")
     account_id = data.get("account_id")
@@ -399,13 +462,13 @@ def api_account_trade_create():
     if not account_id or not symbol or not legs:
         return jsonify(ok=False, error="account_id, symbol and legs are required"), 400
 
-    # Client can only push to their own accounts
-    if user["role"] == "client":
-        if not user.get("trader_id"):
-            return jsonify(ok=False, error="No trader linked to your account"), 403
-        own_ids = {a["id"] for a in get_accounts_for_trader(user["trader_id"])}
-        if account_id not in own_ids:
-            return jsonify(ok=False, error="Forbidden — not your account"), 403
+    if is_admin():
+        return jsonify(ok=False, error="Admins cannot push to accounts"), 403
+
+    from db.queries import get_accounts_for_user
+    own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
+    if account_id not in own_ids:
+        return jsonify(ok=False, error="Forbidden — not your account"), 403
 
     try:
         from live.manual_trade import push_to_account
@@ -415,10 +478,39 @@ def api_account_trade_create():
         return jsonify(ok=False, error=str(e)), 400
 
 
+@app.route("/api/account-trades/<int:at_id>/adjust", methods=["POST"])
+@require_login
+def api_account_trade_adjust(at_id):
+    from datetime import datetime, timezone
+    from db.queries import get_open_account_trades, add_account_adjustment
+    data                = request.json or {}
+    trade_adjustment_id = data.get("adjustment_id")
+    adj_type            = data.get("adj_type", "")
+    legs                = data.get("legs", [])
+    user                = current_user()
+
+    if not trade_adjustment_id or not legs:
+        return jsonify(ok=False, error="adjustment_id and legs are required"), 400
+
+    if user["role"] == "client":
+        from db.queries import get_accounts_for_user
+        own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
+        trade   = next((t for t in get_open_account_trades() if t["id"] == at_id), None)
+        if not trade or trade["account_id"] not in own_ids:
+            return jsonify(ok=False, error="Forbidden — not your trade"), 403
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        add_account_adjustment(at_id, trade_adjustment_id, legs, now, adj_type=adj_type)
+        return jsonify(ok=True)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)), 400
+
+
 @app.route("/api/account-trades/<int:at_id>/exit", methods=["POST"])
 @require_login
 def api_account_trade_exit(at_id):
-    from db.queries import get_open_account_trades, get_accounts_for_trader
+    from db.queries import get_open_account_trades
     data   = request.json or {}
     prices = data.get("prices", [])
     note   = data.get("note", "")
@@ -427,11 +519,9 @@ def api_account_trade_exit(at_id):
     if not prices:
         return jsonify(ok=False, error="prices are required"), 400
 
-    # Client can only exit their own trades
     if user["role"] == "client":
-        if not user.get("trader_id"):
-            return jsonify(ok=False, error="Forbidden"), 403
-        own_ids = {a["id"] for a in get_accounts_for_trader(user["trader_id"])}
+        from db.queries import get_accounts_for_user
+        own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
         trade   = next((t for t in get_open_account_trades() if t["id"] == at_id), None)
         if not trade or trade["account_id"] not in own_ids:
             return jsonify(ok=False, error="Forbidden — not your trade"), 403
@@ -452,9 +542,7 @@ def api_account_trades_history():
     account_id = request.args.get("account_id", type=int)
 
     if user["role"] == "client":
-        if not user.get("trader_id"):
-            return jsonify(trades=[])
-        trades = get_closed_account_trades(trader_id=user["trader_id"])
+        trades = get_closed_account_trades(user_id=user["id"])
     else:
         trades = get_closed_account_trades(account_id=account_id)
 
@@ -466,7 +554,7 @@ def api_account_trades_history():
             "trigger":       t["trigger_name"],
             "rec_id":        t["recommended_trade_id"],
             "account_id":    t["account_id"],
-            "account_label": t["account_label"] or f"Account {t['account_id']}",
+            "account_label": t["account_label"] or t["broker_name"] or f"Account {t['account_id']}",
             "trader_name":   t["trader_name"],
             "broker_name":   t["broker_name"],
             "entry_ist":     _ist_str(t["entry_time"]),

@@ -238,56 +238,44 @@ def nifty_500_short_exit(ltp: float, symbol: str, params: dict) -> dict:
     }
 
 
-def nifty_500_short_rollover(ltp: float, symbol: str, params: dict) -> dict:
+def nifty_500_auto_roll(ltp: float, symbol: str, params: dict) -> dict:
     """
-    Rollover trade when the active leg expires.
-    4 legs: close old fut + PE, open new fut + PE.
-    Params come from the trigger's _do_rollover() — includes old/new expiry,
-    strikes, leg prices fetched live from Upstox, and lot sizes from DB snapshot.
+    Auto-roll alert for a single expiring leg.
+    Params come from _do_auto_adjustment() — one leg at a time.
     """
-    old_exp  = params["old_expiry_str"]
-    new_exp  = params["new_expiry_str"]
-    old_pe   = params["old_pe_strike"]
-    new_pe   = params["new_pe_strike"]
-    fut_lots = params.get("fut_lots", 1)
-    pe_lots  = params.get("pe_lots", 2)
-    entry_lvl = params.get("entry_level", 0)
+    itype      = params.get("instrument_type", "FUT")
+    old_exp    = params["old_expiry_str"]
+    new_exp    = params["new_expiry_str"]
+    old_strike = params.get("old_strike")
+    new_strike = params.get("new_strike")
+    lots       = params.get("lots", 1)
+    old_price  = params.get("old_price")
+    new_price  = params.get("new_price")
+    entry_lvl  = params.get("entry_level", 0)
 
     def _price_note(price, suffix=""):
         return (f"@ {price:,.1f}  {suffix}").strip() if price is not None else suffix
 
+    old_inst = f"NIFTY {old_exp} {old_strike:,} {itype}" if old_strike else f"NIFTY {old_exp} {itype}"
+    new_inst = f"NIFTY {new_exp} {new_strike:,} {itype}" if new_strike else f"NIFTY {new_exp} {itype}"
+
     return {
-        "title": f"ROLLOVER Short Nifty 50  [entry level: {entry_lvl:,}]",
+        "title": f"AUTO ROLL  {itype}  {old_exp} → {new_exp}  [entry: {entry_lvl:,}]",
         "legs": [
             {
                 "action":     "BUY",
-                "instrument": f"NIFTY {old_exp} FUT",
-                "note":       _price_note(params.get("old_fut_price"),
-                                          f"{fut_lots} lot — close expiring short fut"),
+                "instrument": old_inst,
+                "note":       _price_note(old_price, f"{lots}L — close expiring leg"),
             },
             {
                 "action":     "SELL",
-                "instrument": f"NIFTY {new_exp} FUT",
-                "note":       _price_note(params.get("new_fut_price"),
-                                          f"{fut_lots} lot — open new month short fut"),
-            },
-            {
-                "action":     "BUY",
-                "instrument": f"NIFTY {old_exp} {old_pe:,} PE",
-                "note":       _price_note(params.get("old_pe_price"),
-                                          f"{pe_lots} lots — buy back expiring PE"),
-            },
-            {
-                "action":     "SELL",
-                "instrument": f"NIFTY {new_exp} {new_pe:,} PE",
-                "note":       _price_note(params.get("new_pe_price"),
-                                          f"{pe_lots} lots — sell new month PE"),
+                "instrument": new_inst,
+                "note":       _price_note(new_price, f"{lots}L — open next expiry"),
             },
         ],
         "rationale": (
-            f"Expiry {old_exp} — rolling short to {new_exp}. "
-            f"New PE strike: {new_pe:,} (>={params.get('min_pe_distance_pct', 3)}% below "
-            f"CMP {ltp:,.0f})."
+            f"Auto-rolling {itype} from {old_exp} → {new_exp}. "
+            f"Trade entry level {entry_lvl:,} unchanged."
         ),
     }
 
@@ -300,9 +288,9 @@ _REGISTRY: dict[str, callable] = {
     "nifty_pe_cal_qtrly":             nifty_pe_cal_qtrly,
     "nifty_pe_cal_monthly":           nifty_pe_cal_monthly,
     "nifty_pe_cal_weekly_to_monthly": nifty_pe_cal_weekly_to_monthly,
-    "nifty_500_short_entry":    nifty_500_short_entry,
-    "nifty_500_short_exit":     nifty_500_short_exit,
-    "nifty_500_short_rollover": nifty_500_short_rollover,
+    "nifty_500_short_entry": nifty_500_short_entry,
+    "nifty_500_short_exit":  nifty_500_short_exit,
+    "nifty_500_auto_roll":   nifty_500_auto_roll,
 }
 
 

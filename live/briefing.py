@@ -231,10 +231,10 @@ def _trade_summary_block(today_ist: date) -> str:
     for t in closed_today:
         all_legs   = get_trade_legs(t["id"])
         entry_legs = [l for l in all_legs if l["action"] == "entry"]
-        close_legs = [l for l in all_legs if l["action"] in ("exit", "rollover_out")]
+        close_legs   = [l for l in all_legs if l["action"] == "exit"]
         close_prices = {l["instrument_key"]: l["price"]
                         for l in close_legs if l.get("instrument_key") and l.get("price")}
-        status = "🔄 Rolled" if t["status"] == "rolled" else "✅ Exited"
+        status = "✅ Exited"
         sections.append(_build_trade_block(
             symbol     = t["symbol"],
             entry_legs = entry_legs,

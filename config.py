@@ -109,8 +109,8 @@ TELEGRAM_CHAT_ID   = "1080341401"
 # Seconds between each LTP poll during market hours
 POLL_INTERVAL_SECONDS = 5
 
-# Time (IST) to roll expiring positions on expiry day — before 15:30 settlement
-ROLLOVER_TIME_IST = (14, 0)
+# Time (IST) to auto-roll expiring legs on expiry day — before 15:30 settlement
+AUTO_ROLL_TIME_IST = (14, 0)
 
 # NSE market hours in IST
 MARKET_OPEN_IST  = (9, 15)

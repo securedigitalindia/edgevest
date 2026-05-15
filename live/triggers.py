@@ -244,26 +244,26 @@ class RsiThresholdTrigger(BaseTrigger):
 
 class Nifty500MultipleTrigger(BaseTrigger):
     """
-    Entry    : LTP crosses UP through a 500-multiple.
-               Fetches live fut + PE prices from Upstox at entry.
-               Opens a trade header row + inserts entry leg rows.
+    Entry         : LTP crosses UP through a 500-multiple.
+                    Opens a trade header row + inserts entry leg rows.
+                    Legs with auto_adjust=True are auto-rolled on expiry.
 
-    Exit     : LTP crosses DOWN through (entry_level - exit_distance).
-               Reads entry legs from DB; fetches exit prices; inserts exit legs.
+    Exit          : LTP crosses DOWN through (entry_level - exit_distance).
+                    Closes trade via an 'exit' adjustment.
 
-    Rollover : On expiry day at ROLLOVER_TIME_IST, for any open trade whose
-               entry FUT leg expiry matches today.
-               Fetches all 4 prices in one call; inserts rollover_out legs on old
-               trade + rollover_in legs on new trade (linked via parent_trade_id).
+    Auto-adjust   : On expiry day at AUTO_ROLL_TIME_IST, for any open trade
+                    whose entry leg has auto_adjust=1 and expiry matches today.
+                    Creates an 'auto_roll' adjustment on the SAME trade row —
+                    no new recommended_trades row is created.
 
-    check() may return a list of signals (multiple events can fire in the same tick).
+    check() may return a list of signals.
     All strategy params live in config trades[0].params.
     """
 
     def __init__(self, cfg: dict, symbol: str):
         super().__init__(cfg, symbol)
         self._prev_ltp: float | None = None
-        self._rolled_today: set[int]  = set()   # trade IDs rolled this session
+        self._adjusted_today: set[tuple] = set()   # (trade_id, instrument_key) adjusted this session
 
     def refresh(self):
         pass   # pure LTP-based — no candle data needed
@@ -289,7 +289,7 @@ class Nifty500MultipleTrigger(BaseTrigger):
         from db.queries import (
             get_open_recommended_trade, get_all_open_recommended_trades,
             open_recommended_trade, add_trade_legs,
-            close_recommended_trade, get_trade_legs,
+            close_recommended_trade, get_current_legs,
         )
         from live.trade_suggestions import build_trade_suggestion
 
@@ -298,33 +298,34 @@ class Nifty500MultipleTrigger(BaseTrigger):
         entry_cfg = self._trades_cfg[0] if self._trades_cfg else None
         signals   = []
 
-        # --- Rollover: expiry day + past rollover time ---
+        # --- Auto-adjust: expiry day + past auto-roll time ---
         open_trades = get_all_open_recommended_trades(self.symbol)
-        if self._past_rollover_time(now_ist):
+        if self._past_auto_roll_time(now_ist):
             for trade in open_trades:
-                if trade["id"] in self._rolled_today:
-                    continue
-                # Determine expiry from the stored FUT entry leg (not trade header)
-                legs        = get_trade_legs(trade["id"])
-                entry_legs  = [l for l in legs if l["action"] == "entry"]
-                fut_leg     = next((l for l in entry_legs if l["instrument_type"] == "FUT"), None)
-                if fut_leg and fut_leg.get("expiry_str"):
-                    leg_expiry = datetime.strptime(fut_leg["expiry_str"], "%d %b %Y").date()
+                active_legs = get_current_legs(trade["id"])
+                for leg in active_legs:
+                    if not leg.get("auto_adjust"):
+                        continue
+                    if not leg.get("expiry_str"):
+                        continue
+                    key = (trade["id"], leg["instrument_key"])
+                    if key in self._adjusted_today:
+                        continue
+                    leg_expiry = datetime.strptime(leg["expiry_str"], "%d %b %Y").date()
                     if leg_expiry == now_ist.date():
-                        self._rolled_today.add(trade["id"])
-                        roll_sig = self._do_rollover(
-                            trade, entry_legs, ltp, now_utc, entry_cfg
+                        self._adjusted_today.add(key)
+                        adj_sig = self._do_auto_adjustment(
+                            trade, leg, ltp, now_utc, entry_cfg
                         )
-                        if roll_sig:
-                            signals.append(roll_sig)
+                        if adj_sig:
+                            signals.append(adj_sig)
             open_trades = get_all_open_recommended_trades(self.symbol)
 
         # --- Exit: LTP drops to/below exit_level ---
         for trade in open_trades:
             exit_level = trade["exit_level"]
             if prev > exit_level >= ltp:
-                legs       = get_trade_legs(trade["id"])
-                entry_legs = [l for l in legs if l["action"] == "entry"]
+                entry_legs = get_current_legs(trade["id"])
                 fut_leg    = next((l for l in entry_legs if l["instrument_type"] == "FUT"), None)
                 pe_leg     = next((l for l in entry_legs if l["instrument_type"] == "PE"),  None)
 
@@ -425,6 +426,7 @@ class Nifty500MultipleTrigger(BaseTrigger):
                             "strike": None, "expiry_str": exp_str,
                             "lots": p.get("fut_lots", 1), "lot_size": lot_size,
                             "price": prices.get(fut_ikey), "ts": now_utc,
+                            "auto_adjust": p.get("auto_adjust_fut", True),
                         },
                         {
                             "action": "entry", "side": "SELL",
@@ -433,6 +435,7 @@ class Nifty500MultipleTrigger(BaseTrigger):
                             "strike": pe_strike, "expiry_str": exp_str,
                             "lots": p.get("pe_lots", 2), "lot_size": lot_size,
                             "price": prices.get(pe_ikey), "ts": now_utc,
+                            "auto_adjust": p.get("auto_adjust_pe", True),
                         },
                     ])
                     signals.append(self._make_signal(
@@ -450,9 +453,9 @@ class Nifty500MultipleTrigger(BaseTrigger):
 
     # ------------------------------------------------------------------ helpers
 
-    def _past_rollover_time(self, now_ist: datetime) -> bool:
-        from config import ROLLOVER_TIME_IST
-        h, m = ROLLOVER_TIME_IST
+    def _past_auto_roll_time(self, now_ist: datetime) -> bool:
+        from config import AUTO_ROLL_TIME_IST
+        h, m = AUTO_ROLL_TIME_IST
         return now_ist.hour > h or (now_ist.hour == h and now_ist.minute >= m)
 
     def _fetch_prices(self, *ikeys) -> dict:
@@ -467,130 +470,92 @@ class Nifty500MultipleTrigger(BaseTrigger):
             print(f"  [500-multi]  price fetch failed: {e}", flush=True)
             return {}
 
-    def _do_rollover(self, trade: dict, entry_legs: list,
-                     ltp: float, now_utc: str,
-                     entry_cfg: dict | None) -> dict | None:
-        """Roll an expiring trade: close old legs, open new month legs."""
+    def _do_auto_adjustment(self, trade: dict, expiring_leg: dict,
+                            ltp: float, now_utc: str,
+                            entry_cfg: dict | None) -> dict | None:
+        """
+        Auto-roll a single expiring leg to the next expiry.
+        Creates an 'auto_roll' adjustment on the SAME trade — no new trade row.
+        Only the flagged leg is touched; other legs in the trade are untouched.
+        """
         from live.expiry import expiry_cache
         from live.fo_instruments import nifty_fut_ikey, nifty_pe_ikey, nifty_lot_size
         from live.trade_suggestions import build_trade_suggestion
-        from db.queries import roll_recommended_trade
+        from db.queries import add_trade_adjustment
 
-        old_fut_leg = next((l for l in entry_legs if l["instrument_type"] == "FUT"), None)
-        old_pe_leg  = next((l for l in entry_legs if l["instrument_type"] == "PE"),  None)
+        itype       = expiring_leg["instrument_type"]
+        old_ikey    = expiring_leg["instrument_key"]
+        old_exp_str = expiring_leg["expiry_str"]
+        old_strike  = int(expiring_leg["strike"]) if expiring_leg.get("strike") else None
+        lots        = expiring_leg["lots"]
+        old_lot_sz  = expiring_leg["lot_size"]
 
-        old_fut_key   = old_fut_leg["instrument_key"] if old_fut_leg else None
-        old_pe_key    = old_pe_leg["instrument_key"]  if old_pe_leg  else None
-        old_pe_strike = int(old_pe_leg["strike"])      if old_pe_leg and old_pe_leg.get("strike") else 0
-        old_exp_str   = old_fut_leg["expiry_str"]      if old_fut_leg else None
-        fut_lots      = old_fut_leg["lots"]             if old_fut_leg else 1
-        pe_lots       = old_pe_leg["lots"]              if old_pe_leg  else 2
-        old_lot_size  = old_fut_leg["lot_size"]         if old_fut_leg else 0
+        p = entry_cfg["params"] if entry_cfg else {}
 
         new_expiry = expiry_cache.pick(self.symbol, "monthly", 1)
         if not new_expiry:
-            print("  [500-multi]  rollover: new expiry unavailable — skip", flush=True)
+            print(f"  [500-multi]  auto-adjust: new expiry unavailable — skip {itype}", flush=True)
             return None
 
-        p             = entry_cfg["params"] if entry_cfg else {}
-        min_dist      = ltp * (p.get("min_pe_distance_pct", 3) / 100)
-        step          = p.get("strike_step", 500)
-        new_pe_strike = int((ltp - min_dist) // step) * step
-        new_exit_level = int(trade["entry_level"]) - p.get("exit_distance", 500)
-        new_exp_str   = new_expiry.strftime("%d %b %Y")
-        new_lot_size  = nifty_lot_size(new_expiry) or 0
+        new_exp_str  = new_expiry.strftime("%d %b %Y")
+        new_lot_size = nifty_lot_size(new_expiry) or 0
 
-        new_fut_key = nifty_fut_ikey(new_expiry)
-        new_pe_key  = nifty_pe_ikey(new_expiry, new_pe_strike)
+        if itype == "FUT":
+            new_ikey      = nifty_fut_ikey(new_expiry)
+            new_strike    = None
+        else:
+            min_dist      = ltp * (p.get("min_pe_distance_pct", 3) / 100)
+            step          = p.get("strike_step", 500)
+            new_strike    = int((ltp - min_dist) // step) * step
+            new_ikey      = nifty_pe_ikey(new_expiry, new_strike)
 
-        prices = self._fetch_prices(old_fut_key, old_pe_key, new_fut_key, new_pe_key)
+        prices        = self._fetch_prices(old_ikey, new_ikey)
+        old_price     = prices.get(old_ikey)
+        new_price     = prices.get(new_ikey)
 
-        old_fut_price = prices.get(old_fut_key)
-        old_pe_price  = prices.get(old_pe_key)
-        new_fut_price = prices.get(new_fut_key)
-        new_pe_price  = prices.get(new_pe_key)
+        out_leg = {
+            "side": "BUY" if expiring_leg["side"] == "SELL" else "SELL",
+            "instrument_type": itype, "instrument_key": old_ikey,
+            "strike": old_strike, "expiry_str": old_exp_str,
+            "lots": lots, "lot_size": old_lot_sz, "price": old_price,
+        }
+        in_leg = {
+            "side":            expiring_leg["side"],
+            "instrument_type": itype, "instrument_key": new_ikey,
+            "strike":          new_strike, "expiry_str": new_exp_str,
+            "lots":            lots, "lot_size": new_lot_size, "price": new_price,
+            "auto_adjust":     True,
+        }
 
-        rollover_out_legs = [
-            {
-                "action": "rollover_out", "side": "BUY",
-                "instrument_type": "FUT", "instrument_key": old_fut_key,
-                "strike": None, "expiry_str": old_exp_str,
-                "lots": fut_lots, "lot_size": old_lot_size,
-                "price": old_fut_price, "ts": now_utc,
-            },
-            {
-                "action": "rollover_out", "side": "BUY",
-                "instrument_type": "PE", "instrument_key": old_pe_key,
-                "strike": old_pe_strike, "expiry_str": old_exp_str,
-                "lots": pe_lots, "lot_size": old_lot_size,
-                "price": old_pe_price, "ts": now_utc,
-            },
-        ]
-        rollover_in_legs = [
-            {
-                "action": "rollover_in", "side": "SELL",
-                "instrument_type": "FUT", "instrument_key": new_fut_key,
-                "strike": None, "expiry_str": new_exp_str,
-                "lots": fut_lots, "lot_size": new_lot_size,
-                "price": new_fut_price, "ts": now_utc,
-            },
-            {
-                "action": "rollover_in", "side": "SELL",
-                "instrument_type": "PE", "instrument_key": new_pe_key,
-                "strike": new_pe_strike, "expiry_str": new_exp_str,
-                "lots": pe_lots, "lot_size": new_lot_size,
-                "price": new_pe_price, "ts": now_utc,
-            },
-        ]
-
-        # Margin for the new rolled position (best-effort)
-        new_margin_required = new_margin_final = None
-        try:
-            from live.upstox_client import get_margin
-            m = get_margin([
-                {"instrument_key": new_fut_key, "transaction_type": "SELL",
-                 "quantity": fut_lots * new_lot_size, "price": new_fut_price or 0.0},
-                {"instrument_key": new_pe_key,  "transaction_type": "SELL",
-                 "quantity": pe_lots * new_lot_size,  "price": new_pe_price  or 0.0},
-            ])
-            new_margin_required = m["required_margin"]
-            new_margin_final    = m["final_margin"]
-        except Exception as e:
-            print(f"  [500-multi]  rollover margin fetch failed: {e}", flush=True)
-
-        new_id = roll_recommended_trade(
-            trade["id"],
-            exit_ltp=ltp, exit_time=now_utc,
-            new_entry_ltp=ltp, new_exit_level=new_exit_level,
-            rollover_out_legs=rollover_out_legs,
-            rollover_in_legs=rollover_in_legs,
-            new_margin_required=new_margin_required,
-            new_margin_final=new_margin_final,
+        adj_id = add_trade_adjustment(
+            trade_id = trade["id"],
+            adj_type = "auto_roll",
+            note     = f"Auto-roll {itype} {old_exp_str} → {new_exp_str}",
+            ts       = now_utc,
+            legs     = [out_leg, in_leg],
         )
-        print(f"  [500-multi]  rolled trade {trade['id']} → {new_id}  "
-              f"({old_exp_str} → {new_exp_str})", flush=True)
+        print(f"  [500-multi]  auto-adjusted trade {trade['id']} "
+              f"{itype} {old_exp_str} → {new_exp_str}  adj_id={adj_id}", flush=True)
 
         roll_trade = build_trade_suggestion({
-            "type": "nifty_500_short_rollover",
+            "type": "nifty_500_auto_roll",
             "params": {
                 **p,
-                "old_expiry_str": old_exp_str,
-                "new_expiry_str": new_exp_str,
-                "old_pe_strike":  old_pe_strike,
-                "new_pe_strike":  new_pe_strike,
-                "old_fut_price":  old_fut_price,
-                "old_pe_price":   old_pe_price,
-                "new_fut_price":  new_fut_price,
-                "new_pe_price":   new_pe_price,
-                "fut_lots":       fut_lots,
-                "pe_lots":        pe_lots,
-                "entry_level":    int(trade["entry_level"]),
+                "instrument_type": itype,
+                "old_expiry_str":  old_exp_str,
+                "new_expiry_str":  new_exp_str,
+                "old_strike":      old_strike,
+                "new_strike":      new_strike,
+                "old_price":       old_price,
+                "new_price":       new_price,
+                "lots":            lots,
+                "entry_level":     int(trade["entry_level"]),
             },
         }, ltp, self.symbol)
 
         return self._make_signal(
-            ltp, ltp, "500-MULTI ROLLOVER",
-            int(trade["entry_level"]), new_exit_level,
+            ltp, ltp, "500-MULTI AUTO ROLL",
+            int(trade["entry_level"]), int(trade["exit_level"]),
             [roll_trade] if roll_trade else [],
         )
 

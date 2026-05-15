@@ -109,22 +109,39 @@
   /* ── Recommendations list ── */
   .rec-item { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;
               overflow: hidden; background: #fff; }
-  .rec-header { padding: 9px 12px; background: #f8fafc;
-                display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .rec-symbol { font-weight: 700; font-size: 14px; }
+  .rec-header { padding: 10px 14px; background: #f8fafc; border-bottom: 1px solid var(--border); }
+  .rec-header-row { display: flex; align-items: center; gap: 8px; }
+  .rec-header-timing { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .rec-symbol { font-weight: 700; font-size: 15px; color: #0f172a; }
   .rec-trigger { font-size: 11px; color: var(--muted); }
   .rec-since { font-size: 11px; color: var(--muted); margin-left: auto; }
   .badge-accts { font-size: 11px; padding: 2px 7px; border-radius: 20px;
                  background: #dbeafe; color: #1d4ed8; font-weight: 600; }
-  .badge-status-open   { font-size: 11px; padding: 2px 7px; border-radius: 20px;
-                         background: #dcfce7; color: #166534; font-weight: 600; }
-  .badge-status-exited { font-size: 11px; padding: 2px 7px; border-radius: 20px;
-                         background: #f1f5f9; color: var(--muted); font-weight: 600; }
-  .rec-legs { padding: 8px 12px; border-top: 1px solid var(--border);
-              font-size: 12px; color: var(--muted); }
-  .rec-leg-row { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
-  .rec-footer { padding: 8px 12px; border-top: 1px solid var(--border);
-                display: flex; gap: 8px; align-items: center; }
+  .badge-status-open   { font-size: 11px; padding: 2px 6px; border-radius: 20px;
+                         background: #dcfce7; color: #166534; font-weight: 700; }
+  .badge-status-exited { font-size: 11px; padding: 2px 6px; border-radius: 20px;
+                         background: #f1f5f9; color: #64748b; font-weight: 600; }
+  .rec-legs { padding: 10px 14px; }
+  .rec-leg-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0;
+                 border-bottom: 1px solid #f8fafc; }
+  .rec-leg-row:last-child { border-bottom: none; }
+  .rec-leg-name { flex: 1; }
+  .rec-leg-symbol { font-size: 13px; font-weight: 700; color: #1e293b; line-height: 1.3; }
+  .rec-leg-contract { font-size: 11px; color: var(--muted); line-height: 1.4; }
+  .rec-leg-meta { font-size: 12px; color: var(--muted); white-space: nowrap; padding-top: 1px; }
+  .rec-footer { padding: 8px 14px; border-top: 1px solid var(--border);
+                display: flex; gap: 8px; align-items: center; background: #fafafa; }
+
+  /* ── Exited rec leg block ── */
+  .exit-leg-block { padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+  .exit-leg-block:last-child { border-bottom: none; }
+  .exit-leg-row1 { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
+  .exit-leg-row2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .net-pnl-bar { display: flex; align-items: center; justify-content: space-between;
+                 padding: 8px 14px; border-top: 1px solid var(--border);
+                 background: #f8fafc; font-size: 13px; }
+  .net-pnl-label { color: var(--muted); font-size: 12px; }
+  .net-pnl-value { font-weight: 700; font-size: 14px; }
 
   /* ── Push to account form ── */
   .push-form { display: none; padding: 12px; border-top: 2px solid #bfdbfe;
@@ -160,11 +177,6 @@
   .pnl-pos { color: var(--green); font-weight: 600; }
   .pnl-neg { color: var(--red);   font-weight: 600; }
   .pnl-neu { color: var(--muted); }
-  .net-pnl-bar { padding: 7px 14px; background: #f8fafc;
-                 border-top: 1px solid var(--border);
-                 display: flex; justify-content: space-between; align-items: center; }
-  .net-pnl-label { font-size: 12px; color: var(--muted); }
-  .net-pnl-value { font-size: 14px; font-weight: 700; }
   .trade-footer { padding: 8px 14px; border-top: 1px solid var(--border);
                   display: flex; gap: 8px; }
   .exit-form { display: none; padding: 12px; border-top: 2px solid #fee2e2; background: #fff9f9; }
@@ -221,6 +233,51 @@
                  padding: 12px; margin-top: 4px; }
   .inline-form h4 { font-size: 11px; font-weight: 700; text-transform: uppercase;
                     letter-spacing: .5px; color: var(--muted); margin-bottom: 10px; }
+
+  /* ── Adjustment close-leg rows ── */
+  .adj-close-row { display: grid; grid-template-columns: 18px 1fr 64px 110px;
+                   gap: 10px; align-items: center; padding: 6px 2px;
+                   border-bottom: 1px solid #f1f5f9; }
+  .adj-close-row:last-child { border-bottom: none; }
+  .adj-close-row input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; margin: 0; }
+  .adj-close-leg-info { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .adj-close-price label { font-size: 10px; font-weight: 600; text-transform: uppercase;
+                            letter-spacing: .3px; color: var(--muted); margin-bottom: 3px; }
+
+  /* ── Adjustments ── */
+  .adj-history { padding: 8px 12px; border-top: 1px solid var(--border);
+                 background: #fafafa; font-size: 12px; }
+  .adj-history summary { cursor: pointer; color: var(--muted); font-weight: 600;
+                         font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+  .adj-row { margin-top: 6px; padding: 6px 8px; background: #fff;
+             border: 1px solid var(--border); border-radius: 6px; }
+  .adj-row-header { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .adj-type-badge { font-size: 10px; font-weight: 700; padding: 2px 6px;
+                    border-radius: 10px; background: #e0e7ff; color: #3730a3; }
+  .adj-ts { font-size: 10px; color: var(--muted); margin-left: auto; }
+  .adj-leg { display: flex; gap: 6px; padding: 2px 0; align-items: baseline; flex-wrap: wrap; }
+  .adj-section-label { font-size: 10px; font-weight: 700; color: var(--muted);
+                       text-transform: uppercase; margin: 3px 0 2px; }
+  .badge-adj { font-size: 11px; padding: 2px 7px; border-radius: 20px;
+               background: #fef9c3; color: #854d0e; font-weight: 600; }
+  .badge-pending { font-size: 11px; padding: 2px 7px; border-radius: 20px;
+                   background: #fef3c7; color: #92400e; font-weight: 600; cursor: default; }
+  .adj-form { display: none; padding: 12px; border-top: 2px solid #e0e7ff; background: #f5f3ff; }
+  .adj-form.open { display: block; }
+  .adj-form h4 { font-size: 12px; font-weight: 700; color: #3730a3;
+                 text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }
+  .adj-section { margin-bottom: 10px; }
+  .adj-section-title { font-size: 11px; font-weight: 700; color: var(--muted);
+                       text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
+  .pending-adj-banner { padding: 8px 12px; background: #fffbeb;
+                        border-top: 2px solid #fbbf24; font-size: 12px; }
+  .pending-adj-item { border: 1px solid #fde68a; border-radius: 6px;
+                      margin-bottom: 8px; overflow: hidden; }
+  .pending-adj-header { padding: 6px 10px; background: #fef3c7;
+                        display: flex; align-items: center; gap: 8px; }
+  .apply-form { padding: 10px; background: #fff; }
+  .apply-leg-row { display: grid; grid-template-columns: 1fr 120px;
+                   gap: 8px; align-items: center; margin-bottom: 6px; }
 
   /* ── Misc ── */
   .empty { text-align: center; padding: 32px 20px; color: var(--muted); font-size: 13px; }
@@ -285,11 +342,7 @@
     <!-- Admin / Super Admin: tabbed settings -->
     <div class="stabs">
       <button class="stab active" onclick="showStab('brokers',this)">Brokers</button>
-      <button class="stab" onclick="showStab('traders',this)">Traders</button>
-      <button class="stab" onclick="showStab('accounts',this)">Accounts</button>
-      {% if user.role == 'super_admin' %}
       <button class="stab" onclick="showStab('users',this)">Users</button>
-      {% endif %}
     </div>
 
     <div class="stab-panel active" id="stab-brokers">
@@ -302,47 +355,9 @@
       </div>
     </div>
 
-    <div class="stab-panel" id="stab-traders">
-      <div class="settings-list" id="traders-list"></div>
-      <div class="inline-form">
-        <h4>Add Trader / Client</h4>
-        <div class="form-row"><label>Name</label>
-          <input id="new-trader-name" placeholder="Full name"></div>
-        <div class="form-grid-2">
-          <div class="form-row"><label>Mobile</label>
-            <input id="new-trader-mobile" placeholder="+91 98765…"></div>
-          <div class="form-row"><label>Note</label>
-            <input id="new-trader-note" placeholder="Optional"></div>
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="addTrader()">Add</button>
-      </div>
-    </div>
-
-    <div class="stab-panel" id="stab-accounts">
-      <div class="settings-list" id="accounts-list"></div>
-      <div class="inline-form">
-        <h4>Add Account</h4>
-        <div class="form-grid-2">
-          <div class="form-row"><label>Trader</label>
-            <select id="new-acc-trader"><option value="">Select…</option></select></div>
-          <div class="form-row"><label>Broker</label>
-            <select id="new-acc-broker"><option value="">Select…</option></select></div>
-        </div>
-        <div class="form-grid-2">
-          <div class="form-row"><label>Account No.</label>
-            <input id="new-acc-no" placeholder="Broker account ID"></div>
-          <div class="form-row"><label>Label</label>
-            <input id="new-acc-label" placeholder="e.g. Raj · Upstox"></div>
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="addAccount()">Add</button>
-      </div>
-    </div>
-
-    {% if user.role == 'super_admin' %}
     <div class="stab-panel" id="stab-users">
       <div class="settings-list" id="users-list"><div class="empty">Loading…</div></div>
     </div>
-    {% endif %}
     {% endif %}
 
   </div>
@@ -390,11 +405,12 @@
     <!-- Recommendations list -->
     <div class="card">
       <div class="card-header">
-        <div class="pos-tabs">
-          <button class="pos-tab active" id="rec-tab-open"   onclick="switchRecTab('open')">Open</button>
-          <button class="pos-tab"        id="rec-tab-exited" onclick="switchRecTab('exited')">Exited</button>
-          <button class="pos-tab"        id="rec-tab-all"    onclick="switchRecTab('all')">All</button>
-        </div>
+        <h2>Recommended Positions</h2>
+        <select style="margin-left:12px;font-size:12px;padding:4px 8px;width:auto" onchange="switchRecTab(this.value)">
+          <option value="open">Open</option>
+          <option value="exited">Exited</option>
+          <option value="all">All</option>
+        </select>
         <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="loadRecs()">↻</button>
       </div>
       <div class="card-body" style="padding:10px">
@@ -408,7 +424,7 @@
     <div class="card">
       <div class="card-header">
         <div class="pos-tabs">
-          <button class="pos-tab active" id="tab-open" onclick="switchPosTab('open')">Open Positions</button>
+          <button class="pos-tab active" id="tab-open" onclick="switchPosTab('open')">{% if user.role == 'client' %}My Positions{% else %}All Positions{% endif %}</button>
           <button class="pos-tab" id="tab-history" onclick="switchPosTab('history')">Trade History</button>
         </div>
         <select id="filter-account" style="width:auto;font-size:12px;padding:4px 8px;margin-left:auto"
@@ -564,8 +580,9 @@ function collectLegs(containerId, prefix) {
     if (!price || price <= 0) { showToast(`Enter valid price`, 'err'); return null; }
     symbol = ins.symbol;
     const leg = { side, type: ins.instrument_type, lots, price };
-    if (ins.strike)     leg.strike = ins.strike;
-    if (ins.expiry_str) leg.expiry = ins.expiry_str;
+    if (ins.strike)     leg.strike   = ins.strike;
+    if (ins.expiry_str) leg.expiry   = ins.expiry_str;
+    if (ins.lot_size)   leg.lot_size = ins.lot_size;
     legs.push(leg);
   }
   return { symbol, legs };
@@ -613,9 +630,6 @@ let _recs = [], _recTab = 'open';
 
 function switchRecTab(tab) {
   _recTab = tab;
-  ['open','exited','all'].forEach(t => {
-    document.getElementById(`rec-tab-${t}`).classList.toggle('active', t === tab);
-  });
   renderRecs();
 }
 
@@ -644,34 +658,151 @@ function renderRecs() {
   el.innerHTML = filtered.map(renderRecItem).join('');
 }
 
+const _ADJ_TYPE_LABEL = {
+  auto_roll: 'Auto Roll', replace_legs: 'Replace Legs',
+  add_legs: 'Add Legs', partial_exit: 'Partial Exit', exit: 'Full Exit',
+  adjustment: 'Adjustment',
+};
+
 function renderRecItem(r) {
-  const legsHtml = r.legs.map(l => {
-    const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
-    const sc     = l.side === 'BUY' ? 'side-buy' : 'side-sell';
-    return `<div class="rec-leg-row">
-      <span class="${sc}" style="min-width:36px">${l.side}</span>
-      <span>${strike}${l.instrument_type}</span>
-      <span style="color:var(--muted)">${l.lots}L</span>
-      <span>@₹${Number(l.price).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
-    </div>`;
-  }).join('');
+  let legsHtml, pnlBar = '';
+  if (r.status === 'exited' && r.exit_legs && r.exit_legs.length) {
+    let totalPnl = 0, hasPnl = false;
+    const blocks = r.legs.map((e, i) => {
+      const x      = r.exit_legs[i] || {};
+      const sc     = e.side === 'BUY' ? 'side-buy' : 'side-sell';
+      const xsc    = (x.side||'') === 'BUY' ? 'side-buy' : 'side-sell';
+      const strike = e.strike ? `${Number(e.strike).toLocaleString('en-IN')} ` : '';
+      const ls     = e.lot_size || 0;
+      const qty    = ls ? e.lots * ls : e.lots;
+      const ep     = e.price != null ? fmtRs(e.price) : '—';
+      const xp     = x.price != null ? fmtRs(x.price) : '—';
+      let legPnl = null;
+      if (e.price != null && x.price != null) {
+        legPnl = e.side === 'SELL' ? (e.price - x.price)*qty : (x.price - e.price)*qty;
+        totalPnl += legPnl; hasPnl = true;
+      }
+      const sym      = e.symbol || r.symbol;
+      const contract = `${strike}${e.instrument_type}${e.expiry_str ? ' · ' + e.expiry_str : ''}`;
+      return `<div class="exit-leg-block">
+        <div class="exit-leg-row1">
+          <div style="flex:1">
+            <div class="rec-leg-symbol">${sym}${e.instrument_key ? ` <span style="font-weight:400;color:var(--muted);font-size:12px">(<span id="rltp-${r.id}-${i}" style="color:#16a34a;font-weight:600">—</span>)</span>` : ''}</div>
+            <div class="rec-leg-contract">${contract}</div>
+          </div>
+        </div>
+        <div class="exit-leg-row2">
+          <span class="${sc}" style="font-weight:700">${e.side}</span>
+          <span style="color:var(--muted);font-size:13px">→</span>
+          <span class="${xsc}" style="font-weight:700">${x.side||'—'}</span>
+          <span class="rec-leg-meta">${ep} → ${xp}</span>
+          ${e.lots ? `<span class="rec-leg-meta">${e.lots}L${ls ? ' × ' + ls : ''}</span>` : ''}
+          ${legPnl != null ? `<span class="${legPnl >= 0 ? 'pnl-pos':'pnl-neg'}" style="font-size:11px;font-weight:600;margin-left:4px">${fmtPnl(legPnl)}</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    pnlBar = hasPnl
+      ? `<div class="net-pnl-bar">
+           <span class="net-pnl-label">Realized P&amp;L</span>
+           <span class="net-pnl-value ${totalPnl >= 0 ? 'pnl-pos':'pnl-neg'}">${fmtPnl(totalPnl)}</span>
+         </div>` : '';
+    legsHtml = blocks;
+  } else {
+    legsHtml = r.legs.map((l, i) => {
+      const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
+      const exp    = l.expiry_str ? ` · ${l.expiry_str}` : '';
+      const sc     = l.side === 'BUY' ? 'side-buy' : 'side-sell';
+      const aa     = l.auto_adjust ? ' <span title="auto-roll" style="color:#6366f1;font-size:10px">↻</span>' : '';
+      const price  = l.price != null ? Number(l.price).toLocaleString('en-IN',{minimumFractionDigits:2}) : '—';
+      return `<div class="rec-leg-row">
+        <span class="${sc}" style="font-weight:700;min-width:38px;padding-top:1px">${l.side}</span>
+        <div class="rec-leg-name">
+          <div class="rec-leg-symbol">${l.symbol || r.symbol}${aa} <span style="font-weight:400;color:var(--muted);font-size:12px">(<span id="rltp-${r.id}-${i}" style="color:#16a34a;font-weight:600">—</span>)</span></div>
+          <div class="rec-leg-contract">${strike}${l.instrument_type}${exp}</div>
+        </div>
+        <span class="rec-leg-meta">${l.lots}L @₹${price}</span>
+      </div>`;
+    }).join('');
+  }
 
   const acctBadge = r.account_count > 0
     ? `<span class="badge-accts">${r.account_count} account${r.account_count>1?'s':''}</span>`
+    : '';
+  const adjBadge = r.adj_count > 0
+    ? `<span class="badge-adj">${r.adj_count} adj</span>`
     : '';
   const statusBadge = r.status === 'open'
     ? `<span class="badge-status-open">Open</span>`
     : `<span class="badge-status-exited">${r.status}</span>`;
 
-  return `<div class="rec-item" id="rec-${r.id}">
-    <div class="rec-header">
-      <span class="rec-symbol">${r.symbol}</span>
-      ${statusBadge}
-      <span class="rec-trigger" style="color:var(--muted);font-size:11px">${r.trigger}</span>
-      ${acctBadge}
-      <span class="rec-since">${r.entry_ist}</span>
+  const adjHistory = r.adjustments && r.adjustments.length ? `
+    <div class="adj-history">
+      <details>
+        <summary>Adjustment History (${r.adjustments.length})</summary>
+        ${r.adjustments.map(a => {
+          const ts = a.ts ? fmtIst(a.ts) : '';
+          return `<div class="adj-row">
+            <div class="adj-row-header">
+              <span class="adj-type-badge">${_ADJ_TYPE_LABEL[a.adj_type] || a.adj_type}</span>
+              ${a.note ? `<span style="color:var(--muted)">${a.note}</span>` : ''}
+              <span class="adj-ts">${ts}</span>
+            </div>
+            ${a.legs && a.legs.length ? a.legs.map(l => {
+                const st  = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
+                const exp = l.expiry_str ? ` · ${l.expiry_str}` : '';
+                const sc  = l.side === 'BUY' ? 'side-buy' : 'side-sell';
+                return `<div class="adj-leg" style="display:flex;align-items:flex-start;gap:8px;padding:4px 0">
+                  <span class="${sc}" style="font-weight:700;font-size:11px;padding-top:1px;min-width:32px">${l.side}</span>
+                  <div style="flex:1;line-height:1.4">
+                    <div style="font-size:12px;font-weight:700;color:#1e293b">${r.symbol}</div>
+                    <div style="font-size:11px;color:var(--muted)">${st}${l.instrument_type}${exp}</div>
+                  </div>
+                  <div style="text-align:right;white-space:nowrap;padding-top:1px;font-size:11px;color:var(--muted)">
+                    ${l.lots}L${l.price != null ? ` @₹${Number(l.price).toLocaleString('en-IN',{minimumFractionDigits:2})}` : ''}
+                  </div>
+                </div>`;
+              }).join('') : ''}
+          </div>`;
+        }).join('')}
+      </details>
+    </div>` : '';
+
+  const adminFooter = _isAdmin && r.status === 'open' ? `
+    <div class="rec-footer">
+      <button class="btn btn-primary btn-sm" onclick="toggleAdjForm(${r.id})">Adjust</button>
+      <button class="btn btn-danger btn-sm" onclick="toggleRecExit(${r.id})">Exit</button>
     </div>
-    <div class="rec-legs">${legsHtml}</div>
+    <div class="adj-form" id="adjform-${r.id}">
+      ${renderAdjForm(r)}
+    </div>
+    <div class="exit-form" id="rxform-${r.id}">
+      <h4>Exit Trade</h4>
+      ${r.legs.map((l, i) => {
+        const strike   = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
+        const exp      = l.expiry_str ? ` · ${l.expiry_str}` : '';
+        const exitSide = l.side === 'BUY' ? 'SELL' : 'BUY';
+        const exitSc   = exitSide === 'BUY' ? 'side-buy' : 'side-sell';
+        const entryP   = l.price != null ? Number(l.price).toLocaleString('en-IN',{minimumFractionDigits:2}) : '—';
+        return `<div class="exit-leg-row">
+          <div class="exit-leg-info" style="display:flex;align-items:flex-start;gap:8px">
+            <span class="side ${exitSc}" style="padding-top:2px">${exitSide}</span>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:#1e293b">${l.symbol || r.symbol}</div>
+              <div style="font-size:11px;color:var(--muted)">${strike}${l.instrument_type}${exp} · ${l.lots}L @₹${entryP}</div>
+            </div>
+          </div>
+          <div><label>Price</label>
+            <input type="number" step="0.05" id="rxprice-${r.id}-${i}" placeholder="0.00">
+          </div>
+        </div>`;
+      }).join('')}
+      <div class="exit-form-footer">
+        <button class="btn btn-danger btn-sm" onclick="submitRecExit(${r.id},${r.legs.length},'${r.symbol}')">Confirm Exit</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleRecExit(${r.id})">Cancel</button>
+      </div>
+    </div>` : '';
+
+  const clientFooter = !_isAdmin ? `
     <div class="rec-footer">
       <button class="btn btn-success btn-sm" onclick="togglePushForm(${r.id})">
         + Add to Account
@@ -679,7 +810,26 @@ function renderRecItem(r) {
     </div>
     <div class="push-form" id="push-${r.id}">
       ${renderPushForm(r)}
+    </div>` : '';
+
+  const timingRow = r.exit_ist
+    ? `<div class="rec-header-timing" style="margin-top:5px">Open: ${r.entry_ist}&nbsp;&nbsp;·&nbsp;&nbsp;Exited: ${r.exit_ist}</div>`
+    : `<div class="rec-header-timing" style="margin-top:5px">Open: ${r.entry_ist}</div>`;
+
+  return `<div class="rec-item" id="rec-${r.id}">
+    <div class="rec-header">
+      <div class="rec-header-row">
+        <span class="rec-symbol">${r.symbol}</span>
+        ${statusBadge}
+        ${adjBadge}
+      </div>
+      ${timingRow}
     </div>
+    <div class="rec-legs">${legsHtml}</div>
+    ${pnlBar}
+    ${adjHistory}
+    ${adminFooter}
+    ${clientFooter}
   </div>`;
 }
 
@@ -687,13 +837,14 @@ function renderPushForm(r) {
   const legInputs = r.legs.map((l, i) => {
     const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
     const sc     = l.side === 'BUY' ? 'side-buy' : 'side-sell';
+    const exp = l.expiry_str ? ` · ${l.expiry_str}` : '';
     return `<div class="push-leg-row">
-      <div>
-        <div class="push-leg-label">
-          <span class="${sc}">${l.side}</span>
-          &nbsp;${strike}${l.instrument_type}
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <span class="${sc}" style="font-weight:700;font-size:12px;padding-top:2px">${l.side}</span>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#1e293b">${l.symbol || r.symbol}</div>
+          <div style="font-size:11px;color:var(--muted)">${strike}${l.instrument_type}${exp}</div>
         </div>
-        <div class="push-leg-meta">Suggested: ${l.lots}L @₹${Number(l.price).toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
       </div>
       <div><label>Lots</label>
         <input type="number" id="plots-${r.id}-${i}" value="${l.lots}" min="1"></div>
@@ -734,8 +885,104 @@ function populatePushAccountSelect(recId) {
   if (!sel) return;
   sel.innerHTML = '<option value="">Select account…</option>' +
     _accounts.map(a =>
-      `<option value="${a.id}">${a.label || [a.trader, a.broker].filter(Boolean).join(' · ')}</option>`
+      `<option value="${a.id}">${a.label || [a.user_name, a.broker].filter(Boolean).join(' · ')}</option>`
     ).join('');
+}
+
+function renderAdjForm(r) {
+  return `<h4>Adjust Trade</h4>
+    <div class="adj-section">
+      <div class="adj-section-title">Adjustment Legs</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+        Add legs as you'd execute them — SELL to reduce a BUY position, BUY to add or replace a leg. Net position updates automatically.
+      </div>
+      <div class="legs-list" id="adjin-legs-${r.id}"></div>
+      <button class="add-leg-btn" onclick="addLeg('adjin-legs-${r.id}','adj${r.id}')">+ Add Leg</button>
+    </div>
+    <div class="form-row" style="margin-top:10px">
+      <label>Note <span style="font-size:10px;font-weight:400">(optional)</span></label>
+      <input id="adjnote-${r.id}" placeholder="e.g. Rolling May → Jun, partial profit">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary btn-sm" onclick="submitAdj(${r.id})">Apply Adjustment</button>
+      <button class="btn btn-ghost btn-sm" onclick="toggleAdjForm(${r.id})">Cancel</button>
+    </div>`;
+}
+
+function toggleAdjForm(id) {
+  const el    = document.getElementById(`adjform-${id}`);
+  const rxEl  = document.getElementById(`rxform-${id}`);
+  if (!el) return;
+  el.classList.toggle('open');
+  if (rxEl && el.classList.contains('open')) rxEl.classList.remove('open');
+  if (el.classList.contains('open')) {
+    const container = `adjin-legs-${id}`;
+    if (!document.querySelector(`#${container} .leg-row`))
+      addLeg(container, `adj${id}`);
+  }
+}
+
+async function submitAdj(recId) {
+  const note      = document.getElementById(`adjnote-${recId}`).value;
+  const container = `adjin-legs-${recId}`;
+  const legs      = [];
+  for (const el of document.querySelectorAll(`#${container} .leg-row`)) {
+    const n   = el.id.split('-').pop();
+    const key = `adj${recId}-${n}`;
+    const ins = _legData[key];
+    if (!ins) continue;
+    const side  = document.getElementById(`side-adj${recId}-${n}`).value;
+    const lots  = parseInt(document.getElementById(`lots-adj${recId}-${n}`).value);
+    const price = parseFloat(document.getElementById(`price-adj${recId}-${n}`).value);
+    if (!lots || lots < 1 || !price || price <= 0) continue;
+    const leg = { side, instrument_type: ins.instrument_type, lots, price };
+    if (ins.instrument_key) leg.instrument_key = ins.instrument_key;
+    if (ins.strike)         leg.strike         = ins.strike;
+    if (ins.expiry_str)     leg.expiry_str     = ins.expiry_str;
+    if (ins.lot_size)       leg.lot_size       = ins.lot_size;
+    legs.push(leg);
+  }
+
+  if (!legs.length) { showToast('Add at least one leg', 'err'); return; }
+
+  try {
+    const res  = await fetch(`/api/recommendations/${recId}/adjust`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ note, legs }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Adjustment applied — Telegram alert sent ✓', 'ok');
+      toggleAdjForm(recId);
+      loadRecs();
+    } else {
+      showToast(data.error || 'Failed', 'err');
+    }
+  } catch(e) { showToast('Network error', 'err'); }
+}
+
+function toggleRecExit(id) {
+  const el   = document.getElementById(`rxform-${id}`);
+  const adjEl = document.getElementById(`adjform-${id}`);
+  if (!el) return;
+  el.classList.toggle('open');
+  if (adjEl && el.classList.contains('open')) adjEl.classList.remove('open');
+}
+
+async function submitRecExit(recId, legCount, symbol) {
+  const prices = [];
+  for (let i = 0; i < legCount; i++) {
+    const p = parseFloat(document.getElementById(`rxprice-${recId}-${i}`).value);
+    if (!p || p <= 0) { showToast(`Enter exit price for leg ${i+1}`, 'err'); return; }
+    prices.push(p);
+  }
+  const res  = await fetch(`/api/recommendations/${recId}/exit`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ prices }),
+  });
+  const data = await res.json();
+  if (data.ok) { showToast('Exit signal sent ✓', 'ok'); loadRecs(); }
+  else showToast(data.error || 'Failed', 'err');
 }
 
 async function submitPush(recId, legCount, symbol) {
@@ -780,6 +1027,7 @@ async function submitPush(recId, legCount, symbol) {
 // ─────────────────────────────────────────────────────────
 
 let _trades = [];
+const _pendingAdjData = {};
 
 async function loadAccountTrades() {
   document.getElementById('trades-list').innerHTML = '<div class="empty">Loading…</div>';
@@ -824,20 +1072,37 @@ function renderTradeCard(t) {
         &nbsp;${strike}${l.instrument_type} · ${l.lots}L
         <div class="meta">entry ${fmtRs(l.price)}</div>
       </div>
-      <div><label>Exit price</label>
+      <div><label>Price</label>
         <input type="number" step="0.05" id="xprice-${t.id}-${i}" placeholder="0.00">
       </div>
     </div>`;
   }).join('');
 
-  const acctBadge  = `<span class="badge-account">${t.account_label}</span>`;
-  const recTag     = t.rec_id ? `<span style="font-size:11px;color:var(--muted)">rec#${t.rec_id}</span>` : '';
+  const acctBadge  = `<span class="badge-account">${t.account_label || t.broker_name || `Account ${t.account_id}`}</span>`;
+  const pendingBadge = t.pending_adj_count > 0
+    ? `<span class="badge-pending">⚠ ${t.pending_adj_count} adj pending</span>`
+    : '';
+
+  // Cache pending adj leg data so onclick doesn't need JSON.stringify in HTML attribute
+  if (t.pending_adjustments) {
+    t.pending_adjustments.forEach(a => {
+      _pendingAdjData[`${t.id}-${a.id}`] = { legs: a.legs };
+    });
+  }
+  const pendingSection = t.pending_adjustments && t.pending_adjustments.length
+    ? `<div class="pending-adj-banner">
+        <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;color:#92400e">
+          Pending Adjustments — apply to your position
+        </div>
+        ${t.pending_adjustments.map(a => renderApplyAdj(t, a)).join('')}
+      </div>` : '';
 
   return `<div class="trade-card" id="card-${t.id}">
     <div class="trade-card-header">
       <span class="trade-symbol">${t.symbol}</span>
       <span class="badge-open">Open</span>
-      ${acctBadge} ${recTag}
+      ${pendingBadge}
+      ${acctBadge}
       <span class="trade-since">${t.entry_ist}</span>
     </div>
     <table class="legs-table">
@@ -851,11 +1116,12 @@ function renderTradeCard(t) {
       <span class="net-pnl-label">Net P&amp;L</span>
       <span class="net-pnl-value pnl-neu" id="net-${t.id}">—</span>
     </div>
+    ${pendingSection}
     <div class="trade-footer">
       <button class="btn btn-danger btn-sm" onclick="toggleExit(${t.id})">Exit Trade</button>
     </div>
     <div class="exit-form" id="xform-${t.id}">
-      <h4>Enter Exit Prices</h4>
+      <h4>Exit Trade</h4>
       ${exitInputs}
       <div class="exit-form-footer">
         <div class="note-wrap">
@@ -867,6 +1133,70 @@ function renderTradeCard(t) {
       </div>
     </div>
   </div>`;
+}
+
+function renderApplyAdj(t, a) {
+  const label   = _ADJ_TYPE_LABEL[a.adj_type] || a.adj_type;
+  const legRows = (a.legs || []).map((l, i) => {
+    const st = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
+    const sc = l.side === 'BUY' ? 'side-buy' : 'side-sell';
+    return `<div class="apply-leg-row">
+      <div><span class="${sc}">${l.side}</span>&nbsp;${st}${l.instrument_type} · ${l.lots}L
+        <div style="font-size:10px;color:var(--muted)">Rec @ ₹${l.price != null ? Number(l.price).toLocaleString('en-IN',{minimumFractionDigits:2}) : '—'}</div>
+      </div>
+      <div><label>Your price</label>
+        <input type="number" step="0.05" id="aleg-${t.id}-${a.id}-${i}" placeholder="0.00">
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="pending-adj-item">
+    <div class="pending-adj-header">
+      <span class="adj-type-badge">${label}</span>
+      ${a.note ? `<span style="font-size:11px;color:#92400e">${a.note}</span>` : ''}
+    </div>
+    <div class="apply-form" id="apply-form-${t.id}-${a.id}">
+      ${legRows}
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary btn-sm"
+                onclick="submitApplyAdj(${t.id},${a.id},'${a.adj_type}')">
+          Apply to My Position
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function submitApplyAdj(atId, adjId, adjType) {
+  const cached = _pendingAdjData[`${atId}-${adjId}`];
+  if (!cached) { showToast('Adjustment data not found — refresh the page', 'err'); return; }
+  const recLegs = cached.legs || [];
+  const legs    = [];
+
+  for (let i = 0; i < recLegs.length; i++) {
+    const price = parseFloat(document.getElementById(`aleg-${atId}-${adjId}-${i}`)?.value);
+    if (!price || price <= 0) { showToast(`Enter price for leg ${i+1}`, 'err'); return; }
+    const rl = recLegs[i];
+    legs.push({
+      action: 'entry', side: rl.side, instrument_type: rl.instrument_type,
+      instrument_key: rl.instrument_key, strike: rl.strike, expiry_str: rl.expiry_str,
+      lots: rl.lots, lot_size: rl.lot_size, price,
+    });
+  }
+
+  try {
+    const res  = await fetch(`/api/account-trades/${atId}/adjust`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ adjustment_id: adjId, adj_type: adjType, legs }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Adjustment applied to your position ✓', 'ok');
+      loadAccountTrades();
+    } else {
+      showToast(data.error || 'Failed', 'err');
+    }
+  } catch(e) { showToast('Network error', 'err'); }
 }
 
 function toggleExit(id) {
@@ -1041,10 +1371,9 @@ async function addClientAccount() {
 // ─────────────────────────────────────────────────────────
 
 async function updatePrices() {
-  if (!_trades.length) return;
-  const ikeys = [...new Set(
-    _trades.flatMap(t => t.legs.map(l => l.instrument_key).filter(Boolean))
-  )];
+  const tradeKeys = _trades.flatMap(t => t.legs.map(l => l.instrument_key).filter(Boolean));
+  const recKeys   = _recs.flatMap(r => r.legs.map(l => l.instrument_key).filter(Boolean));
+  const ikeys = [...new Set([...tradeKeys, ...recKeys])];
   if (!ikeys.length) return;
   try {
     const res    = await fetch('/api/prices', {
@@ -1075,6 +1404,13 @@ async function updatePrices() {
         netEl.className   = `net-pnl-value ${net >= 0 ? 'pnl-pos' : 'pnl-neg'}`;
       }
     }
+    for (const r of _recs) {
+      r.legs.forEach((l, i) => {
+        const ltp   = prices[l.instrument_key];
+        const ltpEl = document.getElementById(`rltp-${r.id}-${i}`);
+        if (ltpEl && ltp != null) ltpEl.textContent = fmtRs(ltp);
+      });
+    }
     document.getElementById('last-updated').textContent =
       'Updated ' + new Date().toLocaleTimeString('en-IN',
         {hour:'2-digit', minute:'2-digit', second:'2-digit'});
@@ -1098,7 +1434,7 @@ async function updateSpot() {
 // Settings drawer
 // ─────────────────────────────────────────────────────────
 
-let _brokers = [], _traders = [], _accounts = [];
+let _brokers = [], _users = [], _accounts = [];
 const _role  = "{{ user.role }}";
 const _isAdmin = _role === 'super_admin' || _role === 'admin';
 
@@ -1120,19 +1456,16 @@ function showStab(name, el) {
 
 async function loadSettings() {
   if (_isAdmin) {
-    const requests = [
+    const [bRes, uRes] = await Promise.all([
       fetch('/api/brokers').then(r => r.json()),
-      fetch('/api/traders').then(r => r.json()),
-      fetch('/api/accounts').then(r => r.json()),
-    ];
-    if (_role === 'super_admin') requests.push(fetch('/api/users').then(r => r.json()));
-    const results = await Promise.all(requests);
-    _brokers  = results[0].brokers  || [];
-    _traders  = results[1].traders  || [];
-    _accounts = results[2].accounts || [];
-    renderBrokersList(); renderTradersList(); renderAccountsList();
+      fetch('/api/users').then(r => r.json()),
+    ]);
+    _brokers = bRes.brokers || [];
+    _users   = uRes.users   || [];
+    _accounts = _users.flatMap(u => u.accounts || []);
+    renderBrokersList();
     populateAccountSelects();
-    if (_role === 'super_admin') renderUsersList(results[3].users || []);
+    renderUsersList(_users);
   } else {
     // Clients only need brokers (for add-account form) and their own accounts
     const [bRes, aRes] = await Promise.all([
@@ -1152,55 +1485,63 @@ function renderUsersList(users) {
   if (!el) return;
   if (!users.length) { el.innerHTML = '<div class="empty">No users yet.</div>'; return; }
   el.innerHTML = users.map(u => {
-    const traderOpts = '<option value="">— none —</option>' +
-      _traders.map(t => {
-        const sel     = u.trader_id === t.id ? ' selected' : '';
-        const autoTag = t.name === u.name ? ' (auto)' : '';
-        return `<option value="${t.id}"${sel}>${t.name}${autoTag}</option>`;
-      }).join('');
-    const noLink = u.trader_id == null;
+    const mob = (u.mobile || '').replace(/'/g, "\\'");
+    const nt  = (u.note   || '').replace(/'/g, "\\'");
     return `<div class="settings-item">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         ${u.picture ? `<img src="${u.picture}" style="width:24px;height:24px;border-radius:50%">` : ''}
         <span class="s-name">${u.name}</span>
         <span style="font-size:11px;color:var(--muted)">${u.email}</span>
-        ${noLink ? '<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:10px;font-weight:600">no trader</span>' : ''}
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="toggleUserEdit(${u.id})">Edit</button>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div>
-          <label>Role</label>
-          <select onchange="setUserRole(${u.id},this.value)">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+        <span class="s-meta">${u.role.replace('_',' ')}</span>
+        ${u.mobile || u.note ? `<span class="s-meta">${[u.mobile, u.note].filter(Boolean).join('  ·  ')}</span>` : ''}
+      </div>
+      ${u.accounts && u.accounts.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">${
+        u.accounts.map(a => `<span style="font-size:11px;background:var(--surface2);padding:2px 8px;border-radius:10px">${
+          a.label || [a.broker, a.account_no].filter(Boolean).join(' · ')
+        }</span>`).join('')
+      }</div>` : ''}
+      <div id="uedit-${u.id}" style="display:none;margin-top:10px">
+        <div class="form-grid-2">
+          <div class="form-row"><label>Mobile</label>
+            <input id="umob-${u.id}" value="${mob}" placeholder="+91 …"></div>
+          <div class="form-row"><label>Note</label>
+            <input id="unote-${u.id}" value="${nt}" placeholder="Optional"></div>
+        </div>
+        <div class="form-row" style="margin-top:8px"><label>Role</label>
+          <select id="urole-${u.id}">
             ${['super_admin','admin','client'].map(r =>
               `<option value="${r}" ${u.role===r?'selected':''}>${r.replace('_',' ')}</option>`
             ).join('')}
           </select>
         </div>
-        <div>
-          <label>Brokerage Account Holder</label>
-          <select onchange="setUserTrader(${u.id},this.value)">${traderOpts}</select>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="btn btn-primary btn-sm" onclick="saveUserProfile(${u.id})">Save</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleUserEdit(${u.id})">Cancel</button>
         </div>
       </div>
     </div>`;
   }).join('');
 }
 
-async function setUserRole(uid, role) {
-  const res  = await fetch(`/api/users/${uid}/role`, {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ role }),
-  });
-  const data = await res.json();
-  if (data.ok) showToast('Role updated', 'ok');
-  else showToast(data.error || 'Failed', 'err');
+function toggleUserEdit(id) {
+  const el = document.getElementById(`uedit-${id}`);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
-async function setUserTrader(uid, trader_id) {
-  const res  = await fetch(`/api/users/${uid}/trader`, {
+async function saveUserProfile(id) {
+  const mobile = document.getElementById(`umob-${id}`).value.trim();
+  const note   = document.getElementById(`unote-${id}`).value.trim();
+  const role   = document.getElementById(`urole-${id}`).value;
+  const res = await fetch(`/api/users/${id}/profile`, {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ trader_id: trader_id ? parseInt(trader_id) : null }),
+    body: JSON.stringify({ mobile, note, role }),
   });
   const data = await res.json();
-  if (data.ok) showToast('Trader linked', 'ok');
+  if (data.ok) { showToast('Profile updated ✓', 'ok'); loadSettings(); }
   else showToast(data.error || 'Failed', 'err');
 }
 
@@ -1210,68 +1551,9 @@ function renderBrokersList() {
     ? _brokers.map(b => `<div class="settings-item"><span class="s-name">${b.name}</span></div>`).join('')
     : '<div class="empty">No brokers yet.</div>';
 }
-function renderTradersList() {
-  const el = document.getElementById('traders-list');
-  el.innerHTML = _traders.length
-    ? _traders.map(t => {
-        const meta = [t.mobile, t.note, t.user_email ? `(${t.user_email})` : ''].filter(Boolean).join('  ·  ');
-        const mob  = (t.mobile || '').replace(/'/g, "\\'");
-        const nt   = (t.note   || '').replace(/'/g, "\\'");
-        return `<div class="settings-item">
-          <div style="display:flex;align-items:center;gap:8px">
-            <div style="flex:1">
-              <span class="s-name">${t.name}</span>
-              ${meta ? `<div class="s-meta">${meta}</div>` : '<div class="s-meta" style="color:#f59e0b;font-size:11px">no mobile/note</div>'}
-            </div>
-            <button class="btn btn-ghost btn-sm" onclick="toggleTraderEdit(${t.id})">Edit</button>
-          </div>
-          <div id="tedit-${t.id}" style="display:none;margin-top:10px">
-            <div class="form-grid-2">
-              <div class="form-row"><label>Mobile</label>
-                <input id="tmob-${t.id}" value="${mob}" placeholder="+91 …"></div>
-              <div class="form-row"><label>Note</label>
-                <input id="tnote-${t.id}" value="${nt}" placeholder="Optional"></div>
-            </div>
-            <div style="display:flex;gap:6px;margin-top:6px">
-              <button class="btn btn-primary btn-sm" onclick="saveTrader(${t.id})">Save</button>
-              <button class="btn btn-ghost btn-sm" onclick="toggleTraderEdit(${t.id})">Cancel</button>
-            </div>
-          </div>
-        </div>`;
-      }).join('')
-    : '<div class="empty">No traders yet.</div>';
-}
-
-function toggleTraderEdit(id) {
-  const el = document.getElementById(`tedit-${id}`);
-  if (!el) return;
-  el.style.display = el.style.display === 'none' ? 'block' : 'none';
-}
-
-async function saveTrader(id) {
-  const mobile = document.getElementById(`tmob-${id}`).value.trim();
-  const note   = document.getElementById(`tnote-${id}`).value.trim();
-  const res  = await fetch(`/api/traders/${id}`, {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ mobile, note }),
-  });
-  const data = await res.json();
-  if (data.ok) { showToast('Trader updated ✓', 'ok'); loadSettings(); }
-  else showToast(data.error || 'Failed', 'err');
-}
-function renderAccountsList() {
-  const el = document.getElementById('accounts-list');
-  el.innerHTML = _accounts.length
-    ? _accounts.map(a => `<div class="settings-item">
-        <span class="s-name">${a.label || [a.trader, a.broker].filter(Boolean).join(' · ')}</span>
-        <div class="s-meta">${[a.trader, a.broker, a.account_no].filter(Boolean).join('  ·  ')}</div>
-      </div>`).join('')
-    : '<div class="empty">No accounts yet.</div>';
-}
-
 function populateAccountSelects() {
   const opts = _accounts.map(a =>
-    `<option value="${a.id}">${a.label || [a.trader, a.broker].filter(Boolean).join(' · ')}</option>`
+    `<option value="${a.id}">${a.label || [a.broker, a.account_no].filter(Boolean).join(' · ')}</option>`
   ).join('');
   const filterSel = document.getElementById('filter-account');
   const prevFilt  = filterSel.value;
@@ -1281,16 +1563,6 @@ function populateAccountSelects() {
   const brokerOpts = '<option value="">Select…</option>' +
     _brokers.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
 
-  // Admin selects inside settings drawer
-  const newAccTrader = document.getElementById('new-acc-trader');
-  if (newAccTrader) {
-    newAccTrader.innerHTML =
-      '<option value="">Select…</option>' + _traders.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-  }
-  const newAccBroker = document.getElementById('new-acc-broker');
-  if (newAccBroker) newAccBroker.innerHTML = brokerOpts;
-
-  // Client broker select in My Accounts card
   const clientBroker = document.getElementById('client-acc-broker');
   if (clientBroker) clientBroker.innerHTML = brokerOpts;
 }
@@ -1306,39 +1578,6 @@ async function addBroker() {
   else showToast(data.error || 'Failed', 'err');
 }
 
-async function addTrader() {
-  const name   = document.getElementById('new-trader-name').value.trim();
-  const mobile = document.getElementById('new-trader-mobile').value.trim();
-  const note   = document.getElementById('new-trader-note').value.trim();
-  if (!name) { showToast('Enter trader name', 'err'); return; }
-  const res = await fetch('/api/traders', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ name, mobile, note }),
-  });
-  const data = await res.json();
-  if (data.ok) {
-    ['new-trader-name','new-trader-mobile','new-trader-note'].forEach(id =>
-      document.getElementById(id).value = '');
-    showToast('Trader added', 'ok'); loadSettings();
-  } else showToast(data.error || 'Failed', 'err');
-}
-
-async function addAccount() {
-  const trader_id  = document.getElementById('new-acc-trader').value;
-  const broker_id  = document.getElementById('new-acc-broker').value;
-  const account_no = document.getElementById('new-acc-no').value.trim();
-  const label      = document.getElementById('new-acc-label').value.trim();
-  if (!trader_id || !broker_id) { showToast('Select trader and broker', 'err'); return; }
-  const res = await fetch('/api/accounts', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ trader_id: parseInt(trader_id), broker_id: parseInt(broker_id), account_no, label }),
-  });
-  const data = await res.json();
-  if (data.ok) {
-    ['new-acc-no','new-acc-label'].forEach(id => document.getElementById(id).value = '');
-    showToast('Account added', 'ok'); loadSettings();
-  } else showToast(data.error || 'Failed', 'err');
-}
 
 function updateSetupBanner() {
   const el = document.getElementById('setup-banner');
@@ -1357,6 +1596,15 @@ function fmtRs(n) {
 }
 function fmtPnl(n) {
   return `₹${n >= 0 ? '+' : ''}${Math.round(n).toLocaleString('en-IN')}`;
+}
+function fmtIst(utcStr) {
+  if (!utcStr) return '';
+  const d = new Date(utcStr.endsWith('Z') ? utcStr : utcStr + 'Z');
+  return d.toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: 'Asia/Kolkata',
+  }).replace(',', '') + ' IST';
 }
 
 let _toastTimer;

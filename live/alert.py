@@ -16,15 +16,16 @@ _DIV     = "─" * 30
 _DIV_MSG = "\n" + _DIV + "\n"
 
 _EVENT_META = {
-    "CROSS UP":        ("↑",  "Price crossed ABOVE"),
-    "CROSS DOWN":      ("↓",  "Price crossed BELOW"),
-    "RSI OVERSOLD":    ("⚠️", "RSI dropped into oversold zone"),
-    "RSI OVERBOUGHT":  ("⚠️", "RSI rose into overbought zone"),
+    "CROSS UP":           ("↑",  "Price crossed ABOVE"),
+    "CROSS DOWN":         ("↓",  "Price crossed BELOW"),
+    "RSI OVERSOLD":       ("⚠️", "RSI dropped into oversold zone"),
+    "RSI OVERBOUGHT":     ("⚠️", "RSI rose into overbought zone"),
     "500-MULTI ENTRY":    ("📉", "Nifty crossed 500-level — short entry"),
     "500-MULTI EXIT":     ("🔺", "Short exit — Nifty fell 500 pts from entry"),
-    "500-MULTI ROLLOVER": ("🔄", "Monthly expiry rollover — rolling short to next month"),
+    "500-MULTI AUTO ROLL":("🔄", "Expiry auto-roll — leg moved to next month"),
     "MANUAL ENTRY":       ("✍️", "Manual trade entry"),
     "MANUAL EXIT":        ("✅", "Manual trade exit"),
+    "ADJUSTMENT":         ("⚙️", "Trade adjustment applied"),
 }
 
 
@@ -187,6 +188,68 @@ def send_alert(signal: dict):
     send_telegram(sig_text)
     for text in trade_texts:
         send_telegram(text)
+
+
+def send_rec_exit_alert(symbol: str, legs: list[dict], spot: float):
+    """Notify clients that a recommendation has been exited — they should close their positions."""
+    now_ist = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
+    leg_lines = []
+    for l in legs:
+        strike = f"{int(l['strike']):,} " if l.get("strike") else ""
+        side_icon = "🔴 SELL" if l["side"] == "SELL" else "🟢 BUY "
+        price_str = f"  @₹{l['price']:,.2f}" if l.get("price") else ""
+        leg_lines.append(f"{side_icon}  <b>{_h(strike + l['instrument_type'])}</b>  {l['lots']}L{price_str}")
+    legs_str = "\n".join(leg_lines) or "—"
+    text = (
+        f"✅ <b>EXIT SIGNAL  •  {_h(symbol)}</b>\n"
+        f"{_DIV}\n"
+        f"<i>Close your positions for this trade.</i>\n\n"
+        f"{legs_str}\n\n"
+        f"{_DIV}\n"
+        f"{_row('Spot', f'{spot:,.2f}', bold_value=False)}\n"
+        f"{_row('Alert at', now_ist, bold_value=False)}"
+    )
+    send_telegram(text)
+
+
+_ADJ_TYPE_LABEL = {
+    "auto_roll":     "Auto Roll",
+    "replace_legs":  "Replace Legs",
+    "add_legs":      "Add Legs",
+    "partial_exit":  "Partial Exit",
+    "exit":          "Full Exit",
+}
+
+
+def send_adjustment_alert(
+    symbol:   str,
+    adj_type: str,
+    legs:     list[dict],
+    note:     str = "",
+):
+    """Notify clients that a trade adjustment has been recorded — they should apply it."""
+    now_ist = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
+    label   = _ADJ_TYPE_LABEL.get(adj_type, adj_type.replace("_", " ").title())
+    icon, _ = _EVENT_META.get("ADJUSTMENT", ("⚙️", ""))
+
+    lines = [
+        f"{icon} <b>ADJUSTMENT  •  {_h(symbol)}  •  {_h(label)}</b>",
+        _DIV,
+    ]
+
+    for l in legs:
+        strike  = f"{int(l['strike']):,} " if l.get("strike") else ""
+        price   = f"  @₹{l['price']:,.2f}" if l.get("price") else ""
+        side_ic = "🟢 BUY " if l["side"] == "BUY" else "🔴 SELL"
+        lines.append(f"  {side_ic}  <b>{_h(strike + l['instrument_type'])}</b>"
+                     f"  {l.get('lots', 1)}L{price}")
+
+    lines += ["", _DIV]
+    if note:
+        lines.append(f"<i>{_h(note)}</i>")
+    lines.append(_row("Alert at", now_ist, bold_value=False))
+
+    send_telegram("\n".join(lines))
 
 
 def send_telegram(text: str):

@@ -85,12 +85,15 @@ def refresh():
         weekly = row.get("weekly", False)
 
         # Generic index — all underlyings
+        lot_sz = int(row.get("lot_size", 0))
         if itype == "FUT":
             gen_idx[(underlying_key, "FUT", expiry_date, 0, False)] = ikey
-            gen_lot_sizes[(underlying_key, expiry_date)] = int(row.get("lot_size", 0))
+            gen_lot_sizes[(underlying_key, expiry_date)] = lot_sz
         elif itype in ("PE", "CE"):
             strike = int(round(row.get("strike_price", 0)))
             gen_idx[(underlying_key, itype, expiry_date, strike, weekly)] = ikey
+            # PE/CE share the same lot_size as FUT for the same expiry
+            gen_lot_sizes.setdefault((underlying_key, expiry_date), lot_sz)
 
         # Nifty-specific index (backward compat)
         if underlying_key != _NIFTY_UNDERLYING:
@@ -308,6 +311,7 @@ def search_instruments(query: str) -> list[dict]:
         if month is not None and expiry.month != month:
             continue
 
+        lot_size = _generic_lot_sizes.get((uk, expiry)) or 0
         results.append({
             "symbol":          symbol,
             "instrument_type": it,
@@ -316,6 +320,7 @@ def search_instruments(query: str) -> list[dict]:
             "expiry_str":      expiry.strftime("%d %b %Y"),
             "weekly":          weekly,
             "instrument_key":  ikey,
+            "lot_size":        lot_size,
         })
 
     # Monthly expiries before weekly, then sort by date

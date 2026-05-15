@@ -38,10 +38,161 @@ TF_TABLE = {
 }
 
 
+def _migrate_traders_to_users(conn, cur):
+    traders_exists = cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='traders'"
+    ).fetchone()
+    if not traders_exists:
+        return
+
+    print("  ⚙  Migrating traders → users…", flush=True)
+    conn.execute("PRAGMA foreign_keys=OFF")
+
+    users_cols = {row[1] for row in cur.execute("SELECT * FROM pragma_table_info('users')")}
+    if "mobile" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN mobile TEXT")
+    if "note" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN note TEXT")
+
+    cur.execute("""
+        UPDATE users SET
+            mobile = (SELECT t.mobile FROM traders t WHERE t.id = users.trader_id),
+            note   = (SELECT t.note   FROM traders t WHERE t.id = users.trader_id)
+        WHERE trader_id IS NOT NULL
+    """)
+
+    cur.execute("SELECT * FROM pragma_table_info('accounts')")
+    accounts_cols = {row[1] for row in cur.fetchall()}
+
+    if "user_id" not in accounts_cols:
+        cur.execute("""
+            ALTER TABLE accounts RENAME TO accounts_old
+        """)
+        cur.execute("""
+            CREATE TABLE accounts (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER REFERENCES users(id),
+                broker_id  INTEGER REFERENCES brokers(id),
+                account_no TEXT,
+                label      TEXT,
+                active     INTEGER NOT NULL DEFAULT 1
+            )
+        """)
+        cur.execute("""
+            INSERT INTO accounts (id, user_id, broker_id, account_no, label, active)
+            SELECT a.id,
+                   (SELECT u.id FROM users u WHERE u.trader_id = a.trader_id LIMIT 1),
+                   a.broker_id, a.account_no, a.label, a.active
+            FROM accounts_old a
+        """)
+        cur.execute("DROP TABLE accounts_old")
+
+    cur.execute("DROP INDEX IF EXISTS idx_accounts_trader_broker")
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_user_broker
+        ON accounts (user_id, broker_id)
+    """)
+
+    cur.execute("SELECT * FROM pragma_table_info('users')")
+    user_col_info = [(row[0], row[1], row[2], row[3], row[4], row[5]) for row in cur.fetchall()]
+    has_trader_id = any(row[1] == "trader_id" for row in user_col_info)
+
+    if has_trader_id:
+        cur.execute("SELECT id,google_id,email,name,picture,role,mobile,note,active,created_at FROM users")
+        user_rows = cur.fetchall()
+        cur.execute("ALTER TABLE users RENAME TO users_old")
+        cur.execute("""
+            CREATE TABLE users (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                google_id   TEXT    NOT NULL UNIQUE,
+                email       TEXT    NOT NULL UNIQUE,
+                name        TEXT    NOT NULL,
+                picture     TEXT,
+                role        TEXT    NOT NULL DEFAULT 'client',
+                mobile      TEXT,
+                note        TEXT,
+                active      INTEGER NOT NULL DEFAULT 1,
+                created_at  TEXT    NOT NULL
+            )
+        """)
+        cur.executemany("""
+            INSERT INTO users (id,google_id,email,name,picture,role,mobile,note,active,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        """, user_rows)
+        cur.execute("DROP TABLE users_old")
+        # Rebuild accounts FK — SQLite updates the FK text to reference the renamed table
+        acc_rows = cur.execute("SELECT id,user_id,broker_id,account_no,label,active FROM accounts").fetchall()
+        cur.execute("ALTER TABLE accounts RENAME TO accounts_fk_fix")
+        cur.execute("""
+            CREATE TABLE accounts (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER REFERENCES users(id),
+                broker_id  INTEGER REFERENCES brokers(id),
+                account_no TEXT,
+                label      TEXT,
+                active     INTEGER NOT NULL DEFAULT 1
+            )
+        """)
+        cur.executemany("INSERT INTO accounts VALUES (?,?,?,?,?,?)", acc_rows)
+        cur.execute("DROP TABLE accounts_fk_fix")
+
+        # account_trades references accounts — rebuild to fix its FK text
+        at_rows = cur.execute(
+            "SELECT id,recommended_trade_id,account_id,status,entry_time,exit_time,note FROM account_trades"
+        ).fetchall()
+        cur.execute("ALTER TABLE account_trades RENAME TO account_trades_fk_fix")
+        cur.execute("""
+            CREATE TABLE account_trades (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                recommended_trade_id INTEGER REFERENCES recommended_trades(id),
+                account_id           INTEGER NOT NULL REFERENCES accounts(id),
+                status               TEXT    NOT NULL DEFAULT 'open',
+                entry_time           TEXT    NOT NULL,
+                exit_time            TEXT,
+                note                 TEXT
+            )
+        """)
+        if at_rows:
+            cur.executemany("INSERT INTO account_trades VALUES (?,?,?,?,?,?,?)", at_rows)
+        cur.execute("DROP TABLE account_trades_fk_fix")
+
+        # account_trade_legs references account_trades — rebuild too
+        atl_rows = cur.execute(
+            "SELECT id,account_trade_id,action,side,instrument_type,instrument_key,"
+            "strike,expiry_str,lots,lot_size,price,ts FROM account_trade_legs"
+        ).fetchall()
+        cur.execute("ALTER TABLE account_trade_legs RENAME TO account_trade_legs_fk_fix")
+        cur.execute("""
+            CREATE TABLE account_trade_legs (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_trade_id INTEGER NOT NULL REFERENCES account_trades(id),
+                action           TEXT    NOT NULL,
+                side             TEXT    NOT NULL,
+                instrument_type  TEXT    NOT NULL,
+                instrument_key   TEXT,
+                strike           REAL,
+                expiry_str       TEXT,
+                lots             INTEGER NOT NULL DEFAULT 1,
+                lot_size         INTEGER NOT NULL DEFAULT 0,
+                price            REAL,
+                ts               TEXT    NOT NULL
+            )
+        """)
+        if atl_rows:
+            cur.executemany("INSERT INTO account_trade_legs VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", atl_rows)
+        cur.execute("DROP TABLE account_trade_legs_fk_fix")
+
+    cur.execute("DROP TABLE IF EXISTS traders")
+    conn.execute("PRAGMA foreign_keys=ON")
+    print("  ✓  Migration complete", flush=True)
+
+
 def init_db():
     """Create all tables and indexes. Idempotent."""
     conn = get_connection()
     cur = conn.cursor()
+
+    _migrate_traders_to_users(conn, cur)
 
     for tf in TIMEFRAMES:
         tbl = TF_TABLE[tf["key"]]
@@ -104,6 +255,44 @@ def init_db():
         _migrate_trades_to_legs(conn, cur)
         existing_cols = set()   # table was recreated — skip migrations below
 
+    # Strip stale account_id column that references accounts_old (breaks FK checks)
+    if "account_id" in existing_cols:
+        rt_sql = cur.execute(
+            "SELECT sql FROM sqlite_master WHERE name='recommended_trades'"
+        ).fetchone()
+        if rt_sql and "accounts_old" in (rt_sql[0] or ""):
+            keep_cols = ["id", "trigger_name", "symbol", "parent_trade_id",
+                         "entry_level", "entry_ltp", "entry_time",
+                         "exit_level", "status", "exit_ltp", "exit_time",
+                         "margin_required", "margin_final"]
+            conn.execute("PRAGMA foreign_keys=OFF")
+            cur.execute("ALTER TABLE recommended_trades RENAME TO recommended_trades_acct_fix")
+            cur.execute("""
+                CREATE TABLE recommended_trades (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trigger_name     TEXT    NOT NULL,
+                    symbol           TEXT    NOT NULL,
+                    parent_trade_id  INTEGER REFERENCES recommended_trades(id),
+                    entry_level      REAL    NOT NULL,
+                    entry_ltp        REAL    NOT NULL,
+                    entry_time       TEXT    NOT NULL,
+                    exit_level       REAL    NOT NULL,
+                    status           TEXT    NOT NULL DEFAULT 'open',
+                    exit_ltp         REAL,
+                    exit_time        TEXT,
+                    margin_required  REAL,
+                    margin_final     REAL
+                )
+            """)
+            cur.execute(f"""
+                INSERT INTO recommended_trades
+                SELECT {', '.join(keep_cols)} FROM recommended_trades_acct_fix
+            """)
+            cur.execute("DROP TABLE recommended_trades_acct_fix")
+            conn.execute("PRAGMA foreign_keys=ON")
+            existing_cols -= {"account_id"}
+            print("  ⚙  Stripped stale account_id from recommended_trades")
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS recommended_trades (
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,10 +335,30 @@ def init_db():
     """)
 
     # -------------------------------------------------------
+    # trade_adjustments — one row per adjustment event on a trade
+    # adj_type : auto_roll | replace_legs | add_legs | partial_exit | exit
+    # -------------------------------------------------------
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS trade_adjustments (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            trade_id  INTEGER NOT NULL REFERENCES recommended_trades(id),
+            adj_type  TEXT    NOT NULL,
+            note      TEXT,
+            ts        TEXT    NOT NULL
+        )
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_trade_adjustments_trade_id
+        ON trade_adjustments (trade_id)
+    """)
+
+    # -------------------------------------------------------
     # trade_legs — one row per leg per event
-    # action : entry | exit | rollover_out | rollover_in
-    # side   : BUY | SELL
-    # type   : FUT | PE | CE | EQ  (extensible)
+    # action       : entry | exit
+    # side         : BUY | SELL
+    # type         : FUT | PE | CE | EQ  (extensible)
+    # adjustment_id: NULL = original entry; non-NULL = belongs to an adjustment
+    # auto_adjust  : 1 = auto-roll this leg when its expiry arrives
     # -------------------------------------------------------
     cur.execute("""
         CREATE TABLE IF NOT EXISTS trade_legs (
@@ -164,17 +373,35 @@ def init_db():
             lots             INTEGER NOT NULL DEFAULT 1,
             lot_size         INTEGER NOT NULL DEFAULT 0,
             price            REAL,
-            ts               TEXT    NOT NULL
+            ts               TEXT    NOT NULL,
+            adjustment_id    INTEGER REFERENCES trade_adjustments(id),
+            auto_adjust      INTEGER NOT NULL DEFAULT 0
         )
     """)
     cur.execute("""
         CREATE INDEX IF NOT EXISTS idx_trade_legs_trade_id
         ON trade_legs (trade_id)
     """)
-    print("  ✓  Table ready: recommended_trades + trade_legs")
+
+    # Add columns to existing DBs that pre-date this schema
+    existing_leg_cols = {row[1] for row in cur.execute("SELECT * FROM pragma_table_info('trade_legs')")}
+    for col, ddl in [
+        ("adjustment_id", "ALTER TABLE trade_legs ADD COLUMN adjustment_id INTEGER REFERENCES trade_adjustments(id)"),
+        ("auto_adjust",   "ALTER TABLE trade_legs ADD COLUMN auto_adjust INTEGER NOT NULL DEFAULT 0"),
+    ]:
+        if col not in existing_leg_cols:
+            cur.execute(ddl)
+
+    # Migrate legacy rollover action values
+    cur.execute("UPDATE trade_legs SET action='entry' WHERE action='rollover_in'")
+    cur.execute("UPDATE trade_legs SET action='exit'  WHERE action='rollover_out'")
+    # Migrate legacy 'rolled' trade status
+    cur.execute("UPDATE recommended_trades SET status='exited' WHERE status='rolled'")
+
+    print("  ✓  Table ready: recommended_trades + trade_legs + trade_adjustments")
 
     # -------------------------------------------------------
-    # brokers / traders / accounts
+    # brokers / accounts / users
     # -------------------------------------------------------
     cur.execute("""
         CREATE TABLE IF NOT EXISTS brokers (
@@ -185,19 +412,9 @@ def init_db():
     print("  ✓  Table ready: brokers")
 
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS traders (
-            id      INTEGER PRIMARY KEY AUTOINCREMENT,
-            name    TEXT    NOT NULL,
-            mobile  TEXT,
-            note    TEXT
-        )
-    """)
-    print("  ✓  Table ready: traders")
-
-    cur.execute("""
         CREATE TABLE IF NOT EXISTS accounts (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            trader_id  INTEGER REFERENCES traders(id),
+            user_id    INTEGER REFERENCES users(id),
             broker_id  INTEGER REFERENCES brokers(id),
             account_no TEXT,
             label      TEXT,
@@ -205,8 +422,8 @@ def init_db():
         )
     """)
     cur.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_trader_broker
-        ON accounts (trader_id, broker_id)
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_user_broker
+        ON accounts (user_id, broker_id)
     """)
     print("  ✓  Table ready: accounts")
 
@@ -221,11 +438,21 @@ def init_db():
             name        TEXT    NOT NULL,
             picture     TEXT,
             role        TEXT    NOT NULL DEFAULT 'client',
-            trader_id   INTEGER REFERENCES traders(id),
+            mobile      TEXT,
+            note        TEXT,
             active      INTEGER NOT NULL DEFAULT 1,
             created_at  TEXT    NOT NULL
         )
     """)
+
+    existing_user_cols = {row[1] for row in cur.execute("SELECT * FROM pragma_table_info('users')")}
+    for col, ddl in [
+        ("mobile", "ALTER TABLE users ADD COLUMN mobile TEXT"),
+        ("note",   "ALTER TABLE users ADD COLUMN note   TEXT"),
+    ]:
+        if col not in existing_user_cols:
+            cur.execute(ddl)
+
     print("  ✓  Table ready: users")
 
     # account_trades — one row per account per recommendation
@@ -263,13 +490,17 @@ def init_db():
             lots             INTEGER NOT NULL DEFAULT 1,
             lot_size         INTEGER NOT NULL DEFAULT 0,
             price            REAL,
-            ts               TEXT    NOT NULL
+            ts               TEXT    NOT NULL,
+            adjustment_id    INTEGER REFERENCES trade_adjustments(id)
         )
     """)
     cur.execute("""
         CREATE INDEX IF NOT EXISTS idx_account_trade_legs_trade
         ON account_trade_legs (account_trade_id)
     """)
+    existing_atl_cols = {row[1] for row in cur.execute("SELECT * FROM pragma_table_info('account_trade_legs')")}
+    if "adjustment_id" not in existing_atl_cols:
+        cur.execute("ALTER TABLE account_trade_legs ADD COLUMN adjustment_id INTEGER REFERENCES trade_adjustments(id)")
     print("  ✓  Table ready: account_trade_legs")
 
     conn.commit()
