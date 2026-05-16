@@ -140,7 +140,7 @@ def _run_eod_tasks(daily_alerts: list):
         print(f"  [expiry refresh failed]  {e}", flush=True)
     try:
         from live.fo_instruments import refresh as refresh_fo
-        refresh_fo()
+        refresh_fo(force=True)   # force re-download at EOD so tomorrow's cache is fresh
         print()
     except Exception as e:
         print(f"  [F&O instruments refresh failed]  {e}", flush=True)

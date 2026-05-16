@@ -19,11 +19,16 @@ Generic helpers (any NSE F&O underlying):
 """
 
 import gzip
+import glob
 import json
+import os
 import requests
 from datetime import date, datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 _INSTRUMENTS_URL = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
+_CACHE_DIR       = os.path.join(os.path.dirname(__file__), "..", "data")
+_IST             = ZoneInfo("Asia/Kolkata")
 
 # Nifty-specific index (kept for backward compat)
 _NIFTY_UNDERLYING = "NSE_INDEX|Nifty 50"
@@ -38,6 +43,22 @@ _generic_lot_sizes: dict[tuple, int] = {}
 
 _loaded = False
 
+
+def _today_cache_path() -> str:
+    today = datetime.now(timezone.utc).astimezone(_IST).strftime("%Y-%m-%d")
+    return os.path.join(_CACHE_DIR, f"nse_instruments_{today}.json")
+
+
+def _purge_old_cache():
+    """Delete instrument cache files from previous days."""
+    keep = _today_cache_path()
+    for f in glob.glob(os.path.join(_CACHE_DIR, "nse_instruments_*.json")):
+        if f != keep:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+
 # Map from friendly symbol name → underlying_key in NSE instrument file
 _UNDERLYING_KEYS: dict[str, str] = {
     "NIFTY50":    "NSE_INDEX|Nifty 50",
@@ -50,14 +71,31 @@ _UNDERLYING_KEYS: dict[str, str] = {
 from config import SPOT_IKEYS  # re-exported for backward compat with existing imports
 
 
-def refresh():
-    """Download and index the NSE F&O instrument file. Call once at startup."""
+def refresh(force: bool = False):
+    """
+    Load and index the NSE F&O instrument list.
+    Reads from a local date-stamped cache if today's file exists;
+    downloads from Upstox otherwise (or when force=True).
+    """
     global _index, _LOT_SIZES, _generic_index, _generic_lot_sizes, _loaded
 
-    print("  Downloading NSE F&O instrument list from Upstox...", flush=True)
-    resp = requests.get(_INSTRUMENTS_URL, timeout=30)
-    resp.raise_for_status()
-    instruments = json.loads(gzip.decompress(resp.content))
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+    cache_path = _today_cache_path()
+
+    if not force and os.path.exists(cache_path):
+        print(f"  Loading NSE F&O instrument list from cache ({os.path.basename(cache_path)})...",
+              flush=True)
+        with open(cache_path, "r") as f:
+            instruments = json.load(f)
+    else:
+        print("  Downloading NSE F&O instrument list from Upstox...", flush=True)
+        resp = requests.get(_INSTRUMENTS_URL, timeout=30)
+        resp.raise_for_status()
+        instruments = json.loads(gzip.decompress(resp.content))
+        with open(cache_path, "w") as f:
+            json.dump(instruments, f)
+        _purge_old_cache()
+        print(f"  Saved to cache ({os.path.basename(cache_path)}).", flush=True)
 
     nifty_idx = {}
     nifty_lot_sizes: dict[date, int] = {}
