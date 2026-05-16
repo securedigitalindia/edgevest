@@ -1193,3 +1193,62 @@ def _float_or_none(val):
         return None if (f != f) else f   # NaN check
     except (TypeError, ValueError):
         return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Price cache — populated by live poller, read by trade server
+# ─────────────────────────────────────────────────────────────────────────────
+
+def update_price_cache(prices: dict):
+    """Upsert {instrument_key: ltp} into price_cache. Called by live poller each cycle."""
+    if not prices:
+        return
+    ts   = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection()
+    conn.executemany(
+        "INSERT OR REPLACE INTO price_cache (instrument_key, ltp, ts) VALUES (?, ?, ?)",
+        [(k, v, ts) for k, v in prices.items() if v is not None],
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_cached_prices(keys: list) -> tuple[dict, str | None]:
+    """
+    Read {instrument_key: ltp} from cache for the given keys.
+    Returns (prices_dict, latest_ts_utc_str).
+    """
+    if not keys:
+        return {}, None
+    ph   = ",".join("?" * len(keys))
+    conn = get_connection()
+    rows = conn.execute(
+        f"SELECT instrument_key, ltp, ts FROM price_cache WHERE instrument_key IN ({ph})",
+        keys,
+    ).fetchall()
+    conn.close()
+    prices = {r[0]: r[1] for r in rows}
+    ts     = max((r[2] for r in rows), default=None)
+    return prices, ts
+
+
+def get_open_trade_ikeys() -> list[str]:
+    """All distinct instrument_keys currently held in open recommended + account trades."""
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT DISTINCT tl.instrument_key
+        FROM   trade_legs tl
+        JOIN   recommended_trades rt ON rt.id = tl.trade_id
+        WHERE  rt.status = 'open'
+          AND  tl.instrument_key IS NOT NULL
+          AND  tl.action = 'entry'
+        UNION
+        SELECT DISTINCT atl.instrument_key
+        FROM   account_trade_legs atl
+        JOIN   account_trades at2 ON at2.id = atl.account_trade_id
+        WHERE  at2.status = 'open'
+          AND  atl.instrument_key IS NOT NULL
+          AND  atl.action = 'entry'
+    """).fetchall()
+    conn.close()
+    return [r[0] for r in rows if r[0]]

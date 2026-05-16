@@ -36,6 +36,8 @@ from live.intraday_sync import CandleWatcher
 from live import tick_store, candle_builder
 from live.holidays import check_or_exit
 from live.briefing import send_morning_brief, send_eod_brief
+from live.fo_instruments import SPOT_IKEYS
+from db.queries import update_price_cache, get_open_trade_ikeys
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -230,6 +232,8 @@ def run_live(force: bool = False):
     tick_store.init(ikey_to_name)
     all_symbol_names = list(ikey_to_name.values())
 
+    _spot_ikeys = list(SPOT_IKEYS.values())
+
     total = sum(len(v) for v in ikey_triggers.values())
     print(f"\n{total} trigger(s) active across {len(ikeys)} symbol(s)"
           f" — polling every {POLL_INTERVAL_SECONDS}s\n")
@@ -265,9 +269,16 @@ def run_live(force: bool = False):
                               flush=True)
             print("  Done.\n", flush=True)
 
+        # Build full key list: trigger instruments + spot indices + open trade legs
+        try:
+            _trade_ikeys = get_open_trade_ikeys()
+        except Exception:
+            _trade_ikeys = []
+        _all_ikeys = list(set(ikeys + _spot_ikeys + _trade_ikeys))
+
         # Fetch LTPs
         try:
-            prices = get_ltp(ikeys)
+            prices = get_ltp(_all_ikeys)
             error_streak = 0
         except RuntimeError as e:
             print(f"\nFatal: {e}")
@@ -282,7 +293,14 @@ def run_live(force: bool = False):
             time.sleep(POLL_INTERVAL_SECONDS)
             continue
 
-        tick_store.record(prices)
+        # Write all prices (trigger + spot + trade legs) to shared price cache
+        try:
+            update_price_cache(prices)
+        except Exception as e:
+            print(f"  [price cache update failed]  {e}", flush=True)
+
+        # Tick store only needs trigger-instrument prices
+        tick_store.record({k: v for k, v in prices.items() if k in ikey_to_name})
 
         for ikey, ltp in prices.items():
             for trig in ikey_triggers.get(ikey, []):

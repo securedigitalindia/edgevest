@@ -72,8 +72,7 @@ def require_subscription(f):
     def wrapped(*args, **kwargs):
         user = current_user()
         if user and user["role"] == "client":
-            from db.queries import is_subscription_valid, expire_stale_subscriptions
-            expire_stale_subscriptions()
+            from db.queries import is_subscription_valid
             if not is_subscription_valid(user["id"]):
                 if request.path.startswith("/api/"):
                     return jsonify(error="No active subscription"), 402
@@ -109,13 +108,20 @@ _NO_REFRESH = {"login", "auth_google", "auth_callback", "logout", "static",
 
 @app.before_request
 def refresh_session():
+    import time
     user = session.get("user")
     if not user or request.endpoint in _NO_REFRESH:
+        return
+    # Only re-query the DB at most once per 60 seconds to avoid hitting the DB
+    # on every API call (page load fires several concurrent requests).
+    last = session.get("_session_refreshed_at", 0)
+    if time.time() - last < 60:
         return
     from db.queries import get_user_by_google_id
     fresh = get_user_by_google_id(user["google_id"])
     if fresh:
         session["user"] = fresh
+        session["_session_refreshed_at"] = time.time()
     else:
         session.clear()
 
@@ -638,27 +644,23 @@ def api_prices():
     keys = (request.json or {}).get("keys", [])
     if not keys:
         return jsonify({})
-    try:
-        from live.upstox_client import get_ltp
-        return jsonify(get_ltp(keys))
-    except Exception:
-        return jsonify({})
+    from db.queries import get_cached_prices
+    prices, ts = get_cached_prices(keys)
+    if ts:
+        prices["_ts"] = ts
+    return jsonify(prices)
 
 
 @app.route("/api/spot")
 @require_login
 def api_spot():
     from live.fo_instruments import SPOT_IKEYS
-    try:
-        from live.upstox_client import get_ltp
-        prices = get_ltp(list(SPOT_IKEYS.values()))
-        return jsonify({
-            sym: prices[ikey]
-            for sym, ikey in SPOT_IKEYS.items()
-            if ikey in prices
-        })
-    except Exception:
-        return jsonify({})
+    from db.queries import get_cached_prices
+    prices, ts = get_cached_prices(list(SPOT_IKEYS.values()))
+    out = {sym: prices[ikey] for sym, ikey in SPOT_IKEYS.items() if ikey in prices}
+    if ts:
+        out["_ts"] = ts
+    return jsonify(out)
 
 
 # ─────────────────────────────────────────────────────────
@@ -749,9 +751,16 @@ def _preload():
     try:
         from live.fo_instruments import _ensure_loaded
         _ensure_loaded()
-        print("  Instrument index ready.\n", flush=True)
+        print("  Instrument index ready.", flush=True)
     except Exception as e:
-        print(f"  [warning] instrument preload failed: {e}\n", flush=True)
+        print(f"  [warning] instrument preload failed: {e}", flush=True)
+
+    try:
+        from db.queries import expire_stale_subscriptions
+        expire_stale_subscriptions()
+        print("  Subscription expiry check done.\n", flush=True)
+    except Exception as e:
+        print(f"  [warning] subscription expiry check failed: {e}\n", flush=True)
 
 
 if __name__ == "__main__":

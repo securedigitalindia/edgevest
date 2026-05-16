@@ -15,8 +15,9 @@ from config import DB_PATH, TIMEFRAMES, SYMBOLS
 def get_connection():
     """Return a configured SQLite connection."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=10000")  # 10s wait on write locks
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -558,6 +559,15 @@ def init_db():
     if "adjustment_id" not in existing_atl_cols:
         cur.execute("ALTER TABLE account_trade_legs ADD COLUMN adjustment_id INTEGER REFERENCES trade_adjustments(id)")
     print("  ✓  Table ready: account_trade_legs")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS price_cache (
+            instrument_key  TEXT PRIMARY KEY,
+            ltp             REAL NOT NULL,
+            ts              TEXT NOT NULL
+        )
+    """)
+    print("  ✓  Table ready: price_cache")
 
     conn.commit()
     conn.close()
