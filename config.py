@@ -260,3 +260,12 @@ UPSTOX_INSTRUMENT_KEYS = {
     "BANKNIFTY": "NSE_INDEX|Nifty Bank",
     "RELIANCE":  "NSE_EQ|INE002A01018",   # equities use ISIN; resp key uses symbol but instrument_token matches
 }
+
+# Spot index instrument keys shown in the header bar and included in every
+# price-cache fetch by the live poller. Add/remove indices here.
+SPOT_IKEYS = {
+    "NIFTY50":    "NSE_INDEX|Nifty 50",
+    "BANKNIFTY":  "NSE_INDEX|Nifty Bank",
+    "FINNIFTY":   "NSE_INDEX|Nifty Fin Services",
+    "MIDCPNIFTY": "NSE_INDEX|NIFTY MID SELECT",
+}

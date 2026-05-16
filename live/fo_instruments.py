@@ -47,13 +47,7 @@ _UNDERLYING_KEYS: dict[str, str] = {
     "SENSEX":     "BSE_INDEX|SENSEX",
 }
 
-# Spot price instrument key for each symbol (used in manual_trade to fetch LTP)
-SPOT_IKEYS: dict[str, str] = {
-    "NIFTY50":    "NSE_INDEX|Nifty 50",
-    "BANKNIFTY":  "NSE_INDEX|Nifty Bank",
-    "FINNIFTY":   "NSE_INDEX|Nifty Fin Services",
-    "MIDCPNIFTY": "NSE_INDEX|NIFTY MID SELECT",
-}
+from config import SPOT_IKEYS  # re-exported for backward compat with existing imports
 
 
 def refresh():
