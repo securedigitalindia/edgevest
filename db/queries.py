@@ -1200,15 +1200,46 @@ def _float_or_none(val):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def update_price_cache(prices: dict):
-    """Upsert {instrument_key: ltp} into price_cache. Called by live poller each cycle."""
+    """
+    Upsert {instrument_key: ltp} into price_cache each poll cycle.
+    On the first update of a new trading day, the previous ltp is automatically
+    snapshotted into prev_close before being overwritten — no separate API call needed.
+    """
     if not prices:
         return
-    ts   = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    from zoneinfo import ZoneInfo
+    IST      = ZoneInfo("Asia/Kolkata")
+    now_utc  = datetime.now(timezone.utc)
+    ts       = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    today    = now_utc.astimezone(IST).strftime("%Y-%m-%d")
+
     conn = get_connection()
-    conn.executemany(
-        "INSERT OR REPLACE INTO price_cache (instrument_key, ltp, ts) VALUES (?, ?, ?)",
-        [(k, v, ts) for k, v in prices.items() if v is not None],
-    )
+    for k, v in prices.items():
+        if v is None:
+            continue
+        row = conn.execute(
+            "SELECT ltp, ts, prev_close FROM price_cache WHERE instrument_key = ?", (k,)
+        ).fetchone()
+
+        if row is None:
+            conn.execute(
+                "INSERT INTO price_cache (instrument_key, ltp, ts, prev_close) VALUES (?, ?, ?, NULL)",
+                (k, v, ts),
+            )
+        else:
+            old_ltp, old_ts, prev_close = row
+            if old_ts:
+                old_date = (datetime.strptime(old_ts, "%Y-%m-%dT%H:%M:%SZ")
+                            .replace(tzinfo=timezone.utc)
+                            .astimezone(IST)
+                            .strftime("%Y-%m-%d"))
+                if old_date < today:
+                    # First poll of a new day — yesterday's ltp becomes prev_close
+                    prev_close = old_ltp
+            conn.execute(
+                "UPDATE price_cache SET ltp = ?, ts = ?, prev_close = ? WHERE instrument_key = ?",
+                (v, ts, prev_close, k),
+            )
     conn.commit()
     conn.close()
 
@@ -1251,26 +1282,6 @@ def get_cached_spot(keys: list) -> tuple[dict, str | None]:
     return spot, ts
 
 
-def update_prev_close_cache(prev_closes: dict):
-    """
-    Store {instrument_key: prev_close} in price_cache.
-    Called once at poller startup for SPOT_DISPLAY symbols.
-    Uses INSERT OR IGNORE to create the row if missing, then UPDATE.
-    """
-    if not prev_closes:
-        return
-    conn = get_connection()
-    for ikey, pc in prev_closes.items():
-        conn.execute(
-            "INSERT OR IGNORE INTO price_cache (instrument_key, ltp, ts) VALUES (?, 0, '')",
-            (ikey,),
-        )
-        conn.execute(
-            "UPDATE price_cache SET prev_close = ? WHERE instrument_key = ?",
-            (pc, ikey),
-        )
-    conn.commit()
-    conn.close()
 
 
 def get_open_trade_ikeys() -> list[str]:

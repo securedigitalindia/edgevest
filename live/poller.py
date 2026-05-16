@@ -37,7 +37,7 @@ from live import tick_store, candle_builder
 from live.holidays import check_or_exit
 from live.briefing import send_morning_brief, send_eod_brief
 from live.fo_instruments import SPOT_IKEYS
-from db.queries import update_price_cache, get_open_trade_ikeys, update_prev_close_cache
+from db.queries import update_price_cache, get_open_trade_ikeys
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -104,18 +104,6 @@ def _run_startup_tasks():
         refresh_fo()
     except Exception as e:
         print(f"  [F&O instruments refresh failed]  {e}", flush=True)
-
-    # Fetch and cache prev_close for all spot display symbols (once per day at startup)
-    try:
-        from config import SPOT_DISPLAY, SPOT_IKEYS
-        from live.upstox_client import get_prev_close
-        display_ikeys = [SPOT_IKEYS[s] for s in SPOT_DISPLAY if s in SPOT_IKEYS]
-        if display_ikeys:
-            prev_closes = get_prev_close(display_ikeys)
-            update_prev_close_cache(prev_closes)
-            print(f"  Cached prev_close for {len(prev_closes)} spot symbol(s).", flush=True)
-    except Exception as e:
-        print(f"  [prev_close cache failed]  {e}", flush=True)
 
     print("───────────────────────────────────────────────────\n")
 
