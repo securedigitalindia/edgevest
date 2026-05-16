@@ -564,9 +564,14 @@ def init_db():
         CREATE TABLE IF NOT EXISTS price_cache (
             instrument_key  TEXT PRIMARY KEY,
             ltp             REAL NOT NULL,
-            ts              TEXT NOT NULL
+            ts              TEXT NOT NULL,
+            prev_close      REAL
         )
     """)
+    # Migrate: add prev_close to existing price_cache rows
+    existing_pc_cols = {r[1] for r in cur.execute("SELECT * FROM pragma_table_info('price_cache')")}
+    if "prev_close" not in existing_pc_cols:
+        cur.execute("ALTER TABLE price_cache ADD COLUMN prev_close REAL")
     print("  ✓  Table ready: price_cache")
 
     conn.commit()

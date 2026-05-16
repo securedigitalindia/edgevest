@@ -1232,6 +1232,47 @@ def get_cached_prices(keys: list) -> tuple[dict, str | None]:
     return prices, ts
 
 
+def get_cached_spot(keys: list) -> tuple[dict, str | None]:
+    """
+    Read {instrument_key: {ltp, prev_close}} from cache for the given keys.
+    Returns (spot_dict, latest_ts_utc_str).
+    """
+    if not keys:
+        return {}, None
+    ph   = ",".join("?" * len(keys))
+    conn = get_connection()
+    rows = conn.execute(
+        f"SELECT instrument_key, ltp, prev_close, ts FROM price_cache WHERE instrument_key IN ({ph})",
+        keys,
+    ).fetchall()
+    conn.close()
+    spot = {r[0]: {"ltp": r[1], "prev_close": r[2]} for r in rows}
+    ts   = max((r[3] for r in rows), default=None)
+    return spot, ts
+
+
+def update_prev_close_cache(prev_closes: dict):
+    """
+    Store {instrument_key: prev_close} in price_cache.
+    Called once at poller startup for SPOT_DISPLAY symbols.
+    Uses INSERT OR IGNORE to create the row if missing, then UPDATE.
+    """
+    if not prev_closes:
+        return
+    conn = get_connection()
+    for ikey, pc in prev_closes.items():
+        conn.execute(
+            "INSERT OR IGNORE INTO price_cache (instrument_key, ltp, ts) VALUES (?, 0, '')",
+            (ikey,),
+        )
+        conn.execute(
+            "UPDATE price_cache SET prev_close = ? WHERE instrument_key = ?",
+            (pc, ikey),
+        )
+    conn.commit()
+    conn.close()
+
+
 def get_open_trade_ikeys() -> list[str]:
     """All distinct instrument_keys currently held in open recommended + account trades."""
     conn = get_connection()

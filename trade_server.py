@@ -655,33 +655,22 @@ def api_prices():
 @require_login
 def api_spot():
     from config import SPOT_IKEYS, SPOT_DISPLAY
-    from db.queries import get_cached_prices, get_candles
-    from datetime import datetime, timezone
-    from zoneinfo import ZoneInfo
+    from db.queries import get_cached_spot
 
-    prices, ts = get_cached_prices(list(SPOT_IKEYS.values()))
-    IST      = ZoneInfo("Asia/Kolkata")
-    today    = datetime.now(timezone.utc).astimezone(IST).date()
-    out      = {}
-
-    for sym in SPOT_DISPLAY:
-        ikey = SPOT_IKEYS.get(sym)
-        if not ikey or ikey not in prices:
+    display_ikeys = [SPOT_IKEYS[s] for s in SPOT_DISPLAY if s in SPOT_IKEYS]
+    ikey_to_sym   = {SPOT_IKEYS[s]: s for s in SPOT_DISPLAY if s in SPOT_IKEYS}
+    spot, ts      = get_cached_spot(display_ikeys)
+    out = {}
+    for ikey in display_ikeys:
+        if ikey not in spot:
             continue
-        ltp    = prices[ikey]
-        change = None
-        try:
-            df = get_candles(sym, "1d", 3)
-            if not df.empty:
-                last_date = df.iloc[-1]["ts"].astimezone(IST).date()
-                # If today's candle is already synced, prev_close is the row before it
-                prev_close = (df.iloc[-2]["close"] if last_date >= today and len(df) >= 2
-                              else df.iloc[-1]["close"])
-                change = round(ltp - prev_close, 2)
-        except Exception:
-            pass
-        out[sym] = {"ltp": ltp, "change": change}
-
+        d    = spot[ikey]
+        ltp  = d["ltp"]
+        pc   = d["prev_close"]
+        out[ikey_to_sym[ikey]] = {
+            "ltp":    ltp,
+            "change": round(ltp - pc, 2) if pc else None,
+        }
     if ts:
         out["_ts"] = ts
     return jsonify(out)

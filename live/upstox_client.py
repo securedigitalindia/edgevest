@@ -118,6 +118,34 @@ def get_margin(legs: list[dict]) -> dict:
     }
 
 
+def get_prev_close(instrument_keys: list[str]) -> dict[str, float]:
+    """
+    Fetch previous day's closing price for one or more instrument keys.
+    Uses full market quote — ohlc.close is yesterday's close in Upstox.
+    Returns {instrument_key: prev_close_float}.
+    """
+    api = _get_api()
+    try:
+        response = api.full_market_quote(
+            symbol=",".join(instrument_keys),
+            api_version="2.0",
+        )
+    except ApiException as e:
+        if e.status == 401:
+            raise RuntimeError(
+                "Upstox token rejected (401). "
+                "Tokens expire daily — regenerate and re-export UPSTOX_ACCESS_TOKEN."
+            ) from e
+        raise RuntimeError(f"Upstox API error {e.status}: {e.reason}") from e
+
+    result = {}
+    for resp_key, quote in (response.data or {}).items():
+        key = quote.instrument_token or resp_key.replace(":", "|", 1)
+        if quote.ohlc and quote.ohlc.close is not None:
+            result[key] = float(quote.ohlc.close)
+    return result
+
+
 def get_ltp(instrument_keys: list[str]) -> dict[str, float]:
     """
     Fetch Last Traded Price for one or more instrument keys.
