@@ -268,4 +268,9 @@ SPOT_IKEYS = {
     "BANKNIFTY":  "NSE_INDEX|Nifty Bank",
     "FINNIFTY":   "NSE_INDEX|Nifty Fin Services",
     "MIDCPNIFTY": "NSE_INDEX|NIFTY MID SELECT",
+    "SENSEX":     "BSE_INDEX|SENSEX",
 }
+
+# Symbols shown in the web header bar, in display order.
+# Must be keys in SPOT_IKEYS. Day-change shown where candles_1d data exists.
+SPOT_DISPLAY = ["NIFTY50", "BANKNIFTY", "SENSEX"]

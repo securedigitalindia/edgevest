@@ -1463,13 +1463,24 @@ async function updateSpot() {
     const res  = await fetch('/api/spot');
     const data = await res.json();
     const stale = _isStale(data._ts);
-    const bar   = document.getElementById('spot-bar');
     _applyStale(stale);
+    const bar = document.getElementById('spot-bar');
     bar.innerHTML = Object.entries(data)
       .filter(([k]) => k !== '_ts')
-      .map(([sym, ltp]) =>
-        `<span class="spot-item"><span style="color:#94a3b8;font-size:11px">${sym}</span><strong style="color:${stale ? '#f87171' : '#fff'};font-size:13px;margin-left:4px">${fmtRs(ltp)}</strong></span>`
-      ).join('');
+      .map(([sym, d]) => {
+        const ltp    = d.ltp;
+        const change = d.change;
+        const pos    = change != null && change >= 0;
+        const chgColor = stale ? '#f87171' : (change == null ? '#94a3b8' : (pos ? '#4ade80' : '#f87171'));
+        const ltpColor = stale ? '#f87171' : (change == null ? '#fff'    : (pos ? '#4ade80' : '#f87171'));
+        const chgStr = change != null
+          ? `<span style="font-size:11px;color:${chgColor};margin-left:3px">(${pos ? '+' : ''}${change.toLocaleString('en-IN', {maximumFractionDigits:0})})</span>`
+          : '';
+        return `<span class="spot-item">
+          <span style="color:#94a3b8;font-size:11px">${sym}</span>
+          <strong style="color:${ltpColor};font-size:13px;margin-left:4px">${fmtRs(ltp)}</strong>${chgStr}
+        </span>`;
+      }).join('');
   } catch(e) {}
 }
 

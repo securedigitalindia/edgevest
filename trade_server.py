@@ -654,10 +654,34 @@ def api_prices():
 @app.route("/api/spot")
 @require_login
 def api_spot():
-    from live.fo_instruments import SPOT_IKEYS
-    from db.queries import get_cached_prices
+    from config import SPOT_IKEYS, SPOT_DISPLAY
+    from db.queries import get_cached_prices, get_candles
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
     prices, ts = get_cached_prices(list(SPOT_IKEYS.values()))
-    out = {sym: prices[ikey] for sym, ikey in SPOT_IKEYS.items() if ikey in prices}
+    IST      = ZoneInfo("Asia/Kolkata")
+    today    = datetime.now(timezone.utc).astimezone(IST).date()
+    out      = {}
+
+    for sym in SPOT_DISPLAY:
+        ikey = SPOT_IKEYS.get(sym)
+        if not ikey or ikey not in prices:
+            continue
+        ltp    = prices[ikey]
+        change = None
+        try:
+            df = get_candles(sym, "1d", 3)
+            if not df.empty:
+                last_date = df.iloc[-1]["ts"].astimezone(IST).date()
+                # If today's candle is already synced, prev_close is the row before it
+                prev_close = (df.iloc[-2]["close"] if last_date >= today and len(df) >= 2
+                              else df.iloc[-1]["close"])
+                change = round(ltp - prev_close, 2)
+        except Exception:
+            pass
+        out[sym] = {"ltp": ltp, "change": change}
+
     if ts:
         out["_ts"] = ts
     return jsonify(out)
