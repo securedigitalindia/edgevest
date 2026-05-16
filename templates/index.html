@@ -31,7 +31,7 @@
   .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80;
               animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-  .last-updated { font-size: 11px; color: #475569; }
+  .live-dot.stale { background: #f87171; animation: none; }
   .hdr-btn { background: none; border: none; color: #94a3b8; font-size: 18px;
              cursor: pointer; margin-left: 6px; line-height: 1; }
   .hdr-btn:hover { color: #fff; }
@@ -294,10 +294,8 @@
 
 <header>
   <h1>📊 Drishti</h1>
-  <div class="spot-bar" id="spot-bar">
-    <span class="last-updated" id="last-updated"></span>
-  </div>
-  <div class="live-dot" title="Live prices"></div>
+  <div class="spot-bar" id="spot-bar"></div>
+  <div class="live-dot" id="live-dot" title="Live prices"></div>
   <div style="display:flex;align-items:center;gap:10px;margin-left:8px">
     <a href="/profile" style="display:flex;align-items:center;gap:7px;text-decoration:none">
       {% if user.picture %}
@@ -1398,6 +1396,16 @@ async function addClientAccount() {
 // Live prices
 // ─────────────────────────────────────────────────────────
 
+function _isStale(ts) {
+  if (!ts) return true;
+  return (Date.now() - new Date(ts).getTime()) > 15000;
+}
+
+function _applyStale(stale) {
+  const dot = document.getElementById('live-dot');
+  if (dot) dot.classList.toggle('stale', stale);
+}
+
 async function updatePrices() {
   const tradeKeys = _trades.flatMap(t => t.legs.map(l => l.instrument_key).filter(Boolean));
   const recKeys   = _recs.flatMap(r => r.legs.map(l => l.instrument_key).filter(Boolean));
@@ -1409,6 +1417,10 @@ async function updatePrices() {
       body: JSON.stringify({ keys: ikeys }),
     });
     const prices = await res.json();
+    const stale  = _isStale(prices._ts);
+    const ltpColor = stale ? '#dc2626' : '#16a34a';
+    _applyStale(stale);
+
     for (const t of _trades) {
       let net = 0, allKnown = true;
       t.legs.forEach((l, i) => {
@@ -1418,6 +1430,7 @@ async function updatePrices() {
         if (!ltpEl) return;
         if (ltp == null) { allKnown = false; return; }
         ltpEl.textContent = fmtRs(ltp);
+        ltpEl.style.color = ltpColor;
         const qty    = l.lots * (l.lot_size || 1);
         const legPnl = l.side === 'SELL' ? (l.price - ltp)*qty : (ltp - l.price)*qty;
         net += legPnl;
@@ -1436,12 +1449,12 @@ async function updatePrices() {
       r.legs.forEach((l, i) => {
         const ltp   = prices[l.instrument_key];
         const ltpEl = document.getElementById(`rltp-${r.id}-${i}`);
-        if (ltpEl && ltp != null) ltpEl.textContent = fmtRs(ltp);
+        if (ltpEl && ltp != null) {
+          ltpEl.textContent  = fmtRs(ltp);
+          ltpEl.style.color  = ltpColor;
+        }
       });
     }
-    document.getElementById('last-updated').textContent =
-      'Updated ' + new Date().toLocaleTimeString('en-IN',
-        {hour:'2-digit', minute:'2-digit', second:'2-digit'});
   } catch(e) {}
 }
 
@@ -1449,12 +1462,14 @@ async function updateSpot() {
   try {
     const res  = await fetch('/api/spot');
     const data = await res.json();
-    const bar  = document.getElementById('spot-bar');
-    const lastEl = document.getElementById('last-updated');
-    bar.innerHTML = Object.entries(data).map(([sym, ltp]) =>
-      `<span class="spot-item"><span style="color:#94a3b8;font-size:11px">${sym}</span><strong>${fmtRs(ltp)}</strong></span>`
-    ).join('');
-    bar.appendChild(lastEl);
+    const stale = _isStale(data._ts);
+    const bar   = document.getElementById('spot-bar');
+    _applyStale(stale);
+    bar.innerHTML = Object.entries(data)
+      .filter(([k]) => k !== '_ts')
+      .map(([sym, ltp]) =>
+        `<span class="spot-item"><span style="color:#94a3b8;font-size:11px">${sym}</span><strong style="color:${stale ? '#f87171' : '#fff'};font-size:13px;margin-left:4px">${fmtRs(ltp)}</strong></span>`
+      ).join('');
   } catch(e) {}
 }
 
