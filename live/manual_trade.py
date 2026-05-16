@@ -99,14 +99,14 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "") -> int:
             "instrument_key":  ikey,
         })
 
-    # --- 2. Fetch current spot price ---
+    # --- 2. Snapshot current spot price from shared price cache ---
     spot_ltp = 0.0
     try:
-        from live.upstox_client import get_ltp
+        from db.queries import get_cached_prices
         spot_ikey = SPOT_IKEYS.get(symbol)
         if spot_ikey:
-            prices   = get_ltp([spot_ikey])
-            spot_ltp = prices.get(spot_ikey, 0.0)
+            cached, _ = get_cached_prices([spot_ikey])
+            spot_ltp  = cached.get(spot_ikey, 0.0)
     except Exception as e:
         print(f"  [manual_trade]  spot fetch failed: {e}", flush=True)
 
@@ -303,13 +303,14 @@ def close_manual_trade(trade_id: int, prices: list[float], note: str = "") -> No
         for leg, exit_price in zip(entry_legs, prices)
     ]
 
-    # --- 4. Fetch spot LTP ---
+    # --- 4. Snapshot spot LTP from shared price cache ---
     spot_ltp = 0.0
     try:
-        from live.upstox_client import get_ltp
+        from db.queries import get_cached_prices
         spot_ikey = SPOT_IKEYS.get(symbol)
         if spot_ikey:
-            spot_ltp = get_ltp([spot_ikey]).get(spot_ikey, 0.0)
+            cached, _ = get_cached_prices([spot_ikey])
+            spot_ltp  = cached.get(spot_ikey, 0.0)
     except Exception as e:
         print(f"  [close_manual_trade]  spot fetch failed: {e}", flush=True)
 
