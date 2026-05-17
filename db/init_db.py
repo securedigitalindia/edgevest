@@ -12,14 +12,52 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import DB_PATH, TIMEFRAMES, SYMBOLS
 
 
-def get_connection():
-    """Return a configured SQLite connection."""
+def _open_connection() -> sqlite3.Connection:
+    """Open a fresh SQLite connection with standard settings."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=10000")  # 10s wait on write locks
+    conn = sqlite3.connect(DB_PATH, timeout=10, check_same_thread=False)
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+class _RequestScopedConn:
+    """
+    Proxy that delegates all sqlite3.Connection calls to the underlying
+    connection but turns .close() into a no-op.  The real close happens
+    via Flask's teardown_appcontext so the connection lives for the whole
+    request and is shared by every DB function called during that request.
+    """
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+
+    def close(self):
+        pass  # intentional no-op — Flask teardown closes it
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+def get_connection():
+    """
+    Return a SQLite connection.
+
+    Inside a Flask request context  → returns a cached per-request connection
+      (one connection shared by all DB calls in the same request).  Callers
+      may safely call .close() on it — that call is silently ignored; Flask
+      closes the real connection after the response is sent.
+
+    Outside Flask (poller, CLI, bootstrap) → returns a plain new connection;
+      the caller is responsible for closing it.
+    """
+    try:
+        from flask import g
+        if not hasattr(g, '_db'):
+            g._db = _open_connection()
+        return _RequestScopedConn(g._db)
+    except RuntimeError:
+        # No active Flask application/request context
+        return _open_connection()
 
 
 def table_name(tf_key: str) -> str:
@@ -191,6 +229,7 @@ def _migrate_traders_to_users(conn, cur):
 def init_db():
     """Create all tables and indexes. Idempotent."""
     conn = get_connection()
+    conn.execute("PRAGMA journal_mode=WAL")   # set once at creation/migration time
     cur = conn.cursor()
 
     _migrate_traders_to_users(conn, cur)

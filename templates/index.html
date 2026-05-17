@@ -519,7 +519,7 @@ function addLeg(containerId = 'legs-list', prefix = 'c') {
         <select id="side-${prefix}-${n}">
           <option value="BUY">BUY</option><option value="SELL">SELL</option>
         </select></div>
-      <div><label>Lots</label>
+      <div><label id="lots-label-${prefix}-${n}">Lots</label>
         <input type="number" id="lots-${prefix}-${n}" min="1" placeholder="1"></div>
       <div><label>Price</label>
         <input type="number" id="price-${prefix}-${n}" step="0.05" placeholder="0.00"></div>
@@ -587,6 +587,8 @@ function selectInstrument(prefix, n, i) {
   document.getElementById(`sel-label-${prefix}-${n}`).textContent = item.label;
   document.getElementById(`sel-${prefix}-${n}`).classList.add('visible');
   document.getElementById(`fields-${prefix}-${n}`).classList.remove('hidden');
+  const lotsLabel = document.getElementById(`lots-label-${prefix}-${n}`);
+  if (lotsLabel) lotsLabel.textContent = item.instrument_type === 'EQ' ? 'Qty (shares)' : 'Lots';
   document.getElementById(`lots-${prefix}-${n}`).focus();
 }
 
@@ -622,9 +624,10 @@ function collectLegs(containerId, prefix) {
     if (!price || price <= 0) { showToast(`Enter valid price`, 'err'); return null; }
     symbol = ins.symbol;
     const leg = { side, type: ins.instrument_type, lots, price };
-    if (ins.strike)     leg.strike   = ins.strike;
-    if (ins.expiry_str) leg.expiry   = ins.expiry_str;
-    if (ins.lot_size)   leg.lot_size = ins.lot_size;
+    if (ins.instrument_key) leg.instrument_key = ins.instrument_key;
+    if (ins.strike)         leg.strike         = ins.strike;
+    if (ins.expiry_str)     leg.expiry         = ins.expiry_str;
+    if (ins.lot_size)       leg.lot_size       = ins.lot_size;
     legs.push(leg);
   }
   return { symbol, legs };
@@ -762,7 +765,7 @@ function renderRecItem(r) {
           ${x ? `<span style="color:var(--muted);font-size:13px">→</span>
           <span class="${xsc}" style="font-weight:700">${x.side||'—'}</span>` : ''}
           <span class="rec-leg-meta">${ep}${x ? ` → ${xp}` : ''}</span>
-          ${e.lots ? `<span class="rec-leg-meta">${e.lots}L${ls ? ' × ' + ls : ''}</span>` : ''}
+          ${e.lots ? `<span class="rec-leg-meta">${fmtQty(e.lots, ls, e.instrument_type)}</span>` : ''}
           ${legPnl != null ? `<span class="${legPnl >= 0 ? 'pnl-pos':'pnl-neg'}" style="font-size:11px;font-weight:600;margin-left:4px">${fmtPnl(legPnl)}</span>` : ''}
         </div>
       </div>`;
@@ -809,7 +812,7 @@ function renderRecItem(r) {
           <div class="rec-leg-symbol">${l.symbol || r.symbol}${aa}</div>
           <div class="rec-leg-contract">${strike}${l.instrument_type}${exp}</div>
         </div>
-        <span class="rec-leg-meta">${l.lots}L @₹${price}</span>
+        <span class="rec-leg-meta">${fmtQty(l.lots, l.lot_size, l.instrument_type)} @₹${price}</span>
       </div>`;
     };
     const baseLegRows = r.legs.map(l => renderLegRow(l)).join('');
@@ -859,7 +862,7 @@ function renderRecItem(r) {
             <span class="side ${exitSc}" style="padding-top:2px">${exitSide}</span>
             <div>
               <div style="font-size:13px;font-weight:700;color:#1e293b">${l.symbol || r.symbol}</div>
-              <div style="font-size:11px;color:var(--muted)">${strike}${l.instrument_type}${exp} · ${l.lots}L @₹${entryP}</div>
+              <div style="font-size:11px;color:var(--muted)">${strike}${l.instrument_type}${exp} · ${fmtQty(l.lots, l.lot_size, l.instrument_type)} @₹${entryP}</div>
             </div>
           </div>
           <div><label>Price</label>
@@ -1138,16 +1141,17 @@ function renderAccountTrades() {
 
 function renderTradeCard(t) {
   const mkLegRow = (l, ltpId, pnlId, bg) => {
-    const sc     = l.side === 'BUY' ? 'side-buy' : 'side-sell';
-    const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
+    const sc         = l.side === 'BUY' ? 'side-buy' : 'side-sell';
+    const strike     = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
+    const instrument = l.instrument_type === 'EQ' ? t.symbol : `${strike}${l.instrument_type}`;
     const entry  = l.price != null ? fmtRs(l.price) : '—';
     const ltpCell = l.instrument_key
       ? `<td class="ltp-cell" id="${ltpId}" style="${bg ? `background:${bg}` : ''}">—</td><td class="pnl-neu" id="${pnlId}" style="${bg ? `background:${bg}` : ''}">—</td>`
       : `<td class="ltp-cell" style="${bg ? `background:${bg}` : ''}">—</td><td class="pnl-neu" style="${bg ? `background:${bg}` : ''}">—</td>`;
     return `<tr style="${bg ? `background:${bg}` : ''}">
       <td class="${sc}">${l.side}</td>
-      <td>${strike}${l.instrument_type}</td>
-      <td>${l.lots}L</td>
+      <td>${instrument}</td>
+      <td>${fmtQty(l.lots, l.lot_size, l.instrument_type)}</td>
       <td>${entry}</td>
       ${ltpCell}
     </tr>`;
@@ -1171,7 +1175,7 @@ function renderTradeCard(t) {
     return `<div class="exit-leg-row">
       <div class="exit-leg-info">
         <span class="side ${l.side === 'BUY' ? 'side-buy':'side-sell'}">${l.side}</span>
-        &nbsp;${strike}${l.instrument_type} · ${l.lots}L
+        &nbsp;${strike}${l.instrument_type} · ${fmtQty(l.lots, l.lot_size, l.instrument_type)}
         <div class="meta">entry ${fmtRs(l.price)}</div>
       </div>
       <div><label>Price</label>
@@ -1209,7 +1213,7 @@ function renderTradeCard(t) {
     </div>
     <table class="legs-table">
       <thead><tr>
-        <th>Side</th><th>Instrument</th><th>Lots</th>
+        <th>Side</th><th>Instrument</th><th>Qty</th>
         <th>Entry</th><th>LTP</th><th>P&amp;L</th>
       </tr></thead>
       <tbody>${legRows}</tbody>
@@ -1243,7 +1247,7 @@ function renderApplyAdj(t, a) {
     const st = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
     const sc = l.side === 'BUY' ? 'side-buy' : 'side-sell';
     return `<div class="apply-leg-row">
-      <div><span class="${sc}">${l.side}</span>&nbsp;${st}${l.instrument_type} · ${l.lots}L
+      <div><span class="${sc}">${l.side}</span>&nbsp;${st}${l.instrument_type} · ${fmtQty(l.lots, l.lot_size, l.instrument_type)}
         <div style="font-size:10px;color:var(--muted)">Rec @ ₹${l.price != null ? Number(l.price).toLocaleString('en-IN',{minimumFractionDigits:2}) : '—'}</div>
       </div>
       <div><label>Your price</label>
@@ -1380,8 +1384,9 @@ function renderHistoryCard(t) {
   const pnlCls = pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : 'pnl-neu';
 
   const mkLegTr = (e, x, bg) => {
-    const sc     = e.side === 'BUY' ? 'side-buy' : 'side-sell';
-    const strike = e.strike ? `${Number(e.strike).toLocaleString('en-IN')} ` : '';
+    const sc         = e.side === 'BUY' ? 'side-buy' : 'side-sell';
+    const strike     = e.strike ? `${Number(e.strike).toLocaleString('en-IN')} ` : '';
+    const instrument = e.instrument_type === 'EQ' ? t.symbol : `${strike}${e.instrument_type}`;
     const ep     = e.price != null ? fmtRs(e.price) : '—';
     const xp     = x && x.price != null ? fmtRs(x.price) : '—';
     let legPnl   = '—';
@@ -1394,8 +1399,8 @@ function renderHistoryCard(t) {
     const ts = bg ? `style="background:${bg}"` : '';
     return `<tr ${s}>
       <td class="${sc}" ${ts}>${e.side}</td>
-      <td ${ts}>${strike}${e.instrument_type}</td>
-      <td ${ts}>${e.lots}L</td>
+      <td ${ts}>${instrument}</td>
+      <td ${ts}>${fmtQty(e.lots, e.lot_size, e.instrument_type)}</td>
       <td ${ts}>${ep}</td>
       <td ${ts}>${xp}</td>
       <td ${ts}>${legPnl}</td>
@@ -1443,7 +1448,7 @@ function renderHistoryCard(t) {
     </div>
     <table class="legs-table">
       <thead><tr>
-        <th>Side</th><th>Instrument</th><th>Lots</th>
+        <th>Side</th><th>Instrument</th><th>Qty</th>
         <th>Entry</th><th>Exit</th><th>P&amp;L</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -1876,6 +1881,10 @@ function updateSetupBanner() {
 // Helpers
 // ─────────────────────────────────────────────────────────
 
+function fmtQty(lots, lot_size, instrument_type) {
+  if (instrument_type === 'EQ') return `${lots}`;
+  return lot_size ? `${lots}L × ${lot_size}` : `${lots}L`;
+}
 function fmtRs(n) {
   if (n == null) return '—';
   return '₹' + Number(n).toLocaleString('en-IN',

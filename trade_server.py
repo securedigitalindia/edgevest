@@ -15,11 +15,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from flask import (Flask, render_template, request, jsonify,
-                   session, redirect, url_for, abort)
+                   session, redirect, url_for, abort, g)
 from authlib.integrations.flask_client import OAuth
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
+
+
+@app.teardown_appcontext
+def _close_db(exc):
+    db = getattr(g, '_db', None)
+    if db is not None:
+        db.close()
 PORT = 5555
 
 oauth = OAuth(app)

@@ -355,7 +355,7 @@ def search_instruments(query: str) -> list[dict]:
             symbol = token.upper()
 
     if not itype:
-        return []
+        itype = "EQ"
 
     # Equity search — prefix match on trading symbol
     if itype == "EQ":

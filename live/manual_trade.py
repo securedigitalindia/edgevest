@@ -87,6 +87,10 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "") -> int:
                              strike=(strike if itype in ("PE", "CE") else 0))
             lot_sz = fo_lot_size(symbol, expiry_date) or 0
 
+        elif itype == "EQ":
+            ikey   = leg.get("instrument_key")
+            lot_sz = int(leg.get("lot_size") or 1)
+
         resolved_legs.append({
             "side":            side,
             "instrument_type": itype,

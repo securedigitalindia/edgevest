@@ -1268,33 +1268,41 @@ def update_price_cache(prices: dict):
     if not prices:
         return
     from zoneinfo import ZoneInfo
-    IST      = ZoneInfo("Asia/Kolkata")
-    now_utc  = datetime.now(timezone.utc)
-    ts       = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-    today    = now_utc.astimezone(IST).strftime("%Y-%m-%d")
+    IST     = ZoneInfo("Asia/Kolkata")
+    now_utc = datetime.now(timezone.utc)
+    ts      = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    today   = now_utc.astimezone(IST).strftime("%Y-%m-%d")
+
+    keys = [k for k, v in prices.items() if v is not None]
+    if not keys:
+        return
 
     conn = get_connection()
-    for k, v in prices.items():
-        if v is None:
-            continue
-        row = conn.execute(
-            "SELECT ltp, ts, prev_close FROM price_cache WHERE instrument_key = ?", (k,)
-        ).fetchone()
+    # One SELECT for all keys — avoids N round-trips inside the write transaction
+    ph  = ",".join("?" * len(keys))
+    existing = {
+        r[0]: (r[1], r[2], r[3])
+        for r in conn.execute(
+            f"SELECT instrument_key, ltp, ts, prev_close FROM price_cache WHERE instrument_key IN ({ph})",
+            keys,
+        ).fetchall()
+    }
 
-        if row is None:
+    for k in keys:
+        v = prices[k]
+        if k not in existing:
             conn.execute(
                 "INSERT INTO price_cache (instrument_key, ltp, ts, prev_close) VALUES (?, ?, ?, NULL)",
                 (k, v, ts),
             )
         else:
-            old_ltp, old_ts, prev_close = row
+            old_ltp, old_ts, prev_close = existing[k]
             if old_ts:
                 old_date = (datetime.strptime(old_ts, "%Y-%m-%dT%H:%M:%SZ")
                             .replace(tzinfo=timezone.utc)
                             .astimezone(IST)
                             .strftime("%Y-%m-%d"))
                 if old_date < today:
-                    # First poll of a new day — yesterday's ltp becomes prev_close
                     prev_close = old_ltp
             conn.execute(
                 "UPDATE price_cache SET ltp = ?, ts = ?, prev_close = ? WHERE instrument_key = ?",
