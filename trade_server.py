@@ -274,13 +274,15 @@ def api_search():
     raw = search_instruments(q)[:12]
     results = []
     for r in raw:
-        if r["strike"]:
+        if r["instrument_type"] == "EQ":
+            label = f"{r['symbol']}  EQ  {r.get('name', '')}"
+        elif r["strike"]:
             label = f"{r['symbol']}  {int(r['strike']):,} {r['instrument_type']}  {r['expiry_str']}"
         else:
             label = f"{r['symbol']}  {r['instrument_type']}  {r['expiry_str']}"
         if r["weekly"]:
             label += "  (weekly)"
-        if r.get("lot_size"):
+        if r.get("lot_size") and r["instrument_type"] != "EQ":
             label += f"  · lot {r['lot_size']}"
         results.append({
             "label":           label,
@@ -374,6 +376,16 @@ def api_recommendations():
                         has_pnl = True
                 realized_pnl = total if has_pnl else None
 
+        all_leg_types = {l.get("instrument_type", "") for l in (original_legs + current_legs)}
+        if all_leg_types & {"CE", "PE", "FUT"}:
+            segment = "F&O"
+        elif "ETF" in all_leg_types:
+            segment = "ETF"
+        elif all_leg_types & {"COMMODITY", "MCX"}:
+            segment = "Commodities"
+        else:
+            segment = "Equity"
+
         out.append({
             "id":            r["id"],
             "symbol":        r["symbol"],
@@ -383,6 +395,7 @@ def api_recommendations():
             "exit_ist":      _ist_str(r["exit_time"]) if r.get("exit_time") else None,
             "account_count": r["account_count"],
             "adj_count":     len(adjustments),
+            "segment":       segment,
             "legs":          original_legs,
             "current_legs":  current_legs,
             "exit_legs":     exit_legs,
@@ -648,14 +661,30 @@ def api_account_trades_history():
 # API: prices / spot
 # ─────────────────────────────────────────────────────────
 
+def _spot_data() -> dict:
+    from config import SPOT_IKEYS, SPOT_DISPLAY
+    from db.queries import get_cached_spot
+    display_ikeys = [SPOT_IKEYS[s] for s in SPOT_DISPLAY if s in SPOT_IKEYS]
+    ikey_to_sym   = {SPOT_IKEYS[s]: s for s in SPOT_DISPLAY if s in SPOT_IKEYS}
+    spot, _       = get_cached_spot(display_ikeys)
+    out = {}
+    for ikey in display_ikeys:
+        if ikey not in spot:
+            continue
+        d   = spot[ikey]
+        ltp = d["ltp"]
+        pc  = d["prev_close"]
+        out[ikey_to_sym[ikey]] = {"ltp": ltp, "change": round(ltp - pc, 2) if pc else None}
+    return out
+
+
 @app.route("/api/prices", methods=["POST"])
 @require_login
 def api_prices():
-    keys = (request.json or {}).get("keys", [])
-    if not keys:
-        return jsonify({})
     from db.queries import get_cached_prices
-    prices, ts = get_cached_prices(keys)
+    keys = (request.json or {}).get("keys", [])
+    prices, ts = get_cached_prices(keys) if keys else ({}, None)
+    prices["_spot"] = _spot_data()
     if ts:
         prices["_ts"] = ts
     return jsonify(prices)
@@ -664,26 +693,7 @@ def api_prices():
 @app.route("/api/spot")
 @require_login
 def api_spot():
-    from config import SPOT_IKEYS, SPOT_DISPLAY
-    from db.queries import get_cached_spot
-
-    display_ikeys = [SPOT_IKEYS[s] for s in SPOT_DISPLAY if s in SPOT_IKEYS]
-    ikey_to_sym   = {SPOT_IKEYS[s]: s for s in SPOT_DISPLAY if s in SPOT_IKEYS}
-    spot, ts      = get_cached_spot(display_ikeys)
-    out = {}
-    for ikey in display_ikeys:
-        if ikey not in spot:
-            continue
-        d    = spot[ikey]
-        ltp  = d["ltp"]
-        pc   = d["prev_close"]
-        out[ikey_to_sym[ikey]] = {
-            "ltp":    ltp,
-            "change": round(ltp - pc, 2) if pc else None,
-        }
-    if ts:
-        out["_ts"] = ts
-    return jsonify(out)
+    return jsonify(_spot_data())
 
 
 # ─────────────────────────────────────────────────────────

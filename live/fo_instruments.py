@@ -40,6 +40,10 @@ _LOT_SIZES: dict[date, int] = {}
 _generic_index:     dict[tuple, str] = {}
 # key: (underlying_key, expiry_date) → lot_size
 _generic_lot_sizes: dict[tuple, int] = {}
+# trading symbol → underlying_key  (e.g. "HINDALCO" → "NSE_EQ|INE038A01020")
+_symbol_to_underlying: dict[str, str] = {}
+# equity index: uppercase trading_symbol → {instrument_key, name, lot_size}
+_eq_index: dict[str, dict] = {}
 
 _loaded = False
 
@@ -77,7 +81,7 @@ def refresh(force: bool = False):
     Reads from a local date-stamped cache if today's file exists;
     downloads from Upstox otherwise (or when force=True).
     """
-    global _index, _LOT_SIZES, _generic_index, _generic_lot_sizes, _loaded
+    global _index, _LOT_SIZES, _generic_index, _generic_lot_sizes, _symbol_to_underlying, _eq_index, _loaded
 
     os.makedirs(_CACHE_DIR, exist_ok=True)
     cache_path = _today_cache_path()
@@ -137,12 +141,37 @@ def refresh(force: bool = False):
             strike = int(round(row.get("strike_price", 0)))
             nifty_idx[(itype, expiry_date, strike, weekly)] = ikey
 
-    _index          = nifty_idx
-    _LOT_SIZES      = nifty_lot_sizes
-    _generic_index  = gen_idx
-    _generic_lot_sizes = gen_lot_sizes
+    # Build symbol → underlying_key map from underlying_symbol field (for F&O stock search)
+    sym_to_uk: dict[str, str] = {}
+    for row in instruments:
+        if row.get("segment") != "NSE_FO":
+            continue
+        us = row.get("underlying_symbol", "").strip().upper()
+        uk = row.get("underlying_key", "")
+        if us and uk and us not in sym_to_uk:
+            sym_to_uk[us] = uk
+
+    # Equity index: NSE_EQ instruments with instrument_type == 'EQ'
+    eq_idx: dict[str, dict] = {}
+    for row in instruments:
+        if row.get("segment") != "NSE_EQ" or row.get("instrument_type") != "EQ":
+            continue
+        sym = row.get("trading_symbol", "").strip().upper()
+        if sym:
+            eq_idx[sym] = {
+                "instrument_key": row["instrument_key"],
+                "name":           row.get("name", sym),
+                "lot_size":       int(row.get("lot_size", 1)),
+            }
+
+    _index                = nifty_idx
+    _LOT_SIZES            = nifty_lot_sizes
+    _generic_index        = gen_idx
+    _generic_lot_sizes    = gen_lot_sizes
+    _symbol_to_underlying = sym_to_uk
+    _eq_index             = eq_idx
     _loaded = True
-    print(f"  Indexed {len(gen_idx)} NSE F&O instruments across all underlyings.", flush=True)
+    print(f"  Indexed {len(gen_idx)} NSE F&O + {len(eq_idx)} NSE EQ instruments.", flush=True)
 
 
 def _ensure_loaded():
@@ -322,11 +351,38 @@ def search_instruments(query: str) -> list[dict]:
             strike = int(token)
         elif token in _MONTH_NUMS:
             month = _MONTH_NUMS[token]
+        elif token.upper() in _symbol_to_underlying:
+            symbol = token.upper()
 
-    if not symbol or not itype:
+    if not itype:
         return []
 
-    underlying = _UNDERLYING_KEYS.get(symbol)
+    # Equity search — prefix match on trading symbol
+    if itype == "EQ":
+        q_upper = query.upper().replace(" EQ", "").replace("EQ ", "").strip()
+        matches = [
+            {
+                "symbol":          sym,
+                "instrument_type": "EQ",
+                "strike":          None,
+                "expiry":          None,
+                "expiry_str":      "",
+                "weekly":          False,
+                "instrument_key":  info["instrument_key"],
+                "lot_size":        info["lot_size"],
+                "name":            info["name"],
+            }
+            for sym, info in _eq_index.items()
+            if sym.startswith(q_upper) or q_upper in sym
+        ]
+        matches.sort(key=lambda r: (not r["symbol"].startswith(q_upper), r["symbol"]))
+        return matches[:12]
+
+    if not symbol:
+        return []
+
+    # Resolve underlying_key: known index aliases first, then stock symbol map
+    underlying = _UNDERLYING_KEYS.get(symbol) or _symbol_to_underlying.get(symbol)
     if not underlying:
         return []
 

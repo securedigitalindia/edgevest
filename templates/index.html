@@ -106,6 +106,15 @@
                  cursor: pointer; font-size: 13px; transition: all .15s; }
   .add-leg-btn:hover { border-color: var(--blue); color: var(--blue); background: #eff6ff; }
 
+  /* ── Segment filter chips ── */
+  .seg-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px 6px;
+               border-bottom: 1px solid var(--border); background: #fafafa; }
+  .seg-chip { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px;
+              border: 1.5px solid #e2e8f0; background: #fff; color: #64748b;
+              cursor: pointer; transition: all .15s; }
+  .seg-chip:hover { border-color: var(--blue); color: var(--blue); }
+  .seg-chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
   /* ── Recommendations list ── */
   .rec-item { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;
               overflow: hidden; background: #fff; }
@@ -167,9 +176,9 @@
   .trade-since { font-size: 11px; color: var(--muted); margin-left: auto; }
   .legs-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .legs-table th { font-size: 11px; font-weight: 600; color: var(--muted);
-                   text-align: left; padding: 5px 12px; border-bottom: 1px solid var(--border);
+                   text-align: left; padding: 7px 14px; border-bottom: 1px solid var(--border);
                    text-transform: uppercase; letter-spacing: .4px; background: #f8fafc; }
-  .legs-table td { padding: 7px 12px; border-bottom: 1px solid #f8fafc; }
+  .legs-table td { padding: 9px 14px; border-bottom: 1px solid #f1f5f9; }
   .legs-table tr:last-child td { border-bottom: none; }
   .side-buy  { color: var(--green); font-weight: 700; }
   .side-sell { color: var(--red);   font-weight: 700; }
@@ -439,6 +448,13 @@
         </select>
         <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="loadRecs()">↻</button>
       </div>
+      <div class="seg-chips" id="seg-chips">
+        <span class="seg-chip active" data-seg="all"         onclick="switchRecSegment('all')">All</span>
+        <span class="seg-chip"        data-seg="Equity"      onclick="switchRecSegment('Equity')">Equity</span>
+        <span class="seg-chip"        data-seg="F&amp;O"     onclick="switchRecSegment('F&O')">F&amp;O</span>
+        <span class="seg-chip"        data-seg="ETF"         onclick="switchRecSegment('ETF')">ETF</span>
+        <span class="seg-chip"        data-seg="Commodities" onclick="switchRecSegment('Commodities')">Commodities</span>
+      </div>
       <div class="card-body" style="padding:10px">
         <div id="recs-list"><div class="empty">Loading…</div></div>
       </div>
@@ -652,10 +668,19 @@ function resetCreateForm() {
 // Recommendations list
 // ─────────────────────────────────────────────────────────
 
-let _recs = [], _recTab = 'open';
+let _recs = [], _recTab = 'open', _recSegment = 'all';
+let _latestPrices = {};
 
 function switchRecTab(tab) {
   _recTab = tab;
+  renderRecs();
+}
+
+function switchRecSegment(seg) {
+  _recSegment = seg;
+  document.querySelectorAll('.seg-chip').forEach(el => {
+    el.classList.toggle('active', el.dataset.seg === seg);
+  });
   renderRecs();
 }
 
@@ -674,13 +699,25 @@ const _ADJ_COLORS = ['#fffbeb', '#eff6ff', '#f0fdf4', '#fdf4ff'];
 
 function renderRecs() {
   const el = document.getElementById('recs-list');
-  const filtered = _recTab === 'all' ? _recs
+  let filtered = _recTab === 'all' ? _recs
     : _recs.filter(r => {
         if (_recTab === 'exited') return r.status !== 'open';
         return r.status === 'open';
       });
+  if (_recSegment !== 'all')
+    filtered = filtered.filter(r => r.segment === _recSegment);
+
+  // Hide chips that have no trades at all (regardless of status tab)
+  const segCounts = {};
+  _recs.forEach(r => { segCounts[r.segment] = (segCounts[r.segment] || 0) + 1; });
+  document.querySelectorAll('.seg-chip').forEach(el => {
+    const seg = el.dataset.seg;
+    if (seg === 'all') return;
+    el.style.display = segCounts[seg] ? '' : 'none';
+  });
+
   if (!filtered.length) {
-    el.innerHTML = `<div class="empty">No ${_recTab === 'all' ? '' : _recTab + ' '}recommendations.</div>`;
+    el.innerHTML = `<div class="empty">No ${_recSegment !== 'all' ? _recSegment + ' ' : ''}${_recTab === 'all' ? '' : _recTab + ' '}recommendations.</div>`;
     return;
   }
   el.innerHTML = filtered.map(renderRecItem).join('');
@@ -696,74 +733,95 @@ function renderRecItem(r) {
   let legsHtml, pnlBar = '';
   if (r.status === 'exited' && r.exit_legs && r.exit_legs.length) {
     let totalPnl = 0, hasPnl = false;
-    const blocks = r.legs.map((e, i) => {
-      const x      = r.exit_legs[i] || {};
+
+    const mkExitLegRow = (e, x, bg) => {
       const sc     = e.side === 'BUY' ? 'side-buy' : 'side-sell';
-      const xsc    = (x.side||'') === 'BUY' ? 'side-buy' : 'side-sell';
+      const xsc    = (x && x.side||'') === 'BUY' ? 'side-buy' : 'side-sell';
       const strike = e.strike ? `${Number(e.strike).toLocaleString('en-IN')} ` : '';
       const ls     = e.lot_size || 0;
       const qty    = ls ? e.lots * ls : e.lots;
       const ep     = e.price != null ? fmtRs(e.price) : '—';
-      const xp     = x.price != null ? fmtRs(x.price) : '—';
+      const xp     = x && x.price != null ? fmtRs(x.price) : '—';
+      const sym      = e.symbol || r.symbol;
+      const contract = `${strike}${e.instrument_type}${e.expiry_str ? ' · ' + e.expiry_str : ''}`;
       let legPnl = null;
-      if (e.price != null && x.price != null) {
+      if (e.price != null && x && x.price != null) {
         legPnl = e.side === 'SELL' ? (e.price - x.price)*qty : (x.price - e.price)*qty;
         totalPnl += legPnl; hasPnl = true;
       }
-      const sym      = e.symbol || r.symbol;
-      const contract = `${strike}${e.instrument_type}${e.expiry_str ? ' · ' + e.expiry_str : ''}`;
-      return `<div class="exit-leg-block">
+      const bgStyle = bg ? `style="background:${bg}"` : '';
+      return `<div class="exit-leg-block" ${bgStyle}>
         <div class="exit-leg-row1">
           <div style="flex:1">
-            <div class="rec-leg-symbol">${sym}${e.instrument_key ? ` <span style="font-weight:400;color:var(--muted);font-size:12px">(<span id="rltp-${r.id}-${i}" style="color:#16a34a;font-weight:600">—</span>)</span>` : ''}</div>
+            <div class="rec-leg-symbol">${sym}</div>
             <div class="rec-leg-contract">${contract}</div>
           </div>
         </div>
         <div class="exit-leg-row2">
           <span class="${sc}" style="font-weight:700">${e.side}</span>
-          <span style="color:var(--muted);font-size:13px">→</span>
-          <span class="${xsc}" style="font-weight:700">${x.side||'—'}</span>
-          <span class="rec-leg-meta">${ep} → ${xp}</span>
+          ${x ? `<span style="color:var(--muted);font-size:13px">→</span>
+          <span class="${xsc}" style="font-weight:700">${x.side||'—'}</span>` : ''}
+          <span class="rec-leg-meta">${ep}${x ? ` → ${xp}` : ''}</span>
           ${e.lots ? `<span class="rec-leg-meta">${e.lots}L${ls ? ' × ' + ls : ''}</span>` : ''}
           ${legPnl != null ? `<span class="${legPnl >= 0 ? 'pnl-pos':'pnl-neg'}" style="font-size:11px;font-weight:600;margin-left:4px">${fmtPnl(legPnl)}</span>` : ''}
         </div>
       </div>`;
-    }).join('');
+    };
+
+    // Walk r.exit_legs in order: original legs first, then each adjustment group
+    let xi = 0;
+
+    // Entry section
+    let parts = [`<div style="background:#f8fafc;border-radius:6px;padding:4px 8px 2px">
+      <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px">Entry</div>
+      ${r.legs.map(e => mkExitLegRow(e, r.exit_legs[xi++] || null, '#f8fafc')).join('')}
+    </div>`];
+
+    // Adjustment sections — each leg paired with its exit leg in order
+    (r.adjustments || []).forEach((a, ai) => {
+      if (!a.legs || !a.legs.length) return;
+      const bg = _ADJ_COLORS[ai % _ADJ_COLORS.length];
+      const adjParts = [`Adjustment ${ai + 1}`];
+      if (a.note) adjParts.push(a.note);
+      if (a.ts)   adjParts.push(fmtIst(a.ts));
+      parts.push(`<div style="background:${bg};border-radius:6px;margin-top:4px;padding:4px 8px 2px">
+        <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px">${adjParts.join(' · ')}</div>
+        ${a.legs.map(l => mkExitLegRow(l, r.exit_legs[xi++] || null, bg)).join('')}
+      </div>`);
+    });
+
     pnlBar = hasPnl
       ? `<div class="net-pnl-bar">
            <span class="net-pnl-label">Realized P&amp;L</span>
            <span class="net-pnl-value ${totalPnl >= 0 ? 'pnl-pos':'pnl-neg'}">${fmtPnl(totalPnl)}</span>
          </div>` : '';
-    legsHtml = blocks;
+    legsHtml = parts.join('');
   } else {
-    const renderLegRow = (l, elId) => {
+    const renderLegRow = (l) => {
       const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
       const exp    = l.expiry_str ? ` · ${l.expiry_str}` : '';
       const sc     = l.side === 'BUY' ? 'side-buy' : 'side-sell';
       const aa     = l.auto_adjust ? ' <span title="auto-roll" style="color:#6366f1;font-size:10px">↻</span>' : '';
       const price  = l.price != null ? Number(l.price).toLocaleString('en-IN',{minimumFractionDigits:2}) : '—';
-      const ltpSpan = l.instrument_key
-        ? `<span style="font-weight:400;color:var(--muted);font-size:12px">(<span id="${elId}" style="color:#16a34a;font-weight:600">—</span>)</span>`
-        : '';
       return `<div class="rec-leg-row">
         <span class="${sc}" style="font-weight:700;min-width:38px;padding-top:1px">${l.side}</span>
         <div class="rec-leg-name">
-          <div class="rec-leg-symbol">${l.symbol || r.symbol}${aa} ${ltpSpan}</div>
+          <div class="rec-leg-symbol">${l.symbol || r.symbol}${aa}</div>
           <div class="rec-leg-contract">${strike}${l.instrument_type}${exp}</div>
         </div>
         <span class="rec-leg-meta">${l.lots}L @₹${price}</span>
       </div>`;
     };
-    const baseLegRows = r.legs.map((l, i) => renderLegRow(l, `rltp-${r.id}-${i}`)).join('');
+    const baseLegRows = r.legs.map(l => renderLegRow(l)).join('');
     let parts = [`<div style="background:#f8fafc;border-radius:6px;padding:4px 8px 2px"><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px">Entry</div>${baseLegRows}</div>`];
     (r.adjustments || []).forEach((a, ai) => {
       if (!a.legs || !a.legs.length) return;
-      const bg       = _ADJ_COLORS[ai % _ADJ_COLORS.length];
-      const ts       = a.ts ? fmtIst(a.ts) : '';
-      const note     = a.note ? ` · ${a.note}` : '';
-      const adjNum   = `Adjustment ${ai + 1}`;
-      const typeStr  = a.adj_type && a.adj_type !== 'adjustment' ? ` · ${_ADJ_TYPE_LABEL[a.adj_type] || a.adj_type}` : '';
-      parts.push(`<div style="background:${bg};border-radius:6px;margin-top:4px;padding:4px 8px 2px"><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px">${adjNum}${typeStr}${note}<span style="font-weight:400;margin-left:6px">${ts}</span></div>${a.legs.map((l, j) => renderLegRow(l, `rltpadj-${a.id}-${j}`)).join('')}</div>`);
+      const bg     = _ADJ_COLORS[ai % _ADJ_COLORS.length];
+      const parts2 = [`Adjustment ${ai + 1}`];
+      if (a.note) parts2.push(a.note);
+      if (a.ts)   parts2.push(fmtIst(a.ts));
+      const adjLabel = parts2.join(' · ');
+      parts.push(`<div style="background:${bg};border-radius:6px;margin-top:4px;padding:4px 8px 2px"><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px">${adjLabel}</div>${a.legs.map(l => renderLegRow(l)).join('')}</div>`);
     });
     legsHtml = parts.join('');
   }
@@ -815,15 +873,22 @@ function renderRecItem(r) {
       </div>
     </div>` : '';
 
-  const clientFooter = !_isAdmin ? `
-    <div class="rec-footer">
-      <button class="btn btn-success btn-sm" onclick="togglePushForm(${r.id})">
-        + Add to Account
-      </button>
-    </div>
-    <div class="push-form" id="push-${r.id}">
-      ${renderPushForm(r)}
-    </div>` : '';
+  const clientFooter = !_isAdmin && r.status === 'open' ? (r.adj_count
+    ? `<div style="margin:10px 14px 12px;padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;display:flex;align-items:flex-start;gap:10px">
+         <span style="font-size:18px;line-height:1.2">ℹ️</span>
+         <div>
+           <div style="font-size:12px;font-weight:700;color:#1d4ed8;margin-bottom:2px">New entries not available</div>
+           <div style="font-size:12px;color:#1e40af;line-height:1.5">This trade has been adjusted. Please contact your advisor to join the current position.</div>
+         </div>
+       </div>`
+    : `<div class="rec-footer">
+         <button class="btn btn-success btn-sm" onclick="togglePushForm(${r.id})">
+           + Add to Account
+         </button>
+       </div>
+       <div class="push-form" id="push-${r.id}">
+         ${renderPushForm(r)}
+       </div>`) : '';
 
   const timingRow = r.exit_ist
     ? `<div class="rec-header-timing" style="margin-top:5px">Open: ${r.entry_ist}&nbsp;&nbsp;·&nbsp;&nbsp;Exited: ${r.exit_ist}</div>`
@@ -839,7 +904,7 @@ function renderRecItem(r) {
       ${timingRow}
     </div>
     <div class="rec-legs">${legsHtml}</div>
-    ${pnlBar}
+    ${r.status === 'open' ? `<div class="net-pnl-bar"><span class="net-pnl-label">Unrealised P&amp;L</span><span class="net-pnl-value pnl-neu" id="rnet-${r.id}">—</span></div>` : pnlBar}
     ${adjHistory}
     ${adminFooter}
     ${clientFooter}
@@ -890,6 +955,15 @@ function togglePushForm(id) {
   el.classList.toggle('open');
   if (el.classList.contains('open')) {
     populatePushAccountSelect(id);
+    const rec = _recs.find(r => r.id === id);
+    if (rec) {
+      rec.legs.forEach((l, i) => {
+        const inp = document.getElementById(`pprice-${id}-${i}`);
+        if (!inp) return;
+        const ltp = l.instrument_key && _latestPrices[l.instrument_key];
+        inp.value = ltp != null ? ltp : (l.price ?? '');
+      });
+    }
   }
 }
 
@@ -1079,17 +1153,14 @@ function renderTradeCard(t) {
     </tr>`;
   };
 
-  const hasAdj = (t.applied_adjustments || []).length > 0;
-  let legRows = '';
-  if (hasAdj) legRows += `<tr style="background:#f8fafc"><td colspan="6" style="padding:4px 12px 2px;border-bottom:none;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Entry</td></tr>`;
-  legRows += t.legs.map((l, i) => mkLegRow(l, `ltp-${t.id}-${i}`, `pnl-${t.id}-${i}`, hasAdj ? '#f8fafc' : null)).join('');
+  let legRows = `<tr style="background:#f8fafc"><td colspan="6" style="padding:4px 12px 2px;border-bottom:none;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Entry</td></tr>`;
+  legRows += t.legs.map((l, i) => mkLegRow(l, `ltp-${t.id}-${i}`, `pnl-${t.id}-${i}`, '#f8fafc')).join('');
   (t.applied_adjustments || []).forEach((a, ai) => {
-    const bg      = _ADJ_COLORS[ai % _ADJ_COLORS.length];
-    const ts      = a.ts ? fmtIst(a.ts) : '';
-    const note    = a.note ? ` · ${a.note}` : '';
-    const adjNum  = `Adjustment ${ai + 1}`;
-    const typeStr = a.adj_type && a.adj_type !== 'adjustment' ? ` · ${_ADJ_TYPE_LABEL[a.adj_type] || a.adj_type}` : '';
-    const label   = `${adjNum}${typeStr}${note}  ${ts}`;
+    const bg        = _ADJ_COLORS[ai % _ADJ_COLORS.length];
+    const adjParts  = [`Adjustment ${ai + 1}`];
+    if (a.note) adjParts.push(a.note);
+    if (a.ts)   adjParts.push(fmtIst(a.ts));
+    const label = adjParts.join(' · ');
     legRows += `<tr style="background:${bg}"><td colspan="6" style="padding:4px 12px 2px;border-bottom:none;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-top:1px solid #f1f5f9">${label}</td></tr>`;
     (a.legs || []).forEach((l, j) => { legRows += mkLegRow(l, `ltpadj-${a.id}-${j}`, `pnladj-${a.id}-${j}`, bg); });
   });
@@ -1144,7 +1215,7 @@ function renderTradeCard(t) {
       <tbody>${legRows}</tbody>
     </table>
     <div class="net-pnl-bar">
-      <span class="net-pnl-label">Net P&amp;L</span>
+      <span class="net-pnl-label">Unrealised P&amp;L</span>
       <span class="net-pnl-value pnl-neu" id="net-${t.id}">—</span>
     </div>
     ${pendingSection}
@@ -1307,27 +1378,57 @@ function renderHistory() {
 function renderHistoryCard(t) {
   const pnl    = t.realized_pnl || 0;
   const pnlCls = pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : 'pnl-neu';
-  const legRows = t.entry_legs.map((e, i) => {
-    const x      = t.exit_legs[i] || {};
+
+  const mkLegTr = (e, x, bg) => {
     const sc     = e.side === 'BUY' ? 'side-buy' : 'side-sell';
     const strike = e.strike ? `${Number(e.strike).toLocaleString('en-IN')} ` : '';
     const ep     = e.price != null ? fmtRs(e.price) : '—';
-    const xp     = x.price != null ? fmtRs(x.price) : '—';
+    const xp     = x && x.price != null ? fmtRs(x.price) : '—';
     let legPnl   = '—';
-    if (e.price != null && x.price != null) {
+    if (e.price != null && x && x.price != null) {
       const qty = e.lots * (e.lot_size || 1);
       const lp  = e.side === 'SELL' ? (e.price - x.price)*qty : (x.price - e.price)*qty;
       legPnl = `<span class="${lp >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtPnl(lp)}</span>`;
     }
-    return `<tr>
-      <td class="${sc}">${e.side}</td>
-      <td>${strike}${e.instrument_type}</td>
-      <td>${e.lots}L</td>
-      <td>${ep}</td>
-      <td>${xp}</td>
-      <td>${legPnl}</td>
+    const s = bg ? `style="background:${bg}"` : '';
+    const ts = bg ? `style="background:${bg}"` : '';
+    return `<tr ${s}>
+      <td class="${sc}" ${ts}>${e.side}</td>
+      <td ${ts}>${strike}${e.instrument_type}</td>
+      <td ${ts}>${e.lots}L</td>
+      <td ${ts}>${ep}</td>
+      <td ${ts}>${xp}</td>
+      <td ${ts}>${legPnl}</td>
     </tr>`;
-  }).join('');
+  };
+
+  // Group entry legs: original (adjustment_id=null) vs adjustment groups
+  const origLegs = t.entry_legs.filter(l => !l.adjustment_id);
+  const adjGroups = [];
+  t.entry_legs.filter(l => l.adjustment_id).forEach(l => {
+    let g = adjGroups.find(g => g.adj_id === l.adjustment_id);
+    if (!g) { g = { adj_id: l.adjustment_id, legs: [] }; adjGroups.push(g); }
+    g.legs.push(l);
+  });
+
+  // Exit legs pair with all entry legs in order (original then adj)
+  const allEntry = [...origLegs, ...adjGroups.flatMap(g => g.legs)];
+  const exitMap  = {};
+  allEntry.forEach((e, i) => { exitMap[i] = t.exit_legs[i] || null; });
+
+  let rows = '';
+  // Entry section header
+  rows += `<tr style="background:#f8fafc"><td colspan="6" style="padding:4px 14px 2px;border-bottom:none;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Entry</td></tr>`;
+  origLegs.forEach((e, i) => { rows += mkLegTr(e, exitMap[i], '#f8fafc'); });
+
+  // Adjustment sections
+  let offset = origLegs.length;
+  adjGroups.forEach((g, ai) => {
+    const bg = _ADJ_COLORS[ai % _ADJ_COLORS.length];
+    rows += `<tr style="background:${bg}"><td colspan="6" style="padding:4px 14px 2px;border-bottom:none;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-top:1px solid #f1f5f9">Adjustment ${ai + 1}</td></tr>`;
+    g.legs.forEach((e, j) => { rows += mkLegTr(e, exitMap[offset + j], bg); });
+    offset += g.legs.length;
+  });
 
   return `<div class="trade-card" id="hcard-${t.id}">
     <div class="trade-card-header">
@@ -1345,7 +1446,7 @@ function renderHistoryCard(t) {
         <th>Side</th><th>Instrument</th><th>Lots</th>
         <th>Entry</th><th>Exit</th><th>P&amp;L</th>
       </tr></thead>
-      <tbody>${legRows}</tbody>
+      <tbody>${rows}</tbody>
     </table>
     <div class="net-pnl-bar">
       <span class="net-pnl-label">Realized P&amp;L</span>
@@ -1421,13 +1522,13 @@ async function updatePrices() {
     ...(r.adjustments || []).flatMap(a => (a.legs || []).map(l => l.instrument_key)),
   ].filter(Boolean));
   const ikeys = [...new Set([...tradeKeys, ...recKeys])];
-  if (!ikeys.length) return;
   try {
     const res    = await fetch('/api/prices', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ keys: ikeys }),
     });
     const prices = await res.json();
+    _latestPrices = prices;
     const stale  = _isStale(prices._ts);
     const ltpColor = stale ? '#dc2626' : '#16a34a';
     _applyStale(stale);
@@ -1460,39 +1561,34 @@ async function updatePrices() {
         netEl.className   = `net-pnl-value ${net >= 0 ? 'pnl-pos' : 'pnl-neg'}`;
       }
     }
-    for (const r of _recs) {
-      r.legs.forEach((l, i) => {
-        const ltp   = prices[l.instrument_key];
-        const ltpEl = document.getElementById(`rltp-${r.id}-${i}`);
-        if (ltpEl && ltp != null) {
-          ltpEl.textContent = fmtRs(ltp);
-          ltpEl.style.color = ltpColor;
-        }
-      });
-      (r.adjustments || []).forEach(a => {
-        (a.legs || []).forEach((l, j) => {
-          const ltp   = prices[l.instrument_key];
-          const ltpEl = document.getElementById(`rltpadj-${a.id}-${j}`);
-          if (ltpEl && ltp != null) {
-            ltpEl.textContent = fmtRs(ltp);
-            ltpEl.style.color = ltpColor;
-          }
-        });
-      });
-    }
-  } catch(e) {}
-}
 
-async function updateSpot() {
-  try {
-    const res  = await fetch('/api/spot');
-    const data = await res.json();
-    const stale = _isStale(data._ts);
-    _applyStale(stale);
+    // Unrealised P&L for open recommended positions
+    for (const r of _recs) {
+      if (r.status !== 'open') continue;
+      const netEl = document.getElementById(`rnet-${r.id}`);
+      if (!netEl) continue;
+      const allLegs = [
+        ...r.legs,
+        ...(r.adjustments || []).flatMap(a => a.legs || []),
+      ];
+      let rnet = 0, allKnown = true;
+      for (const l of allLegs) {
+        const ltp = l.instrument_key && prices[l.instrument_key];
+        if (ltp == null) { allKnown = false; continue; }
+        const qty = l.lots * (l.lot_size || 1);
+        rnet += l.side === 'SELL' ? (l.price - ltp) * qty : (ltp - l.price) * qty;
+      }
+      if (allKnown) {
+        netEl.textContent = fmtPnl(rnet);
+        netEl.className   = `net-pnl-value ${rnet >= 0 ? 'pnl-pos' : 'pnl-neg'}`;
+      }
+    }
+
+    // Spot bar
+    const spotData = prices._spot || {};
     const bar = document.getElementById('spot-bar');
-    bar.innerHTML = Object.entries(data)
-      .filter(([k]) => k !== '_ts')
-      .map(([sym, d]) => {
+    if (bar && Object.keys(spotData).length) {
+      bar.innerHTML = Object.entries(spotData).map(([sym, d]) => {
         const ltp    = d.ltp;
         const change = d.change;
         const pos    = change != null && change >= 0;
@@ -1506,6 +1602,7 @@ async function updateSpot() {
           <strong style="color:${ltpColor};font-size:13px;margin-left:4px">${fmtRs(ltp)}</strong>${chgStr}
         </span>`;
       }).join('');
+    }
   } catch(e) {}
 }
 
@@ -1812,8 +1909,8 @@ function showToast(msg, type) {
 if (document.getElementById('legs-list')) addLeg('legs-list', 'c');
 loadSettings();
 loadRecs();
-loadAccountTrades().then(() => { updatePrices(); updateSpot(); });
-setInterval(() => { updatePrices(); updateSpot(); }, 5000);
+loadAccountTrades().then(updatePrices);
+setInterval(updatePrices, 5000);
 </script>
 </body>
 </html>
