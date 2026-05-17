@@ -244,6 +244,15 @@ def run_live(force: bool = False):
             send_morning_brief()
         except Exception as e:
             print(f"  [morning brief failed]  {e}", flush=True)
+
+        # Daily pre-market analysis at 08:30 IST
+        _wait_until(8, 30)
+        try:
+            from live.daily_analysis import run_daily_analysis
+            run_daily_analysis()
+        except Exception as e:
+            print(f"  [daily analysis failed]  {e}", flush=True)
+
         wait_for_market_open()
 
     error_streak = 0
