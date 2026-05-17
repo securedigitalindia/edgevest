@@ -7,6 +7,8 @@
 #    python main.py live               — start live market poller
 #    python main.py live --force       — run poller outside market hours
 #    python main.py bootstrap RELIANCE — bootstrap one symbol
+#    python main.py analysis           — run & send daily NIFTY analysis now
+#    python main.py analysis --print   — print to terminal without sending
 # ============================================================
 
 import sys
@@ -44,9 +46,19 @@ def main():
         force = "--force" in args
         run_live(force=force)
 
+    elif command == "analysis":
+        import re
+        from live.daily_analysis import build_analysis, format_report, run_daily_analysis
+        if "--print" in args:
+            a   = build_analysis()
+            msg = format_report(a)
+            print(re.sub(r"<[^>]+>", "", msg))   # strip HTML for terminal
+        else:
+            run_daily_analysis()                  # build + send to Telegram
+
     else:
         print(f"Unknown command: {command}")
-        print("Valid commands: bootstrap, sync, verify, init, live")
+        print("Valid commands: bootstrap, sync, verify, init, live, analysis")
         sys.exit(1)
 
 
