@@ -286,6 +286,7 @@ def api_search():
             "label":           label,
             "symbol":          r["symbol"],
             "instrument_type": r["instrument_type"],
+            "instrument_key":  r.get("instrument_key"),
             "strike":          r["strike"],
             "expiry_str":      r["expiry_str"],
             "weekly":          r["weekly"],
@@ -350,12 +351,13 @@ def api_accounts():
 @app.route("/api/recommendations")
 @require_login
 def api_recommendations():
-    from db.queries import get_all_recommendations, get_current_legs, get_trade_adjustments, get_trade_legs
+    from db.queries import get_all_recommendations, get_original_entry_legs, get_current_legs, get_trade_adjustments, get_trade_legs
     recs = get_all_recommendations()
     out  = []
     for r in recs:
-        current_legs = get_current_legs(r["id"])
-        adjustments  = get_trade_adjustments(r["id"])
+        original_legs = get_original_entry_legs(r["id"])
+        current_legs  = get_current_legs(r["id"])
+        adjustments   = get_trade_adjustments(r["id"])
 
         exit_legs, realized_pnl = [], None
         if r["status"] == "exited":
@@ -381,7 +383,8 @@ def api_recommendations():
             "exit_ist":      _ist_str(r["exit_time"]) if r.get("exit_time") else None,
             "account_count": r["account_count"],
             "adj_count":     len(adjustments),
-            "legs":          current_legs,
+            "legs":          original_legs,
+            "current_legs":  current_legs,
             "exit_legs":     exit_legs,
             "realized_pnl":  realized_pnl,
             "adjustments":   adjustments,
@@ -477,7 +480,10 @@ def api_rec_create():
 @app.route("/api/account-trades")
 @require_login
 def api_account_trades():
-    from db.queries import get_open_account_trades, get_account_trade_legs
+    from db.queries import (
+        get_open_account_trades, get_account_trade_legs,
+        get_original_account_entry_legs, get_applied_account_adjustments,
+    )
     user       = current_user()
     account_id = request.args.get("account_id", type=int)
 
@@ -496,19 +502,23 @@ def api_account_trades():
         exited_keys  = {l["instrument_key"] for l in all_at_legs if l["action"] == "exit"}
         current_legs = [l for l in all_at_legs
                         if l["action"] == "entry" and l["instrument_key"] not in exited_keys]
-        pending_adjs = get_pending_adjustments_for_account_trade(t["id"])
+        original_legs = get_original_account_entry_legs(t["id"])
+        applied_adjs  = get_applied_account_adjustments(t["id"])
+        pending_adjs  = get_pending_adjustments_for_account_trade(t["id"])
         out.append({
-            "id":               t["id"],
-            "symbol":           t["symbol"] or "—",
-            "trigger":          t["trigger_name"],
-            "rec_id":           t["recommended_trade_id"],
-            "account_id":       t["account_id"],
-            "account_label":    t["account_label"] or t["broker_name"] or f"Account {t['account_id']}",
-            "trader_name":      t["trader_name"],
-            "broker_name":      t["broker_name"],
-            "entry_ist":        _ist_str(t["entry_time"]),
-            "legs":             current_legs,
-            "pending_adj_count": len(pending_adjs),
+            "id":                  t["id"],
+            "symbol":              t["symbol"] or "—",
+            "trigger":             t["trigger_name"],
+            "rec_id":              t["recommended_trade_id"],
+            "account_id":          t["account_id"],
+            "account_label":       t["account_label"] or t["broker_name"] or f"Account {t['account_id']}",
+            "trader_name":         t["trader_name"],
+            "broker_name":         t["broker_name"],
+            "entry_ist":           _ist_str(t["entry_time"]),
+            "legs":                original_legs,
+            "current_legs":        current_legs,
+            "applied_adjustments": applied_adjs,
+            "pending_adj_count":   len(pending_adjs),
             "pending_adjustments": pending_adjs,
         })
     return jsonify(trades=out)

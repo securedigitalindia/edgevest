@@ -285,6 +285,18 @@ def get_trade_legs(trade_id: int) -> list[dict]:
     return [dict(zip(_LEG_COLS, r)) for r in rows]
 
 
+def get_original_entry_legs(trade_id: int) -> list[dict]:
+    """Original entry legs only — excludes adjustment legs (adjustment_id IS NULL)."""
+    conn = get_connection()
+    rows = conn.execute(
+        f"SELECT {_LEG_SELECT} FROM trade_legs"
+        f" WHERE trade_id = ? AND action = 'entry' AND adjustment_id IS NULL ORDER BY id",
+        (trade_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(zip(_LEG_COLS, r)) for r in rows]
+
+
 def get_open_recommended_trade(symbol: str, entry_level: float) -> Optional[dict]:
     """Return the open trade at entry_level for symbol, or None."""
     conn = get_connection()
@@ -828,6 +840,54 @@ def get_account_trade_legs(account_trade_id: int) -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(zip(_ACCT_LEG_COLS, r)) for r in rows]
+
+
+def get_original_account_entry_legs(at_id: int) -> list[dict]:
+    """Original entry legs only — excludes adjustment legs (adjustment_id IS NULL)."""
+    cols = ", ".join(_ACCT_LEG_COLS)
+    conn = get_connection()
+    rows = conn.execute(
+        f"SELECT {cols} FROM account_trade_legs"
+        f" WHERE account_trade_id = ? AND action = 'entry' AND adjustment_id IS NULL ORDER BY id",
+        (at_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(zip(_ACCT_LEG_COLS, r)) for r in rows]
+
+
+def get_applied_account_adjustments(at_id: int) -> list[dict]:
+    """Applied adjustments on an account_trade, each with their entry legs."""
+    cols = ", ".join(_ACCT_LEG_COLS)
+    conn = get_connection()
+
+    rows = conn.execute(
+        f"SELECT {cols} FROM account_trade_legs"
+        f" WHERE account_trade_id = ? AND action = 'entry' AND adjustment_id IS NOT NULL ORDER BY id",
+        (at_id,)
+    ).fetchall()
+    legs_by_adj: dict[int, list] = {}
+    for r in rows:
+        leg = dict(zip(_ACCT_LEG_COLS, r))
+        legs_by_adj.setdefault(leg["adjustment_id"], []).append(leg)
+
+    if not legs_by_adj:
+        conn.close()
+        return []
+
+    ph = ",".join("?" * len(legs_by_adj))
+    meta_rows = conn.execute(
+        f"SELECT id, adj_type, note, ts FROM trade_adjustments WHERE id IN ({ph})",
+        list(legs_by_adj.keys()),
+    ).fetchall()
+    conn.close()
+
+    result = [
+        {"id": row[0], "adj_type": row[1], "note": row[2], "ts": row[3],
+         "legs": legs_by_adj.get(row[0], [])}
+        for row in meta_rows
+    ]
+    result.sort(key=lambda a: a["id"])
+    return result
 
 
 def get_open_account_trades(account_id: int | None = None) -> list[dict]:

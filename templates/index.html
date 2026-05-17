@@ -734,21 +734,33 @@ function renderRecItem(r) {
          </div>` : '';
     legsHtml = blocks;
   } else {
-    legsHtml = r.legs.map((l, i) => {
+    const renderLegRow = (l, elId) => {
       const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
       const exp    = l.expiry_str ? ` · ${l.expiry_str}` : '';
       const sc     = l.side === 'BUY' ? 'side-buy' : 'side-sell';
       const aa     = l.auto_adjust ? ' <span title="auto-roll" style="color:#6366f1;font-size:10px">↻</span>' : '';
       const price  = l.price != null ? Number(l.price).toLocaleString('en-IN',{minimumFractionDigits:2}) : '—';
+      const ltpSpan = l.instrument_key
+        ? `<span style="font-weight:400;color:var(--muted);font-size:12px">(<span id="${elId}" style="color:#16a34a;font-weight:600">—</span>)</span>`
+        : '';
       return `<div class="rec-leg-row">
         <span class="${sc}" style="font-weight:700;min-width:38px;padding-top:1px">${l.side}</span>
         <div class="rec-leg-name">
-          <div class="rec-leg-symbol">${l.symbol || r.symbol}${aa} <span style="font-weight:400;color:var(--muted);font-size:12px">(<span id="rltp-${r.id}-${i}" style="color:#16a34a;font-weight:600">—</span>)</span></div>
+          <div class="rec-leg-symbol">${l.symbol || r.symbol}${aa} ${ltpSpan}</div>
           <div class="rec-leg-contract">${strike}${l.instrument_type}${exp}</div>
         </div>
         <span class="rec-leg-meta">${l.lots}L @₹${price}</span>
       </div>`;
-    }).join('');
+    };
+    let parts = r.legs.map((l, i) => renderLegRow(l, `rltp-${r.id}-${i}`));
+    (r.adjustments || []).forEach(a => {
+      if (!a.legs || !a.legs.length) return;
+      const ts   = a.ts ? fmtIst(a.ts) : '';
+      const note = a.note ? ` · ${a.note}` : '';
+      parts.push(`<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:6px 0 2px">${_ADJ_TYPE_LABEL[a.adj_type] || a.adj_type}${note}<span style="font-weight:400;margin-left:6px">${ts}</span></div>`);
+      a.legs.forEach((l, j) => parts.push(renderLegRow(l, `rltpadj-${a.id}-${j}`)));
+    });
+    legsHtml = parts.join('');
   }
 
   const acctBadge = r.account_count > 0
@@ -761,37 +773,7 @@ function renderRecItem(r) {
     ? `<span class="badge-status-open">Open</span>`
     : `<span class="badge-status-exited">${r.status}</span>`;
 
-  const adjHistory = r.adjustments && r.adjustments.length ? `
-    <div class="adj-history">
-      <details>
-        <summary>Adjustment History (${r.adjustments.length})</summary>
-        ${r.adjustments.map(a => {
-          const ts = a.ts ? fmtIst(a.ts) : '';
-          return `<div class="adj-row">
-            <div class="adj-row-header">
-              <span class="adj-type-badge">${_ADJ_TYPE_LABEL[a.adj_type] || a.adj_type}</span>
-              ${a.note ? `<span style="color:var(--muted)">${a.note}</span>` : ''}
-              <span class="adj-ts">${ts}</span>
-            </div>
-            ${a.legs && a.legs.length ? a.legs.map(l => {
-                const st  = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
-                const exp = l.expiry_str ? ` · ${l.expiry_str}` : '';
-                const sc  = l.side === 'BUY' ? 'side-buy' : 'side-sell';
-                return `<div class="adj-leg" style="display:flex;align-items:flex-start;gap:8px;padding:4px 0">
-                  <span class="${sc}" style="font-weight:700;font-size:11px;padding-top:1px;min-width:32px">${l.side}</span>
-                  <div style="flex:1;line-height:1.4">
-                    <div style="font-size:12px;font-weight:700;color:#1e293b">${r.symbol}</div>
-                    <div style="font-size:11px;color:var(--muted)">${st}${l.instrument_type}${exp}</div>
-                  </div>
-                  <div style="text-align:right;white-space:nowrap;padding-top:1px;font-size:11px;color:var(--muted)">
-                    ${l.lots}L${l.price != null ? ` @₹${Number(l.price).toLocaleString('en-IN',{minimumFractionDigits:2})}` : ''}
-                  </div>
-                </div>`;
-              }).join('') : ''}
-          </div>`;
-        }).join('')}
-      </details>
-    </div>` : '';
+  const adjHistory = '';
 
   const adminFooter = _isAdmin && r.status === 'open' ? `
     <div class="rec-footer">
@@ -803,7 +785,7 @@ function renderRecItem(r) {
     </div>
     <div class="exit-form" id="rxform-${r.id}">
       <h4>Exit Trade</h4>
-      ${r.legs.map((l, i) => {
+      ${(r.current_legs || r.legs).map((l, i) => {
         const strike   = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
         const exp      = l.expiry_str ? ` · ${l.expiry_str}` : '';
         const exitSide = l.side === 'BUY' ? 'SELL' : 'BUY';
@@ -823,7 +805,7 @@ function renderRecItem(r) {
         </div>`;
       }).join('')}
       <div class="exit-form-footer">
-        <button class="btn btn-danger btn-sm" onclick="submitRecExit(${r.id},${r.legs.length},'${r.symbol}')">Confirm Exit</button>
+        <button class="btn btn-danger btn-sm" onclick="submitRecExit(${r.id},${(r.current_legs || r.legs).length},'${r.symbol}')">Confirm Exit</button>
         <button class="btn btn-ghost btn-sm" onclick="toggleRecExit(${r.id})">Cancel</button>
       </div>
     </div>` : '';
@@ -1076,21 +1058,33 @@ function renderAccountTrades() {
 }
 
 function renderTradeCard(t) {
-  const legRows = t.legs.map((l, i) => {
+  const mkLegRow = (l, ltpId, pnlId) => {
     const sc     = l.side === 'BUY' ? 'side-buy' : 'side-sell';
     const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
     const entry  = l.price != null ? fmtRs(l.price) : '—';
+    const ltpCell = l.instrument_key
+      ? `<td class="ltp-cell" id="${ltpId}">—</td><td class="pnl-neu" id="${pnlId}">—</td>`
+      : `<td class="ltp-cell">—</td><td class="pnl-neu">—</td>`;
     return `<tr>
       <td class="${sc}">${l.side}</td>
       <td>${strike}${l.instrument_type}</td>
       <td>${l.lots}L</td>
       <td>${entry}</td>
-      <td class="ltp-cell" id="ltp-${t.id}-${i}">—</td>
-      <td class="pnl-neu" id="pnl-${t.id}-${i}">—</td>
+      ${ltpCell}
     </tr>`;
-  }).join('');
+  };
 
-  const exitInputs = t.legs.map((l, i) => {
+  let legRows = t.legs.map((l, i) => mkLegRow(l, `ltp-${t.id}-${i}`, `pnl-${t.id}-${i}`)).join('');
+  (t.applied_adjustments || []).forEach(a => {
+    const ts   = a.ts ? fmtIst(a.ts) : '';
+    const note = a.note ? ` · ${a.note}` : '';
+    const label = `${_ADJ_TYPE_LABEL[a.adj_type] || a.adj_type}${note}  ${ts}`;
+    legRows += `<tr><td colspan="6" style="padding:4px 12px 2px;border-bottom:none;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-top:1px solid #f1f5f9">${label}</td></tr>`;
+    (a.legs || []).forEach((l, j) => { legRows += mkLegRow(l, `ltpadj-${a.id}-${j}`, `pnladj-${a.id}-${j}`); });
+  });
+
+  const exitLegs = t.current_legs || t.legs;
+  const exitInputs = exitLegs.map((l, i) => {
     const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
     return `<div class="exit-leg-row">
       <div class="exit-leg-info">
@@ -1154,7 +1148,7 @@ function renderTradeCard(t) {
           <input id="xnote-${t.id}" placeholder="Note (optional)">
         </div>
         <button class="btn btn-danger btn-sm"
-                onclick="submitExit(${t.id},${t.legs.length})">Confirm Exit</button>
+                onclick="submitExit(${t.id},${(t.current_legs || t.legs).length})">Confirm Exit</button>
         <button class="btn btn-ghost btn-sm" onclick="toggleExit(${t.id})">Cancel</button>
       </div>
     </div>
@@ -1407,8 +1401,14 @@ function _applyStale(stale) {
 }
 
 async function updatePrices() {
-  const tradeKeys = _trades.flatMap(t => t.legs.map(l => l.instrument_key).filter(Boolean));
-  const recKeys   = _recs.flatMap(r => r.legs.map(l => l.instrument_key).filter(Boolean));
+  const tradeKeys = _trades.flatMap(t => [
+    ...t.legs.map(l => l.instrument_key),
+    ...(t.applied_adjustments || []).flatMap(a => (a.legs || []).map(l => l.instrument_key)),
+  ].filter(Boolean));
+  const recKeys   = _recs.flatMap(r => [
+    ...r.legs.map(l => l.instrument_key),
+    ...(r.adjustments || []).flatMap(a => (a.legs || []).map(l => l.instrument_key)),
+  ].filter(Boolean));
   const ikeys = [...new Set([...tradeKeys, ...recKeys])];
   if (!ikeys.length) return;
   try {
@@ -1423,21 +1423,25 @@ async function updatePrices() {
 
     for (const t of _trades) {
       let net = 0, allKnown = true;
-      t.legs.forEach((l, i) => {
+      const updateLegCell = (l, ltpId, pnlId, countInNet) => {
         const ltp   = prices[l.instrument_key];
-        const ltpEl = document.getElementById(`ltp-${t.id}-${i}`);
-        const pnlEl = document.getElementById(`pnl-${t.id}-${i}`);
+        const ltpEl = document.getElementById(ltpId);
+        const pnlEl = document.getElementById(pnlId);
         if (!ltpEl) return;
-        if (ltp == null) { allKnown = false; return; }
+        if (ltp == null) { if (countInNet) allKnown = false; return; }
         ltpEl.textContent = fmtRs(ltp);
         ltpEl.style.color = ltpColor;
         const qty    = l.lots * (l.lot_size || 1);
         const legPnl = l.side === 'SELL' ? (l.price - ltp)*qty : (ltp - l.price)*qty;
-        net += legPnl;
+        if (countInNet) net += legPnl;
         if (pnlEl) {
           pnlEl.textContent = fmtPnl(legPnl);
           pnlEl.className   = legPnl >= 0 ? 'pnl-pos' : 'pnl-neg';
         }
+      };
+      t.legs.forEach((l, i) => updateLegCell(l, `ltp-${t.id}-${i}`, `pnl-${t.id}-${i}`, true));
+      (t.applied_adjustments || []).forEach(a => {
+        (a.legs || []).forEach((l, j) => updateLegCell(l, `ltpadj-${a.id}-${j}`, `pnladj-${a.id}-${j}`, true));
       });
       const netEl = document.getElementById(`net-${t.id}`);
       if (netEl && allKnown) {
@@ -1450,9 +1454,19 @@ async function updatePrices() {
         const ltp   = prices[l.instrument_key];
         const ltpEl = document.getElementById(`rltp-${r.id}-${i}`);
         if (ltpEl && ltp != null) {
-          ltpEl.textContent  = fmtRs(ltp);
-          ltpEl.style.color  = ltpColor;
+          ltpEl.textContent = fmtRs(ltp);
+          ltpEl.style.color = ltpColor;
         }
+      });
+      (r.adjustments || []).forEach(a => {
+        (a.legs || []).forEach((l, j) => {
+          const ltp   = prices[l.instrument_key];
+          const ltpEl = document.getElementById(`rltpadj-${a.id}-${j}`);
+          if (ltpEl && ltp != null) {
+            ltpEl.textContent = fmtRs(ltp);
+            ltpEl.style.color = ltpColor;
+          }
+        });
       });
     }
   } catch(e) {}
