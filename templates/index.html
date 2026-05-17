@@ -670,6 +670,8 @@ async function loadRecs() {
   }
 }
 
+const _ADJ_COLORS = ['#fffbeb', '#eff6ff', '#f0fdf4', '#fdf4ff'];
+
 function renderRecs() {
   const el = document.getElementById('recs-list');
   const filtered = _recTab === 'all' ? _recs
@@ -752,13 +754,16 @@ function renderRecItem(r) {
         <span class="rec-leg-meta">${l.lots}L @₹${price}</span>
       </div>`;
     };
-    let parts = r.legs.map((l, i) => renderLegRow(l, `rltp-${r.id}-${i}`));
-    (r.adjustments || []).forEach(a => {
+    const baseLegRows = r.legs.map((l, i) => renderLegRow(l, `rltp-${r.id}-${i}`)).join('');
+    let parts = [`<div style="background:#f8fafc;border-radius:6px;padding:4px 8px 2px"><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px">Entry</div>${baseLegRows}</div>`];
+    (r.adjustments || []).forEach((a, ai) => {
       if (!a.legs || !a.legs.length) return;
-      const ts   = a.ts ? fmtIst(a.ts) : '';
-      const note = a.note ? ` · ${a.note}` : '';
-      parts.push(`<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:6px 0 2px">${_ADJ_TYPE_LABEL[a.adj_type] || a.adj_type}${note}<span style="font-weight:400;margin-left:6px">${ts}</span></div>`);
-      a.legs.forEach((l, j) => parts.push(renderLegRow(l, `rltpadj-${a.id}-${j}`)));
+      const bg       = _ADJ_COLORS[ai % _ADJ_COLORS.length];
+      const ts       = a.ts ? fmtIst(a.ts) : '';
+      const note     = a.note ? ` · ${a.note}` : '';
+      const adjNum   = `Adjustment ${ai + 1}`;
+      const typeStr  = a.adj_type && a.adj_type !== 'adjustment' ? ` · ${_ADJ_TYPE_LABEL[a.adj_type] || a.adj_type}` : '';
+      parts.push(`<div style="background:${bg};border-radius:6px;margin-top:4px;padding:4px 8px 2px"><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px">${adjNum}${typeStr}${note}<span style="font-weight:400;margin-left:6px">${ts}</span></div>${a.legs.map((l, j) => renderLegRow(l, `rltpadj-${a.id}-${j}`)).join('')}</div>`);
     });
     legsHtml = parts.join('');
   }
@@ -1058,14 +1063,14 @@ function renderAccountTrades() {
 }
 
 function renderTradeCard(t) {
-  const mkLegRow = (l, ltpId, pnlId) => {
+  const mkLegRow = (l, ltpId, pnlId, bg) => {
     const sc     = l.side === 'BUY' ? 'side-buy' : 'side-sell';
     const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
     const entry  = l.price != null ? fmtRs(l.price) : '—';
     const ltpCell = l.instrument_key
-      ? `<td class="ltp-cell" id="${ltpId}">—</td><td class="pnl-neu" id="${pnlId}">—</td>`
-      : `<td class="ltp-cell">—</td><td class="pnl-neu">—</td>`;
-    return `<tr>
+      ? `<td class="ltp-cell" id="${ltpId}" style="${bg ? `background:${bg}` : ''}">—</td><td class="pnl-neu" id="${pnlId}" style="${bg ? `background:${bg}` : ''}">—</td>`
+      : `<td class="ltp-cell" style="${bg ? `background:${bg}` : ''}">—</td><td class="pnl-neu" style="${bg ? `background:${bg}` : ''}">—</td>`;
+    return `<tr style="${bg ? `background:${bg}` : ''}">
       <td class="${sc}">${l.side}</td>
       <td>${strike}${l.instrument_type}</td>
       <td>${l.lots}L</td>
@@ -1074,13 +1079,19 @@ function renderTradeCard(t) {
     </tr>`;
   };
 
-  let legRows = t.legs.map((l, i) => mkLegRow(l, `ltp-${t.id}-${i}`, `pnl-${t.id}-${i}`)).join('');
-  (t.applied_adjustments || []).forEach(a => {
-    const ts   = a.ts ? fmtIst(a.ts) : '';
-    const note = a.note ? ` · ${a.note}` : '';
-    const label = `${_ADJ_TYPE_LABEL[a.adj_type] || a.adj_type}${note}  ${ts}`;
-    legRows += `<tr><td colspan="6" style="padding:4px 12px 2px;border-bottom:none;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-top:1px solid #f1f5f9">${label}</td></tr>`;
-    (a.legs || []).forEach((l, j) => { legRows += mkLegRow(l, `ltpadj-${a.id}-${j}`, `pnladj-${a.id}-${j}`); });
+  const hasAdj = (t.applied_adjustments || []).length > 0;
+  let legRows = '';
+  if (hasAdj) legRows += `<tr style="background:#f8fafc"><td colspan="6" style="padding:4px 12px 2px;border-bottom:none;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Entry</td></tr>`;
+  legRows += t.legs.map((l, i) => mkLegRow(l, `ltp-${t.id}-${i}`, `pnl-${t.id}-${i}`, hasAdj ? '#f8fafc' : null)).join('');
+  (t.applied_adjustments || []).forEach((a, ai) => {
+    const bg      = _ADJ_COLORS[ai % _ADJ_COLORS.length];
+    const ts      = a.ts ? fmtIst(a.ts) : '';
+    const note    = a.note ? ` · ${a.note}` : '';
+    const adjNum  = `Adjustment ${ai + 1}`;
+    const typeStr = a.adj_type && a.adj_type !== 'adjustment' ? ` · ${_ADJ_TYPE_LABEL[a.adj_type] || a.adj_type}` : '';
+    const label   = `${adjNum}${typeStr}${note}  ${ts}`;
+    legRows += `<tr style="background:${bg}"><td colspan="6" style="padding:4px 12px 2px;border-bottom:none;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-top:1px solid #f1f5f9">${label}</td></tr>`;
+    (a.legs || []).forEach((l, j) => { legRows += mkLegRow(l, `ltpadj-${a.id}-${j}`, `pnladj-${a.id}-${j}`, bg); });
   });
 
   const exitLegs = t.current_legs || t.legs;
