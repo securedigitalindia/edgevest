@@ -8,6 +8,7 @@ import SettingsDrawer from './components/drawer/SettingsDrawer'
 import { ToastProvider } from './components/common/Toast'
 import Dashboard from './screens/Dashboard'
 import Games from './screens/Games'
+import SetupWizard from './screens/SetupWizard'
 import './index.css'
 
 function AppShell() {
@@ -29,6 +30,10 @@ function AppShell() {
   if (!user) {
     window.location.href = '/auth/google'
     return null
+  }
+
+  if (!user.setup_done) {
+    return <SetupWizard user={user} />
   }
 
   return (

@@ -163,9 +163,6 @@ def auth_callback():
         return redirect(url_for("index", error="deactivated"))
     session["user"] = user
     if user["role"] == "client":
-        profile = get_user_trading_profile(user["id"])
-        if not profile or not profile.get("setup_done"):
-            return redirect(url_for("profile_setup"))
         from db.queries import is_subscription_valid, expire_stale_subscriptions
         expire_stale_subscriptions()
         if not is_subscription_valid(user["id"]):
@@ -185,7 +182,11 @@ def logout():
 @app.route("/api/me")
 @require_login
 def api_me():
-    return jsonify(user=current_user())
+    from db.queries import get_user_trading_profile
+    user    = dict(current_user())
+    profile = get_user_trading_profile(user["id"])
+    user["setup_done"] = bool(profile and profile.get("setup_done"))
+    return jsonify(user=user)
 
 
 # ─────────────────────────────────────────────────────────
