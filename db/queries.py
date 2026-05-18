@@ -1397,3 +1397,423 @@ def get_open_trade_ikeys() -> list[str]:
     """).fetchall()
     conn.close()
     return [r[0] for r in rows if r[0]]
+
+
+# ============================================================
+#  Games system
+# ============================================================
+
+import json as _json
+
+
+def _now_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ── Game CRUD ────────────────────────────────────────────────
+
+def create_game(title: str, description: str, game_type: str, symbol: str | None,
+                start_time: str, end_time: str, reward_pool: int, winner_count: int,
+                initial_cash: int, created_by: int) -> int:
+    conn = get_connection()
+    cur = conn.execute("""
+        INSERT INTO games (title, description, game_type, symbol, status,
+                           start_time, end_time, reward_pool, winner_count,
+                           initial_cash, created_by, created_at)
+        VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
+    """, (title, description, game_type, symbol, start_time, end_time,
+          reward_pool, winner_count, initial_cash, created_by, _now_utc()))
+    gid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return gid
+
+
+def get_game(game_id: int) -> dict | None:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def list_games(status: str | None = None) -> list[dict]:
+    conn = get_connection()
+    if status:
+        rows = conn.execute(
+            "SELECT * FROM games WHERE status = ? ORDER BY created_at DESC", (status,)
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM games ORDER BY created_at DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def update_game(game_id: int, **kwargs) -> None:
+    allowed = {"title", "description", "symbol", "start_time", "end_time",
+               "reward_pool", "winner_count", "initial_cash"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed}
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    conn = get_connection()
+    conn.execute(f"UPDATE games SET {set_clause} WHERE id = ?",
+                 list(fields.values()) + [game_id])
+    conn.commit()
+    conn.close()
+
+
+def set_game_status(game_id: int, status: str) -> None:
+    conn = get_connection()
+    conn.execute("UPDATE games SET status = ? WHERE id = ?", (status, game_id))
+    conn.commit()
+    conn.close()
+
+
+def delete_game(game_id: int) -> None:
+    conn = get_connection()
+    status = conn.execute("SELECT status FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not status or status[0] != "draft":
+        conn.close()
+        raise ValueError("Only draft games can be deleted")
+    conn.execute("DELETE FROM game_questions WHERE game_id = ?", (game_id,))
+    conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
+    conn.commit()
+    conn.close()
+
+
+# ── MCQ questions ────────────────────────────────────────────
+
+def save_game_questions(game_id: int, questions: list[dict]) -> None:
+    conn = get_connection()
+    conn.execute("DELETE FROM game_questions WHERE game_id = ?", (game_id,))
+    for i, q in enumerate(questions):
+        conn.execute("""
+            INSERT INTO game_questions (game_id, order_num, question,
+                                        option_a, option_b, option_c, option_d, correct_opt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (game_id, i, q["question"],
+              q["option_a"], q["option_b"], q["option_c"], q["option_d"],
+              q["correct_opt"].upper()))
+    conn.commit()
+    conn.close()
+
+
+def get_game_questions(game_id: int, include_answer: bool = False) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM game_questions WHERE game_id = ? ORDER BY order_num", (game_id,)
+    ).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        if not include_answer:
+            d.pop("correct_opt", None)
+        out.append(d)
+    return out
+
+
+# ── Entries ──────────────────────────────────────────────────
+
+def submit_entry(game_id: int, user_id: int, entry_data: dict) -> int:
+    now = _now_utc()
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT id FROM game_entries WHERE game_id = ? AND user_id = ?", (game_id, user_id)
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE game_entries SET entry_data = ?, submitted_at = ? WHERE id = ?",
+            (_json.dumps(entry_data), now, existing[0])
+        )
+        eid = existing[0]
+    else:
+        cur = conn.execute("""
+            INSERT INTO game_entries (game_id, user_id, entry_data, submitted_at)
+            VALUES (?, ?, ?, ?)
+        """, (game_id, user_id, _json.dumps(entry_data), now))
+        eid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return eid
+
+
+def get_entry(game_id: int, user_id: int) -> dict | None:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM game_entries WHERE game_id = ? AND user_id = ?", (game_id, user_id)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+    d = dict(row)
+    d["entry_data"] = _json.loads(d["entry_data"])
+    return d
+
+
+def list_entries(game_id: int) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT ge.*, u.name as user_name
+        FROM game_entries ge
+        JOIN users u ON u.id = ge.user_id
+        WHERE ge.game_id = ?
+        ORDER BY ge.rank ASC NULLS LAST, ge.submitted_at ASC
+    """, (game_id,)).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["entry_data"] = _json.loads(d["entry_data"])
+        out.append(d)
+    return out
+
+
+def entry_count(game_id: int) -> int:
+    conn = get_connection()
+    n = conn.execute(
+        "SELECT COUNT(*) FROM game_entries WHERE game_id = ?", (game_id,)
+    ).fetchone()[0]
+    conn.close()
+    return n
+
+
+# ── Virtual portfolio (leaderboard) ─────────────────────────
+
+def add_virtual_trade(game_id: int, user_id: int, symbol: str,
+                      action: str, price: float, quantity: int) -> None:
+    conn = get_connection()
+    game = conn.execute("SELECT initial_cash, status FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game or game["status"] != "active":
+        conn.close()
+        raise ValueError("Game is not active")
+
+    vtrades = conn.execute(
+        "SELECT * FROM virtual_trades WHERE game_id = ? AND user_id = ? ORDER BY traded_at",
+        (game_id, user_id)
+    ).fetchall()
+
+    cash = game["initial_cash"]
+    holdings: dict[str, int] = {}
+    for t in vtrades:
+        sym, act, px, qty = t["symbol"], t["action"], t["price"], t["quantity"]
+        if act == "BUY":
+            cash -= px * qty
+            holdings[sym] = holdings.get(sym, 0) + qty
+        else:
+            cash += px * qty
+            holdings[sym] = holdings.get(sym, 0) - qty
+
+    if action == "BUY":
+        cost = price * quantity
+        if cost > cash:
+            conn.close()
+            raise ValueError(f"Insufficient cash (available ₹{cash:,.0f})")
+    else:
+        held = holdings.get(symbol, 0)
+        if quantity > held:
+            conn.close()
+            raise ValueError(f"Only {held} units held for {symbol}")
+
+    conn.execute("""
+        INSERT INTO virtual_trades (game_id, user_id, symbol, action, price, quantity, traded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (game_id, user_id, symbol, action.upper(), price, quantity, _now_utc()))
+    conn.commit()
+    conn.close()
+
+
+def get_virtual_portfolio(game_id: int, user_id: int,
+                          current_prices: dict[str, float] | None = None) -> dict:
+    conn = get_connection()
+    game = conn.execute("SELECT initial_cash FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        conn.close()
+        return {}
+    initial_cash = game["initial_cash"]
+
+    vtrades = conn.execute(
+        "SELECT * FROM virtual_trades WHERE game_id = ? AND user_id = ? ORDER BY traded_at",
+        (game_id, user_id)
+    ).fetchall()
+    conn.close()
+
+    cash = initial_cash
+    positions: dict[str, dict] = {}  # symbol → {qty, cost}
+    trades_out = []
+    for t in vtrades:
+        sym, act, px, qty = t["symbol"], t["action"], t["price"], t["quantity"]
+        if act == "BUY":
+            cash -= px * qty
+            if sym not in positions:
+                positions[sym] = {"qty": 0, "cost": 0.0}
+            positions[sym]["qty"] += qty
+            positions[sym]["cost"] += px * qty
+        else:
+            cash += px * qty
+            if sym in positions:
+                avg = positions[sym]["cost"] / positions[sym]["qty"] if positions[sym]["qty"] else 0
+                positions[sym]["qty"] -= qty
+                positions[sym]["cost"] -= avg * qty
+                if positions[sym]["qty"] <= 0:
+                    del positions[sym]
+        trades_out.append(dict(t))
+
+    portfolio_value = cash
+    pos_out = []
+    for sym, p in positions.items():
+        ltp = (current_prices or {}).get(sym)
+        cur_val = ltp * p["qty"] if ltp else None
+        avg_price = p["cost"] / p["qty"] if p["qty"] else 0
+        pos_out.append({
+            "symbol": sym, "qty": p["qty"],
+            "avg_price": round(avg_price, 2),
+            "ltp": ltp,
+            "value": round(cur_val, 2) if cur_val is not None else None,
+            "pnl": round(cur_val - p["cost"], 2) if cur_val is not None else None,
+        })
+        if cur_val is not None:
+            portfolio_value += cur_val
+
+    pnl = portfolio_value - initial_cash
+    return {
+        "initial_cash": initial_cash,
+        "cash": round(cash, 2),
+        "portfolio_value": round(portfolio_value, 2),
+        "pnl": round(pnl, 2),
+        "positions": pos_out,
+        "trades": trades_out,
+    }
+
+
+# ── Resolution ───────────────────────────────────────────────
+
+def _award_credits_tx(conn, user_id: int, amount: int,
+                      reason: str, ref_id: str | None, note: str | None) -> None:
+    now = _now_utc()
+    conn.execute("""
+        INSERT INTO credit_transactions (user_id, amount, reason, ref_id, note, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (user_id, amount, reason, ref_id, note, now))
+    conn.execute("""
+        INSERT INTO user_credits (user_id, balance, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            balance = balance + excluded.balance,
+            updated_at = excluded.updated_at
+    """, (user_id, amount, now))
+
+
+def resolve_game(game_id: int, result_value: str | None = None) -> int:
+    conn = get_connection()
+    game = dict(conn.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone())
+    now = _now_utc()
+
+    entries = conn.execute("""
+        SELECT ge.*, u.name as user_name
+        FROM game_entries ge JOIN users u ON u.id = ge.user_id
+        WHERE ge.game_id = ?
+    """, (game_id,)).fetchall()
+    entries = [dict(e) for e in entries]
+
+    if not entries:
+        conn.execute(
+            "UPDATE games SET status='resolved', result_value=?, resolved_at=? WHERE id=?",
+            (result_value, now, game_id)
+        )
+        conn.commit()
+        conn.close()
+        return 0
+
+    scored = []
+
+    if game["game_type"] == "price_prediction":
+        if not result_value:
+            conn.close()
+            raise ValueError("result_value required for price_prediction")
+        actual = float(result_value)
+        for e in entries:
+            data = _json.loads(e["entry_data"])
+            predicted = float(data.get("predicted_price", 0))
+            scored.append({"id": e["id"], "user_id": e["user_id"],
+                           "score": abs(predicted - actual), "ts": e["submitted_at"]})
+        scored.sort(key=lambda x: (x["score"], x["ts"]))
+
+    elif game["game_type"] == "mcq":
+        questions = conn.execute(
+            "SELECT id, correct_opt FROM game_questions WHERE game_id = ? ORDER BY order_num",
+            (game_id,)
+        ).fetchall()
+        q_map = {str(q["id"]): q["correct_opt"] for q in questions}
+        for e in entries:
+            data = _json.loads(e["entry_data"])
+            answers = data.get("answers", {})
+            correct = sum(1 for qid, ans in answers.items() if q_map.get(qid) == ans)
+            scored.append({"id": e["id"], "user_id": e["user_id"],
+                           "score": correct, "ts": e["submitted_at"]})
+        scored.sort(key=lambda x: (-x["score"], x["ts"]))
+
+    elif game["game_type"] == "leaderboard":
+        from config import SPOT_IKEYS
+        ikey_to_sym = {v: k for k, v in SPOT_IKEYS.items()}
+        price_rows = conn.execute("SELECT instrument_key, ltp FROM price_cache").fetchall()
+        prices = {ikey_to_sym.get(r["instrument_key"], r["instrument_key"]): r["ltp"]
+                  for r in price_rows}
+        for e in entries:
+            pf = get_virtual_portfolio(game_id, e["user_id"], prices)
+            scored.append({"id": e["id"], "user_id": e["user_id"],
+                           "score": pf.get("pnl", 0), "ts": e["submitted_at"]})
+        scored.sort(key=lambda x: (-x["score"], x["ts"]))
+
+    reward_pool = game["reward_pool"]
+    winner_count = min(game["winner_count"], len(scored))
+    credits_per_winner = reward_pool // winner_count if winner_count else 0
+
+    for i, s in enumerate(scored):
+        rank = i + 1
+        won = credits_per_winner if rank <= winner_count else 0
+        conn.execute(
+            "UPDATE game_entries SET score = ?, rank = ?, credits_won = ? WHERE id = ?",
+            (s["score"], rank, won, s["id"])
+        )
+        if won:
+            _award_credits_tx(conn, s["user_id"], won, "game_reward",
+                              str(game_id), f"#{rank} in '{game['title']}'")
+
+    conn.execute(
+        "UPDATE games SET status = 'resolved', result_value = ?, resolved_at = ? WHERE id = ?",
+        (result_value, now, game_id)
+    )
+    conn.commit()
+    conn.close()
+    return winner_count
+
+
+# ── Credits ──────────────────────────────────────────────────
+
+def get_user_credits(user_id: int) -> int:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT balance FROM user_credits WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["balance"] if row else 0
+
+
+def award_credits(user_id: int, amount: int, reason: str,
+                  ref_id: str | None = None, note: str | None = None) -> None:
+    conn = get_connection()
+    _award_credits_tx(conn, user_id, amount, reason, ref_id, note)
+    conn.commit()
+    conn.close()
+
+
+def get_credit_history(user_id: int, limit: int = 30) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT * FROM credit_transactions
+        WHERE user_id = ?
+        ORDER BY created_at DESC LIMIT ?
+    """, (user_id, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

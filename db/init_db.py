@@ -16,6 +16,7 @@ def _open_connection() -> sqlite3.Connection:
     """Open a fresh SQLite connection with standard settings."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=10, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -612,6 +613,97 @@ def init_db():
     if "prev_close" not in existing_pc_cols:
         cur.execute("ALTER TABLE price_cache ADD COLUMN prev_close REAL")
     print("  ✓  Table ready: price_cache")
+
+    # ── Games system ──────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS games (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            title         TEXT    NOT NULL,
+            description   TEXT,
+            game_type     TEXT    NOT NULL,
+            symbol        TEXT,
+            status        TEXT    NOT NULL DEFAULT 'draft',
+            start_time    TEXT    NOT NULL,
+            end_time      TEXT    NOT NULL,
+            reward_pool   INTEGER NOT NULL DEFAULT 0,
+            winner_count  INTEGER NOT NULL DEFAULT 1,
+            result_value  TEXT,
+            initial_cash  INTEGER NOT NULL DEFAULT 1000000,
+            created_by    INTEGER NOT NULL REFERENCES users(id),
+            created_at    TEXT    NOT NULL,
+            resolved_at   TEXT
+        )
+    """)
+    print("  ✓  Table ready: games")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS game_questions (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id      INTEGER NOT NULL REFERENCES games(id),
+            order_num    INTEGER NOT NULL DEFAULT 0,
+            question     TEXT    NOT NULL,
+            option_a     TEXT    NOT NULL,
+            option_b     TEXT    NOT NULL,
+            option_c     TEXT    NOT NULL,
+            option_d     TEXT    NOT NULL,
+            correct_opt  TEXT    NOT NULL
+        )
+    """)
+    print("  ✓  Table ready: game_questions")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS game_entries (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id      INTEGER NOT NULL REFERENCES games(id),
+            user_id      INTEGER NOT NULL REFERENCES users(id),
+            entry_data   TEXT    NOT NULL DEFAULT '{}',
+            score        REAL,
+            rank         INTEGER,
+            credits_won  INTEGER NOT NULL DEFAULT 0,
+            submitted_at TEXT    NOT NULL,
+            UNIQUE(game_id, user_id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_game_entries_game ON game_entries(game_id)")
+    print("  ✓  Table ready: game_entries")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS virtual_trades (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id      INTEGER NOT NULL REFERENCES games(id),
+            user_id      INTEGER NOT NULL REFERENCES users(id),
+            symbol       TEXT    NOT NULL,
+            action       TEXT    NOT NULL,
+            price        REAL    NOT NULL,
+            quantity     INTEGER NOT NULL,
+            traded_at    TEXT    NOT NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_vtrades_game_user ON virtual_trades(game_id, user_id)")
+    print("  ✓  Table ready: virtual_trades")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_credits (
+            user_id      INTEGER PRIMARY KEY REFERENCES users(id),
+            balance      INTEGER NOT NULL DEFAULT 0,
+            updated_at   TEXT    NOT NULL
+        )
+    """)
+    print("  ✓  Table ready: user_credits")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS credit_transactions (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL REFERENCES users(id),
+            amount       INTEGER NOT NULL,
+            reason       TEXT    NOT NULL,
+            ref_id       TEXT,
+            note         TEXT,
+            created_at   TEXT    NOT NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_credit_tx_user ON credit_transactions(user_id)")
+    print("  ✓  Table ready: credit_transactions")
 
     conn.commit()
     conn.close()

@@ -701,6 +701,242 @@ def api_account_trades_history():
 
 
 # ─────────────────────────────────────────────────────────
+# API: Games
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/games", methods=["GET"])
+@require_login
+def api_games_list():
+    from db.queries import list_games, entry_count, get_entry
+    user = current_user()
+    if is_admin():
+        games = list_games()
+    else:
+        games = list_games()
+        games = [g for g in games if g["status"] in ("active", "resolved")]
+    uid = user["id"]
+    for g in games:
+        g["participant_count"] = entry_count(g["id"])
+        if not is_admin():
+            e = get_entry(g["id"], uid)
+            g["my_entry"] = {"rank": e["rank"], "credits_won": e["credits_won"]} if e else None
+    return jsonify(games=games)
+
+
+@app.route("/api/games", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_games_create():
+    from db.queries import create_game, save_game_questions
+    d = request.json or {}
+    required = ("title", "game_type", "start_time", "end_time")
+    for f in required:
+        if not d.get(f):
+            return jsonify(ok=False, error=f"Missing: {f}"), 400
+    gid = create_game(
+        title=d["title"], description=d.get("description", ""),
+        game_type=d["game_type"], symbol=d.get("symbol"),
+        start_time=d["start_time"], end_time=d["end_time"],
+        reward_pool=int(d.get("reward_pool") or 0),
+        winner_count=int(d.get("winner_count") or 1),
+        initial_cash=int(d.get("initial_cash") or 1000000),
+        created_by=current_user()["id"],
+    )
+    if d["game_type"] == "mcq" and d.get("questions"):
+        save_game_questions(gid, d["questions"])
+    return jsonify(ok=True, id=gid)
+
+
+@app.route("/api/games/<int:gid>", methods=["GET"])
+@require_login
+def api_game_detail(gid):
+    from db.queries import get_game, get_game_questions, entry_count, get_entry, list_entries
+    game = get_game(gid)
+    if not game:
+        return jsonify(error="Not found"), 404
+    game["questions"] = get_game_questions(
+        gid, include_answer=is_admin() or game["status"] == "resolved"
+    )
+    game["participant_count"] = entry_count(gid)
+    user = current_user()
+    if is_admin():
+        game["entries"] = list_entries(gid)
+    else:
+        e = get_entry(gid, user["id"])
+        game["my_entry"] = e
+        if game["status"] in ("resolved", "closed"):
+            game["entries"] = list_entries(gid)
+        elif game["status"] == "active" and e:
+            is_prediction = game["game_type"] == "price_prediction"
+            rows = []
+            for x in list_entries(gid):
+                row = {"user_name": x["user_name"], "submitted_at": x["submitted_at"],
+                       "user_id": x["user_id"], "rank": None}
+                # Price prediction: share predicted value — builds excitement, no unfair advantage
+                # MCQ: answers stay hidden until resolution
+                if is_prediction and x.get("entry_data"):
+                    row["predicted_price"] = x["entry_data"].get("predicted_price")
+                rows.append(row)
+            game["entries"] = rows
+    return jsonify(game=game)
+
+
+@app.route("/api/games/<int:gid>", methods=["PUT"])
+@require_role("super_admin", "admin")
+def api_game_update(gid):
+    from db.queries import get_game, update_game, save_game_questions
+    game = get_game(gid)
+    if not game:
+        return jsonify(ok=False, error="Not found"), 404
+    if game["status"] not in ("draft", "active"):
+        return jsonify(ok=False, error="Cannot edit a closed or resolved game"), 400
+    d = request.json or {}
+    update_game(gid, **{k: d[k] for k in
+        ("title","description","symbol","start_time","end_time",
+         "reward_pool","winner_count","initial_cash") if k in d})
+    if d.get("questions") is not None:
+        save_game_questions(gid, d["questions"])
+    return jsonify(ok=True)
+
+
+@app.route("/api/games/<int:gid>/activate", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_game_activate(gid):
+    from db.queries import get_game, set_game_status
+    game = get_game(gid)
+    if not game:
+        return jsonify(ok=False, error="Not found"), 404
+    if game["status"] != "draft":
+        return jsonify(ok=False, error="Only draft games can be activated"), 400
+    set_game_status(gid, "active")
+    return jsonify(ok=True)
+
+
+@app.route("/api/games/<int:gid>/close", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_game_close(gid):
+    from db.queries import get_game, set_game_status
+    game = get_game(gid)
+    if not game:
+        return jsonify(ok=False, error="Not found"), 404
+    if game["status"] != "active":
+        return jsonify(ok=False, error="Only active games can be closed"), 400
+    set_game_status(gid, "closed")
+    return jsonify(ok=True)
+
+
+@app.route("/api/games/<int:gid>/resolve", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_game_resolve(gid):
+    from db.queries import get_game, resolve_game
+    game = get_game(gid)
+    if not game:
+        return jsonify(ok=False, error="Not found"), 404
+    if game["status"] != "closed":
+        return jsonify(ok=False, error="Close the game before resolving"), 400
+    d = request.json or {}
+    try:
+        winners = resolve_game(gid, result_value=d.get("result_value"))
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    return jsonify(ok=True, winners=winners)
+
+
+@app.route("/api/games/<int:gid>/delete", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_game_delete(gid):
+    from db.queries import delete_game
+    try:
+        delete_game(gid)
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    return jsonify(ok=True)
+
+
+@app.route("/api/games/<int:gid>/enter", methods=["POST"])
+@require_login
+def api_game_enter(gid):
+    from db.queries import get_game, submit_entry
+    if is_admin():
+        return jsonify(ok=False, error="Admins cannot enter games"), 403
+    game = get_game(gid)
+    if not game:
+        return jsonify(ok=False, error="Not found"), 404
+    if game["status"] != "active":
+        return jsonify(ok=False, error="Game is not accepting entries"), 400
+    d = request.json or {}
+    entry_data = d.get("entry_data", {})
+    eid = submit_entry(gid, current_user()["id"], entry_data)
+    return jsonify(ok=True, entry_id=eid)
+
+
+@app.route("/api/games/<int:gid>/leaderboard", methods=["GET"])
+@require_login
+def api_game_leaderboard(gid):
+    from db.queries import get_game, list_entries
+    game = get_game(gid)
+    if not game:
+        return jsonify(error="Not found"), 404
+    if game["status"] not in ("closed", "resolved") and not is_admin():
+        return jsonify(error="Leaderboard not available yet"), 403
+    entries = list_entries(gid)
+    return jsonify(entries=entries)
+
+
+@app.route("/api/games/<int:gid>/trade", methods=["POST"])
+@require_login
+def api_game_trade(gid):
+    from db.queries import get_game, add_virtual_trade, submit_entry, get_entry
+    if is_admin():
+        return jsonify(ok=False, error="Admins cannot trade in games"), 403
+    game = get_game(gid)
+    if not game or game["game_type"] != "leaderboard":
+        return jsonify(ok=False, error="Not a leaderboard game"), 400
+    d = request.json or {}
+    uid = current_user()["id"]
+    if not get_entry(gid, uid):
+        submit_entry(gid, uid, {})
+    try:
+        add_virtual_trade(gid, uid,
+                          symbol=d["symbol"], action=d["action"],
+                          price=float(d["price"]), quantity=int(d["quantity"]))
+    except (ValueError, KeyError) as e:
+        return jsonify(ok=False, error=str(e)), 400
+    return jsonify(ok=True)
+
+
+@app.route("/api/games/<int:gid>/portfolio", methods=["GET"])
+@require_login
+def api_game_portfolio(gid):
+    from db.queries import get_game, get_virtual_portfolio
+    from config import SPOT_IKEYS
+    game = get_game(gid)
+    if not game or game["game_type"] != "leaderboard":
+        return jsonify(error="Not a leaderboard game"), 400
+    ikey_to_sym = {v: k for k, v in SPOT_IKEYS.items()}
+    from db.queries import get_cached_spot
+    price_rows, _ = get_cached_spot(list(SPOT_IKEYS.values()))
+    prices = {ikey_to_sym[ik]: v["ltp"] for ik, v in price_rows.items() if ik in ikey_to_sym}
+    uid = current_user()["id"]
+    pf = get_virtual_portfolio(gid, uid, prices)
+    return jsonify(portfolio=pf)
+
+
+# ─────────────────────────────────────────────────────────
+# API: Credits
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/credits", methods=["GET"])
+@require_login
+def api_credits():
+    from db.queries import get_user_credits, get_credit_history
+    uid = current_user()["id"]
+    return jsonify(
+        balance=get_user_credits(uid),
+        history=get_credit_history(uid),
+    )
+
+
+# ─────────────────────────────────────────────────────────
 # API: prices / spot
 # ─────────────────────────────────────────────────────────
 
