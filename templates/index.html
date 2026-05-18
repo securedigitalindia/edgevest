@@ -146,12 +146,10 @@
   .exit-leg-block:last-child { border-bottom: none; }
   .exit-leg-row1 { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
   .exit-leg-row2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .net-pnl-bar { display: flex; align-items: stretch; justify-content: space-between;
-                 border-top: 1px solid var(--border); background: #f8fafc; }
-  .pnl-col { display: flex; flex-direction: column; gap: 2px; padding: 8px 14px; }
-  .pnl-col + .pnl-col { border-left: 1px solid var(--border); text-align: right; }
-  .net-pnl-label { color: var(--muted); font-size: 11px; text-transform: uppercase;
-                   letter-spacing: .4px; font-weight: 600; }
+  .net-pnl-bar { display: flex; align-items: center; justify-content: space-between;
+                 padding: 8px 14px; border-top: 1px solid var(--border);
+                 background: #f8fafc; font-size: 13px; }
+  .net-pnl-label { color: var(--muted); font-size: 12px; }
   .net-pnl-value { font-weight: 700; font-size: 14px; }
 
   /* ── Push to account form ── */
@@ -796,20 +794,11 @@ function renderRecItem(r) {
 
     if (hasPnl) {
       const roiStr = r.margin_required
-        ? (() => { const roi = (totalPnl / r.margin_required) * 100; return `<span style="font-size:11px;font-weight:600;color:${totalPnl>=0?'#16a34a':'#dc2626'}">(${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%)</span>`; })()
+        ? (() => { const roi = (totalPnl / r.margin_required) * 100; return `<span style="font-size:11px;font-weight:600;margin-left:5px;color:${totalPnl>=0?'#16a34a':'#dc2626'}">(${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%)</span>`; })()
         : '';
       pnlBar = `<div class="net-pnl-bar">
-        <div class="pnl-col">
-          <span class="net-pnl-label">Realized P&amp;L</span>
-          <span style="display:flex;align-items:baseline;gap:5px">
-            <span class="net-pnl-value ${totalPnl >= 0 ? 'pnl-pos':'pnl-neg'}">${fmtPnl(totalPnl)}</span>
-            ${roiStr}
-          </span>
-        </div>
-        ${r.margin_required ? `<div class="pnl-col">
-          <span class="net-pnl-label">Margin</span>
-          <span class="net-pnl-value" style="color:#1e293b">₹${Math.round(r.margin_required).toLocaleString('en-IN')}</span>
-        </div>` : ''}
+        <span class="net-pnl-label">Realized P&amp;L</span>
+        <span style="display:flex;align-items:center"><span class="net-pnl-value ${totalPnl >= 0 ? 'pnl-pos':'pnl-neg'}">${fmtPnl(totalPnl)}</span>${roiStr}</span>
       </div>`;
     } else { pnlBar = ''; }
     legsHtml = parts.join('');
@@ -922,18 +911,19 @@ function renderRecItem(r) {
     </div>
     <div class="rec-legs">${legsHtml}</div>
     ${r.status === 'open' ? `<div class="net-pnl-bar">
-      <div class="pnl-col">
-        <span class="net-pnl-label">Unrealised P&amp;L</span>
-        <span style="display:flex;align-items:baseline;gap:5px">
-          <span class="net-pnl-value pnl-neu" id="rnet-${r.id}">—</span>
-          ${r.margin_required ? `<span style="font-size:11px;font-weight:600" id="rroi-${r.id}"></span>` : ''}
-        </span>
-      </div>
-      ${r.margin_required ? `<div class="pnl-col">
-        <span class="net-pnl-label">Margin</span>
-        <span class="net-pnl-value" style="color:#1e293b">₹${Math.round(r.margin_required).toLocaleString('en-IN')}</span>
-      </div>` : ''}
+      <span class="net-pnl-label">Unrealised P&amp;L</span>
+      <span style="display:flex;align-items:center">
+        <span class="net-pnl-value pnl-neu" id="rnet-${r.id}">—</span>
+        ${r.margin_required ? `<span style="font-size:11px;font-weight:600;margin-left:5px" id="rroi-${r.id}"></span>` : ''}
+      </span>
     </div>` : pnlBar}
+    ${r.margin_required || r.account_count > 0 ? `<div class="net-pnl-bar" style="border-top:none;padding-top:2px">
+      <span class="net-pnl-label" style="color:var(--muted);font-size:11px">
+        ${r.margin_required ? `Margin ₹${Math.round(r.margin_required).toLocaleString('en-IN')}` : ''}
+        ${r.margin_required && r.account_count > 0 ? ' &nbsp;·&nbsp; ' : ''}
+        ${r.account_count > 0 ? `${r.account_count} account${r.account_count > 1 ? 's' : ''}` : ''}
+      </span>
+    </div>` : ''}
     ${adjHistory}
     ${adminFooter}
     ${clientFooter}
@@ -1245,10 +1235,8 @@ function renderTradeCard(t) {
       <tbody>${legRows}</tbody>
     </table>
     <div class="net-pnl-bar">
-      <div class="pnl-col">
-        <span class="net-pnl-label">Unrealised P&amp;L</span>
-        <span class="net-pnl-value pnl-neu" id="net-${t.id}">—</span>
-      </div>
+      <span class="net-pnl-label">Unrealised P&amp;L</span>
+      <span class="net-pnl-value pnl-neu" id="net-${t.id}">—</span>
     </div>
     ${pendingSection}
     ${!_isAdmin ? `<div class="trade-footer">
