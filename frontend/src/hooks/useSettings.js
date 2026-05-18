@@ -1,5 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { listUsers, saveUserProfile, changeUserRole, listPlans, createPlan, togglePlan, listSubs } from '../api/settings'
+import { listUsers, saveUserProfile, changeUserRole, getProfile, saveProfile, listPlans, createPlan, togglePlan, listSubs } from '../api/settings'
+
+export function useProfile() {
+  return useQuery({ queryKey: ['profile'], queryFn: getProfile })
+}
+
+export function useSaveProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: saveProfile,
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ['profile'] }),
+  })
+}
 
 export function useUsers() {
   return useQuery({ queryKey: ['users'], queryFn: listUsers })

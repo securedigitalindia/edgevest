@@ -995,20 +995,6 @@ def app_index():
     return render_template("index.html", user=current_user())
 
 
-@app.route("/api/me")
-@require_login
-def api_me():
-    u = current_user()
-    return jsonify(user={
-        "id":      u["id"],
-        "name":    u["name"],
-        "email":   u["email"],
-        "picture": u.get("picture", ""),
-        "role":    u["role"],
-        "mobile":  u.get("mobile", ""),
-    })
-
-
 @app.route("/profile/setup")
 @require_login
 def profile_setup():
@@ -1054,13 +1040,17 @@ def api_subscribe():
     return jsonify(ok=True)
 
 
-@app.route("/api/profile", methods=["POST"])
+@app.route("/api/profile", methods=["GET", "POST"])
 @require_login
 def api_profile_save():
+    from db.queries import get_user_trading_profile, upsert_user_trading_profile
+    uid = current_user()["id"]
+    if request.method == "GET":
+        profile = get_user_trading_profile(uid) or {}
+        return jsonify(profile=profile)
     data = request.json or {}
-    from db.queries import upsert_user_trading_profile
     upsert_user_trading_profile(
-        user_id     = current_user()["id"],
+        user_id     = uid,
         segment     = data.get("segment", ""),
         risk_type   = data.get("risk_type", ""),
         trader_type = data.get("trader_type", ""),
