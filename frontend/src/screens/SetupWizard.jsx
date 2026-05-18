@@ -61,8 +61,15 @@ export default function SetupWizard({ user }) {
     if (!validateStep3()) return
     setSaving(true)
     try {
-      await saveProfile({ segment, risk_type: riskType, trader_type: traderType, focus, setup_done: true })
-      await qc.invalidateQueries({ queryKey: ['me'] })
+      const res = await saveProfile({ segment, risk_type: riskType, trader_type: traderType, focus, setup_done: true })
+      if (res.ok === false) { setErr(res.error || 'Failed to save. Please try again.'); return }
+      // Force immediate refetch (staleTime:Infinity ignores invalidate; refetchQueries forces it)
+      await qc.refetchQueries({ queryKey: ['me'] })
+      // Subscription check — /api/me now returns subscription_valid
+      const updatedUser = qc.getQueryData(['me'])
+      if (updatedUser && updatedUser.subscription_valid === false) {
+        window.location.href = '/subscribe'
+      }
     } finally {
       setSaving(false)
     }

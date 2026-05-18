@@ -36,6 +36,11 @@ function AppShell() {
     return <SetupWizard user={user} />
   }
 
+  if (user.subscription_valid === false) {
+    window.location.href = '/subscribe'
+    return null
+  }
+
   return (
     <>
       <TickerStrip />

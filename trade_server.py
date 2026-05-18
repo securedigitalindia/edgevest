@@ -163,7 +163,10 @@ def auth_callback():
         return redirect(url_for("index", error="deactivated"))
     session["user"] = user
     if user["role"] == "client":
-        from db.queries import is_subscription_valid, expire_stale_subscriptions
+        from db.queries import get_user_trading_profile, is_subscription_valid, expire_stale_subscriptions
+        profile = get_user_trading_profile(user["id"])
+        if not profile or not profile.get("setup_done"):
+            return redirect(url_for("app_index"))   # React wizard handles setup
         expire_stale_subscriptions()
         if not is_subscription_valid(user["id"]):
             return redirect(url_for("subscribe_page"))
@@ -182,10 +185,11 @@ def logout():
 @app.route("/api/me")
 @require_login
 def api_me():
-    from db.queries import get_user_trading_profile
+    from db.queries import get_user_trading_profile, is_subscription_valid
     user    = dict(current_user())
     profile = get_user_trading_profile(user["id"])
-    user["setup_done"] = bool(profile and profile.get("setup_done"))
+    user["setup_done"]        = bool(profile and profile.get("setup_done"))
+    user["subscription_valid"] = is_subscription_valid(user["id"]) if user.get("role") == "client" else True
     return jsonify(user=user)
 
 
