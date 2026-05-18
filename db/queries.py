@@ -1364,6 +1364,12 @@ def delete_account_trade(account_trade_id: int) -> None:
 def delete_recommendation(trade_id: int) -> None:
     """Hard-delete an open recommendation, its legs and adjustments."""
     conn = get_connection()
+    linked = conn.execute(
+        "SELECT COUNT(*) FROM account_trades WHERE recommended_trade_id = ?", (trade_id,)
+    ).fetchone()[0]
+    if linked:
+        conn.close()
+        raise ValueError(f"Cannot delete: {linked} account trade{'s' if linked > 1 else ''} linked to this recommendation")
     conn.execute("DELETE FROM trade_legs WHERE trade_id = ?", (trade_id,))
     conn.execute("DELETE FROM trade_adjustments WHERE trade_id = ?", (trade_id,))
     conn.execute("DELETE FROM recommended_trades WHERE id = ? AND status = 'open'", (trade_id,))

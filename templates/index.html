@@ -1638,8 +1638,8 @@ async function updatePrices() {
         const ltp    = d.ltp;
         const change = d.change;
         const pos    = change != null && change >= 0;
-        const chgColor = stale ? '#f87171' : (change == null ? '#94a3b8' : (pos ? '#4ade80' : '#f87171'));
-        const ltpColor = stale ? '#f87171' : (change == null ? '#fff'    : (pos ? '#4ade80' : '#f87171'));
+        const chgColor = change == null ? '#94a3b8' : (pos ? '#4ade80' : '#f87171');
+        const ltpColor = stale ? '#94a3b8' : (change == null ? '#fff' : (pos ? '#4ade80' : '#f87171'));
         const chgStr = change != null
           ? `<span style="font-size:11px;color:${chgColor};margin-left:3px">(${pos ? '+' : ''}${change.toLocaleString('en-IN', {maximumFractionDigits:0})})</span>`
           : '';

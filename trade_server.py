@@ -661,7 +661,10 @@ def api_recommendation_delete(rec_id):
         return jsonify(ok=False, error="Not found"), 404
     if rec["status"] != "open":
         return jsonify(ok=False, error="Only open recommendations can be deleted"), 400
-    delete_recommendation(rec_id)
+    try:
+        delete_recommendation(rec_id)
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
     return jsonify(ok=True)
 
 
