@@ -406,6 +406,9 @@ def _resolve_legs(symbol: str, legs: list[dict], now_utc: str) -> list[dict]:
             ikey        = fo_ikey(symbol, itype, expiry_date,
                                   strike=(strike if itype in ("PE", "CE") else 0))
             lot_sz      = fo_lot_size(symbol, expiry_date) or 0
+        elif itype == "EQ":
+            ikey   = leg.get("instrument_key")
+            lot_sz = int(leg.get("lot_size") or 1)
         resolved.append({
             "action":          "entry",
             "side":            leg["side"].upper(),

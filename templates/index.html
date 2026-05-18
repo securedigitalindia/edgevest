@@ -786,7 +786,6 @@ function renderRecItem(r) {
       const bg = _ADJ_COLORS[ai % _ADJ_COLORS.length];
       const adjParts = [`Adjustment ${ai + 1}`];
       if (a.note) adjParts.push(a.note);
-      if (a.ts)   adjParts.push(fmtIst(a.ts));
       parts.push(`<div style="background:${bg};border-radius:6px;margin-top:4px;padding:4px 8px 2px">
         <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px">${adjParts.join(' · ')}</div>
         ${a.legs.map(l => mkExitLegRow(l, r.exit_legs[xi++] || null, bg)).join('')}
@@ -822,7 +821,6 @@ function renderRecItem(r) {
       const bg     = _ADJ_COLORS[ai % _ADJ_COLORS.length];
       const parts2 = [`Adjustment ${ai + 1}`];
       if (a.note) parts2.push(a.note);
-      if (a.ts)   parts2.push(fmtIst(a.ts));
       const adjLabel = parts2.join(' · ');
       parts.push(`<div style="background:${bg};border-radius:6px;margin-top:4px;padding:4px 8px 2px"><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding-bottom:2px">${adjLabel}</div>${a.legs.map(l => renderLegRow(l)).join('')}</div>`);
     });
@@ -1143,7 +1141,8 @@ function renderTradeCard(t) {
   const mkLegRow = (l, ltpId, pnlId, bg) => {
     const sc         = l.side === 'BUY' ? 'side-buy' : 'side-sell';
     const strike     = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : '';
-    const instrument = l.instrument_type === 'EQ' ? t.symbol : `${strike}${l.instrument_type}`;
+    const exp        = l.expiry_str ? ` ${l.expiry_str}` : '';
+    const instrument = l.instrument_type === 'EQ' ? t.symbol : `${strike}${l.instrument_type}${exp}`;
     const entry  = l.price != null ? fmtRs(l.price) : '—';
     const ltpCell = l.instrument_key
       ? `<td class="ltp-cell" id="${ltpId}" style="${bg ? `background:${bg}` : ''}">—</td><td class="pnl-neu" id="${pnlId}" style="${bg ? `background:${bg}` : ''}">—</td>`
@@ -1163,7 +1162,6 @@ function renderTradeCard(t) {
     const bg        = _ADJ_COLORS[ai % _ADJ_COLORS.length];
     const adjParts  = [`Adjustment ${ai + 1}`];
     if (a.note) adjParts.push(a.note);
-    if (a.ts)   adjParts.push(fmtIst(a.ts));
     const label = adjParts.join(' · ');
     legRows += `<tr style="background:${bg}"><td colspan="6" style="padding:4px 12px 2px;border-bottom:none;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-top:1px solid #f1f5f9">${label}</td></tr>`;
     (a.legs || []).forEach((l, j) => { legRows += mkLegRow(l, `ltpadj-${a.id}-${j}`, `pnladj-${a.id}-${j}`, bg); });
