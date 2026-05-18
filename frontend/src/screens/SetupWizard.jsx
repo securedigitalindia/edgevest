@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { saveProfile } from '../api/settings'
 import './SetupWizard.css'
 
@@ -36,7 +35,6 @@ function Chips({ options, value, multi, onChange }) {
 }
 
 export default function SetupWizard({ user }) {
-  const qc = useQueryClient()
   const [step,       setStep]       = useState(1)
   const [segment,    setSegment]    = useState('')
   const [riskType,   setRiskType]   = useState('')
@@ -63,13 +61,8 @@ export default function SetupWizard({ user }) {
     try {
       const res = await saveProfile({ segment, risk_type: riskType, trader_type: traderType, focus, setup_done: true })
       if (res.ok === false) { setErr(res.error || 'Failed to save. Please try again.'); return }
-      // Force immediate refetch (staleTime:Infinity ignores invalidate; refetchQueries forces it)
-      await qc.refetchQueries({ queryKey: ['me'] })
-      // Subscription check — /api/me now returns subscription_valid
-      const updatedUser = qc.getQueryData(['me'])
-      if (updatedUser && updatedUser.subscription_valid === false) {
-        window.location.href = '/subscribe'
-      }
+      // Full reload — App.jsx re-initialises with setup_done:true and checks subscription
+      window.location.href = '/app'
     } finally {
       setSaving(false)
     }
