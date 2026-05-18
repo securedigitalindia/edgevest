@@ -1,0 +1,14 @@
+.ticker-strip { background:#0c1420; border-bottom:1px solid #1e293b; display:flex; align-items:center; height:34px; overflow:hidden; }
+.ticker-live-badge { display:flex; align-items:center; gap:6px; padding:0 14px; border-right:1px solid #1e293b; flex-shrink:0; height:100%; }
+.live-dot { width:7px; height:7px; border-radius:50%; background:#4ade80; animation:pulse 2s infinite; flex-shrink:0; }
+.live-dot.stale { background:#f87171; animation:none; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+.ticker-mkt-lbl { font-size:9px; font-weight:800; color:#475569; letter-spacing:.8px; text-transform:uppercase; }
+.ticker-clip { flex:1; overflow:hidden; height:100%; display:flex; align-items:center; }
+.ticker-track { display:flex; align-items:center; white-space:nowrap; animation:ticker-scroll 24s linear infinite; will-change:transform; }
+.ticker-track:hover { animation-play-state:paused; }
+@keyframes ticker-scroll { from{transform:translateX(0)} to{transform:translateX(-25%)} }
+.tick-item { display:inline-flex; align-items:center; gap:6px; padding:0 24px; border-right:1px solid #1a2540; height:34px; flex-shrink:0; }
+.tick-sym  { font-size:10px; font-weight:700; color:#64748b; letter-spacing:.4px; }
+.tick-ltp  { font-size:13px; font-weight:700; }
+.tick-chg  { font-size:10px; font-weight:600; }

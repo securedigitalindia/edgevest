@@ -17,9 +17,11 @@ load_dotenv()
 from flask import (Flask, render_template, request, jsonify,
                    session, redirect, url_for, abort, g)
 from authlib.integrations.flask_client import OAuth
+from flask_cors import CORS
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
+CORS(app, origins=["http://localhost:5173"], supports_credentials=True)
 
 
 @app.teardown_appcontext
@@ -991,6 +993,20 @@ def index():
 @require_subscription
 def app_index():
     return render_template("index.html", user=current_user())
+
+
+@app.route("/api/me")
+@require_login
+def api_me():
+    u = current_user()
+    return jsonify(user={
+        "id":      u["id"],
+        "name":    u["name"],
+        "email":   u["email"],
+        "picture": u.get("picture", ""),
+        "role":    u["role"],
+        "mobile":  u.get("mobile", ""),
+    })
 
 
 @app.route("/profile/setup")
