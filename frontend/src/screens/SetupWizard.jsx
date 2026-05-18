@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { saveProfile, getProfile } from '../api/settings'
 import useAuthStore from '../store/authStore'
 import './SetupWizard.css'
@@ -38,6 +38,7 @@ function Chips({ options, value, multi, onChange }) {
 export default function SetupWizard({ user }) {
   const { setUser } = useAuthStore()
   const [step,       setStep]       = useState(1)
+  const [dir,        setDir]        = useState('fwd')
   const [segment,    setSegment]    = useState('')
   const [riskType,   setRiskType]   = useState('')
   const [traderType, setTraderType] = useState('')
@@ -45,8 +46,18 @@ export default function SetupWizard({ user }) {
   const [saving,     setSaving]     = useState(false)
   const [err,        setErr]        = useState('')
 
-  function nextStep() { setErr(''); setStep(s => s + 1) }
-  function prevStep() { setErr(''); setStep(s => s - 1) }
+  function nextStep() { setErr(''); setDir('fwd'); setStep(s => s + 1) }
+  function prevStep() { setErr(''); setDir('bwd'); setStep(s => s - 1) }
+
+  // Enter key clicks the primary action button of the current step
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'Enter') return
+      document.querySelector('.wiz-actions .wiz-btn-primary')?.click()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 
   function validateStep2() {
     if (!segment) { setErr('Please select at least one segment.'); return false }
@@ -63,16 +74,12 @@ export default function SetupWizard({ user }) {
     setSaving(true)
     try {
       const res = await saveProfile({ segment, risk_type: riskType, trader_type: traderType, focus, setup_done: true })
-      console.log('[wizard] POST /api/profile →', res)
       if (!res?.ok) { setErr(res?.error || 'Failed to save. Please try again.'); return }
-      // Verify the save persisted in DB (fail loudly if we can confirm it didn't)
       const profile = await getProfile()
-      console.log('[wizard] verify GET /api/profile →', profile)
       if (profile != null && !profile?.setup_done) { setErr('Save did not persist — please try again.'); return }
       setUser({ ...user, setup_done: true })
     } catch (e) {
-      console.error('[wizard] finish error:', e)
-      setErr('Unexpected error: ' + e.message)
+      setErr('Unexpected error. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -87,14 +94,12 @@ export default function SetupWizard({ user }) {
       <div className="wiz-card">
         {/* Progress bar */}
         <div className="wiz-progress">
-          {[1,2,3].map(n => (
-            <div key={n} className={`wiz-step-dot${n < step ? ' done' : n === step ? ' active' : ''}`} />
-          ))}
+          <div className="wiz-progress-fill" style={{ width: `${(step / 3) * 100}%` }} />
         </div>
 
         {/* Step 1 — Welcome */}
         {step === 1 && (
-          <div className="wiz-step">
+          <div key={1} className={`wiz-step wiz-step-${dir}`}>
             <div className="wiz-step-lbl">Step 1 of {totalSteps}</div>
             <h2>Welcome to Drishti</h2>
             <p className="wiz-desc">Your profile helps us tailor signals and advisory content to how you trade. This takes about 30 seconds.</p>
@@ -118,7 +123,7 @@ export default function SetupWizard({ user }) {
 
         {/* Step 2 — Segments */}
         {step === 2 && (
-          <div className="wiz-step">
+          <div key={2} className={`wiz-step wiz-step-${dir}`}>
             <div className="wiz-step-lbl">Step 2 of {totalSteps}</div>
             <h2>What do you trade?</h2>
             <p className="wiz-desc">Select all segments you actively trade in. This helps us surface relevant signals.</p>
@@ -136,7 +141,7 @@ export default function SetupWizard({ user }) {
 
         {/* Step 3 — Trading style */}
         {step === 3 && (
-          <div className="wiz-step">
+          <div key={3} className={`wiz-step wiz-step-${dir}`}>
             <div className="wiz-step-lbl">Step 3 of {totalSteps}</div>
             <h2>Your trading style</h2>
             <p className="wiz-desc">A few quick questions to personalise your experience.</p>

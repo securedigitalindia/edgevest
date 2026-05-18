@@ -28,21 +28,31 @@
 
 /* Progress */
 .wiz-progress {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 28px;
-}
-.wiz-step-dot {
-  flex: 1;
-  height: 4px;
-  border-radius: 2px;
+  height: 3px;
   background: #e2e8f0;
-  transition: background .3s;
+  border-radius: 2px;
+  margin-bottom: 28px;
+  overflow: hidden;
 }
-.wiz-step-dot.done   { background: #3b82f6; }
-.wiz-step-dot.active { background: #93c5fd; }
+.wiz-progress-fill {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 2px;
+  transition: width 0.35s cubic-bezier(.4,0,.2,1);
+}
 
 /* Step content */
+@keyframes wiz-slide-fwd {
+  from { opacity: 0; transform: translateX(22px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes wiz-slide-bwd {
+  from { opacity: 0; transform: translateX(-22px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.wiz-step-fwd { animation: wiz-slide-fwd 0.22s ease; }
+.wiz-step-bwd { animation: wiz-slide-bwd 0.22s ease; }
+
 .wiz-step-lbl {
   font-size: 11px;
   font-weight: 700;
@@ -114,10 +124,15 @@
 .wiz-chip.active { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
 
 /* Error */
+@keyframes wiz-err-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 .wiz-err {
   font-size: 12px;
   color: #dc2626;
   margin-top: 10px;
+  animation: wiz-err-in 0.15s ease;
 }
 
 /* Actions */
