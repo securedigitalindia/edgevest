@@ -792,11 +792,16 @@ function renderRecItem(r) {
       </div>`);
     });
 
-    pnlBar = hasPnl
-      ? `<div class="net-pnl-bar">
-           <span class="net-pnl-label">Realized P&amp;L</span>
-           <span class="net-pnl-value ${totalPnl >= 0 ? 'pnl-pos':'pnl-neg'}">${fmtPnl(totalPnl)}</span>
-         </div>` : '';
+    if (hasPnl) {
+      const roiStr = r.margin_required
+        ? (() => { const roi = (totalPnl / r.margin_required) * 100; return `<span style="font-size:11px;color:var(--muted);margin-left:6px">${roi >= 0 ? '+' : ''}${roi.toFixed(1)}% ROI</span>`; })()
+        : '';
+      pnlBar = `<div class="net-pnl-bar">
+        <span class="net-pnl-label">Realized P&amp;L${r.margin_required ? `<span style="font-weight:400;color:var(--muted)"> · Margin ₹${Math.round(r.margin_required).toLocaleString('en-IN')}</span>` : ''}</span>
+        <span class="net-pnl-value ${totalPnl >= 0 ? 'pnl-pos':'pnl-neg'}">${fmtPnl(totalPnl)}</span>
+        ${roiStr}
+      </div>`;
+    } else { pnlBar = ''; }
     legsHtml = parts.join('');
   } else {
     const renderLegRow = (l) => {
@@ -906,7 +911,11 @@ function renderRecItem(r) {
       ${timingRow}
     </div>
     <div class="rec-legs">${legsHtml}</div>
-    ${r.status === 'open' ? `<div class="net-pnl-bar"><span class="net-pnl-label">Unrealised P&amp;L</span><span class="net-pnl-value pnl-neu" id="rnet-${r.id}">—</span></div>` : pnlBar}
+    ${r.status === 'open' ? `<div class="net-pnl-bar">
+      <span class="net-pnl-label">Unrealised P&amp;L${r.margin_required ? `<span style="font-weight:400;color:var(--muted)"> · Margin ₹${Math.round(r.margin_required).toLocaleString('en-IN')}</span>` : ''}</span>
+      <span class="net-pnl-value pnl-neu" id="rnet-${r.id}">—</span>
+      ${r.margin_required ? `<span style="font-size:11px;color:var(--muted);margin-left:6px" id="rroi-${r.id}"></span>` : ''}
+    </div>` : pnlBar}
     ${adjHistory}
     ${adminFooter}
     ${clientFooter}
@@ -1606,6 +1615,12 @@ async function updatePrices() {
       if (allKnown) {
         netEl.textContent = fmtPnl(rnet);
         netEl.className   = `net-pnl-value ${rnet >= 0 ? 'pnl-pos' : 'pnl-neg'}`;
+        const roiEl = document.getElementById(`rroi-${r.id}`);
+        if (roiEl && r.margin_required) {
+          const roi = (rnet / r.margin_required) * 100;
+          roiEl.textContent = `${roi >= 0 ? '+' : ''}${roi.toFixed(1)}% ROI`;
+          roiEl.style.color = rnet >= 0 ? '#16a34a' : '#dc2626';
+        }
       }
     }
 

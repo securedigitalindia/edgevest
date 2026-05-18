@@ -394,20 +394,21 @@ def api_recommendations():
             segment = "Equity"
 
         out.append({
-            "id":            r["id"],
-            "symbol":        r["symbol"],
-            "trigger":       r["trigger_name"],
-            "status":        r["status"],
-            "entry_ist":     _ist_str(r["entry_time"]),
-            "exit_ist":      _ist_str(r["exit_time"]) if r.get("exit_time") else None,
-            "account_count": r["account_count"],
-            "adj_count":     len(adjustments),
-            "segment":       segment,
-            "legs":          original_legs,
-            "current_legs":  current_legs,
-            "exit_legs":     exit_legs,
-            "realized_pnl":  realized_pnl,
-            "adjustments":   adjustments,
+            "id":              r["id"],
+            "symbol":          r["symbol"],
+            "trigger":         r["trigger_name"],
+            "status":          r["status"],
+            "entry_ist":       _ist_str(r["entry_time"]),
+            "exit_ist":        _ist_str(r["exit_time"]) if r.get("exit_time") else None,
+            "account_count":   r["account_count"],
+            "adj_count":       len(adjustments),
+            "segment":         segment,
+            "legs":            original_legs,
+            "current_legs":    current_legs,
+            "exit_legs":       exit_legs,
+            "realized_pnl":    realized_pnl,
+            "adjustments":     adjustments,
+            "margin_required": r.get("margin_required"),
         })
     return jsonify(recommendations=out)
 
