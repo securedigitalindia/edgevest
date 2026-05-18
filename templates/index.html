@@ -21,20 +21,218 @@
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
          background: var(--bg); color: var(--text); font-size: 14px; }
 
-  /* ── Header ── */
-  header { background: #0f172a; color: #fff; padding: 0 24px;
-           display: flex; align-items: center; gap: 16px; height: 48px; }
-  header h1 { font-size: 15px; font-weight: 700; letter-spacing: .3px; }
-  .spot-bar { display: flex; gap: 20px; margin-left: auto; align-items: center; }
-  .spot-item { font-size: 12px; color: #94a3b8; }
-  .spot-item strong { color: #fff; font-size: 13px; margin-left: 4px; }
-  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80;
-              animation: pulse 2s infinite; }
+  /* ── Ticker strip (row 1) ── */
+  .ticker-strip { background:#0c1420; border-bottom:1px solid #1e293b;
+                  display:flex; align-items:center; height:34px; overflow:hidden; }
+  .ticker-live-badge { display:flex; align-items:center; gap:6px; padding:0 14px;
+                        border-right:1px solid #1e293b; flex-shrink:0; height:100%; }
+  .live-dot { width:7px; height:7px; border-radius:50%; background:#4ade80;
+              animation:pulse 2s infinite; flex-shrink:0; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-  .live-dot.stale { background: #f87171; animation: none; }
-  .hdr-btn { background: none; border: none; color: #94a3b8; font-size: 18px;
-             cursor: pointer; margin-left: 6px; line-height: 1; }
-  .hdr-btn:hover { color: #fff; }
+  .live-dot.stale { background:#f87171; animation:none; }
+  .ticker-mkt-lbl { font-size:9px; font-weight:800; color:#475569; letter-spacing:.8px;
+                    text-transform:uppercase; }
+  .ticker-clip { flex:1; overflow:hidden; height:100%; display:flex; align-items:center; }
+  .ticker-track { display:flex; align-items:center; white-space:nowrap;
+                  animation:ticker-scroll 24s linear infinite; will-change:transform; }
+  .ticker-track:hover { animation-play-state:paused; }
+  @keyframes ticker-scroll { from{transform:translateX(0)} to{transform:translateX(-25%)} }
+  .tick-item { display:inline-flex; align-items:center; gap:6px;
+               padding:0 24px; border-right:1px solid #1a2540; height:34px; flex-shrink:0; }
+  .tick-sym { font-size:10px; font-weight:700; color:#64748b; letter-spacing:.4px; }
+  .tick-ltp { font-size:13px; font-weight:700; }
+  .tick-chg { font-size:10px; font-weight:600; }
+
+  /* ── Main nav (row 2: logo + tabs + right controls) ── */
+  .main-nav { background:#0f172a; border-bottom:1px solid #1e293b;
+              display:flex; align-items:center; height:48px; padding:0 20px; gap:0; }
+  .nav-brand { display:flex; align-items:center; gap:8px; margin-right:0; padding-right:20px;
+               border-right:1px solid #2d3f55; flex-shrink:0; }
+  .nav-tabs { padding-left:16px; }
+  .nav-brand-icon { font-size:16px; }
+  .nav-brand-name { font-size:14px; font-weight:700; color:#fff; letter-spacing:.2px; }
+  .nav-tabs { display:flex; align-items:center; gap:2px; }
+  .main-nav-tab { padding:6px 14px; font-size:12px; font-weight:600; color:#64748b;
+                  background:#1e293b; border:none; border-radius:6px;
+                  cursor:pointer; transition:all .15s; letter-spacing:.2px; }
+  .main-nav-tab:hover { color:#94a3b8; background:#243447; }
+  .main-nav-tab.active { color:#fff; background:#1e3a5f; }
+  .nav-right { display:flex; align-items:center; gap:8px; margin-left:auto; position:relative; }
+  .nav-credits-pill { display:flex; align-items:center; gap:4px; padding:3px 10px;
+                      background:#1e293b; border-radius:20px; font-size:11px; font-weight:700;
+                      color:#fbbf24; cursor:pointer; transition:background .15s; flex-shrink:0; }
+  .nav-credits-pill:hover { background:#2d3f55; }
+  .prof-trigger { display:flex; align-items:center; gap:6px; padding:4px 10px 4px 6px;
+                  background:#1e293b; border-radius:20px; cursor:pointer;
+                  transition:background .15s; flex-shrink:0; position:relative; }
+  .prof-trigger:hover { background:#2d3f55; }
+  .prof-avatar { width:22px; height:22px; border-radius:50%; object-fit:cover; }
+  .prof-avatar-initials { width:22px; height:22px; border-radius:50%; background:#3b82f6;
+                          display:flex; align-items:center; justify-content:center;
+                          font-size:10px; font-weight:700; color:#fff; flex-shrink:0; }
+  .prof-trigger-name { font-size:12px; color:#cbd5e1; font-weight:500; }
+  .prof-trigger-caret { font-size:9px; color:#64748b; margin-left:2px; }
+  .prof-menu { position:fixed; top:82px; right:16px; width:200px;
+               background:#1a2535; border:1px solid #2d3f55; border-radius:10px;
+               box-shadow:0 8px 32px rgba(0,0,0,.5); z-index:700;
+               display:none; overflow:hidden; }
+  .prof-menu.open { display:block; animation:pop-in .15s ease; }
+  .prof-menu-head { padding:12px 14px 10px; border-bottom:1px solid #2d3f55; }
+  .prof-menu-name { font-size:13px; font-weight:600; color:#e2e8f0; }
+  .role-chip { font-size:9px; font-weight:800; padding:2px 6px; border-radius:10px;
+               letter-spacing:.5px; display:inline-block; margin-top:4px; }
+  .role-chip-super_admin { background:#7c3aed; color:#fff; }
+  .role-chip-admin        { background:#1d4ed8; color:#fff; }
+  .role-chip-client       { background:#064e3b; color:#86efac; }
+  .prof-menu-credits { padding:8px 14px; font-size:12px; color:#fbbf24; font-weight:600;
+                       border-bottom:1px solid #2d3f55; }
+  .prof-menu-item { display:block; padding:10px 14px; font-size:13px; color:#94a3b8;
+                    text-decoration:none; transition:all .12s; background:none;
+                    border:none; width:100%; text-align:left; cursor:pointer; }
+  .prof-menu-item:hover { background:#2d3f55; color:#e2e8f0; }
+  .hdr-btn { background:none; border:none; color:#64748b; font-size:17px;
+             cursor:pointer; line-height:1; padding:4px; border-radius:6px; transition:all .15s; }
+  .hdr-btn:hover { color:#fff; background:#1e293b; }
+
+  /* ── Tab content ── */
+  .main-tab { display:none; }
+  .main-tab.active { display:block; }
+
+  /* ── Games layout ── */
+  .games-layout { display:grid; grid-template-columns:360px 1fr; height:calc(100vh - 82px); overflow:hidden; }
+  .games-sidebar { background:#fff; border-right:1px solid #e2e8f0; overflow-y:auto; display:flex; flex-direction:column; height:100%; }
+  .games-sidebar-hdr { padding:16px; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+  .games-sidebar-hdr h2 { font-size:13px; font-weight:700; color:#1e293b; }
+  .games-main { overflow-y:auto; padding:20px 24px; }
+  .game-card { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px;
+               margin-bottom:10px; cursor:pointer; transition:all .15s; }
+  .game-card:hover, .game-card.active { border-color:#3b82f6; box-shadow:0 0 0 2px #eff6ff; }
+  .game-card-top { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .game-type-badge { font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; text-transform:uppercase; }
+  .gtype-prediction { background:#ede9fe; color:#7c3aed; }
+  .gtype-mcq        { background:#dcfce7; color:#15803d; }
+  .gtype-leaderboard{ background:#dbeafe; color:#1d4ed8; }
+  .game-status-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+  .gstatus-draft    { background:#94a3b8; }
+  .gstatus-active   { background:#4ade80; }
+  .gstatus-closed   { background:#f87171; }
+  .gstatus-resolved { background:#fbbf24; }
+  .game-card h3 { font-size:13px; font-weight:600; color:#1e293b; flex:1; }
+  .game-card-meta { font-size:11px; color:#64748b; display:flex; gap:12px; flex-wrap:wrap; }
+  .game-card-footer { margin-top:8px; display:flex; align-items:center; justify-content:space-between; }
+  .entered-badge { font-size:10px; font-weight:700; color:#15803d; background:#dcfce7;
+                   border-radius:20px; padding:2px 8px; }
+  .game-detail-card { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:20px; margin-bottom:16px; }
+  .game-detail-hdr { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:12px; }
+  .game-detail-hdr h2 { font-size:16px; font-weight:700; color:#1e293b; }
+  .game-detail-desc { font-size:13px; color:#475569; margin-bottom:16px; line-height:1.5; }
+  .mcq-question { margin-bottom:20px; }
+  .mcq-q-text { font-size:13px; font-weight:600; color:#1e293b; margin-bottom:10px; }
+  .mcq-option { display:flex; align-items:center; gap:8px; padding:8px 12px; border:1px solid #e2e8f0;
+                border-radius:7px; cursor:pointer; margin-bottom:6px; font-size:13px; transition:all .15s; }
+  .mcq-option:hover { border-color:#3b82f6; background:#eff6ff; }
+  .mcq-option input[type=radio] { accent-color:#3b82f6; }
+  .mcq-option.correct-ans { border-color:#16a34a; background:#dcfce7; }
+  .mcq-option.wrong-ans   { border-color:#dc2626; background:#fee2e2; }
+  .leaderboard-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .leaderboard-table th { font-size:11px; font-weight:600; color:#64748b; padding:6px 10px;
+                          border-bottom:1px solid #e2e8f0; text-align:left; }
+  .leaderboard-table td { padding:9px 10px; border-bottom:1px solid #f1f5f9; }
+  .rank-badge { display:inline-flex; align-items:center; justify-content:center;
+                width:22px; height:22px; border-radius:50%; font-size:11px; font-weight:700; }
+  .rank-1 { background:#fef3c7; color:#d97706; }
+  .rank-2 { background:#f1f5f9; color:#475569; }
+  .rank-3 { background:#fde8d8; color:#c2410c; }
+  .portfolio-bar { display:flex; gap:16px; padding:12px 0; border-bottom:1px solid #e2e8f0; margin-bottom:14px; flex-wrap:wrap; }
+  .portfolio-stat { text-align:center; }
+  .portfolio-stat .val { font-size:14px; font-weight:700; color:#1e293b; }
+  .portfolio-stat .lbl { font-size:10px; color:#94a3b8; margin-top:2px; }
+  /* ── Participants panel (post-entry) ── */
+  .pax-teaser { margin-top:14px; padding:14px 16px; background:linear-gradient(135deg,#fef9ec,#fffbf0);
+                border:1px dashed #fcd34d; border-radius:10px; display:flex; align-items:center; gap:12px; }
+  .pax-teaser-icon { font-size:22px; flex-shrink:0; }
+  .pax-teaser-count { font-size:15px; font-weight:800; color:#1e293b; }
+  .pax-teaser-sub { font-size:11px; color:#78350f; margin-top:2px; }
+  .participants-panel { margin-top:14px; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; }
+  .participants-panel-hdr { padding:10px 14px; background:#f8fafc; border-bottom:1px solid #e2e8f0;
+                             display:flex; align-items:center; justify-content:space-between; }
+  .participants-panel-title { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.5px; }
+  .participants-panel-note { font-size:10px; color:#94a3b8; }
+  .participant-row { display:flex; align-items:center; gap:10px; padding:9px 14px;
+                     border-bottom:1px solid #f1f5f9; transition:background .12s; }
+  .participant-row:last-child { border-bottom:none; }
+  .participant-row.me { background:#eff6ff; }
+  .p-avatar { width:28px; height:28px; border-radius:50%; background:#e2e8f0; display:flex;
+              align-items:center; justify-content:center; font-size:11px; font-weight:700;
+              color:#475569; flex-shrink:0; }
+  .participant-row.me .p-avatar { background:#3b82f6; color:#fff; }
+  .p-name { font-size:13px; font-weight:500; color:#1e293b; flex:1; }
+  .participant-row.me .p-name { font-weight:700; color:#1d4ed8; }
+  .p-you-badge { font-size:9px; font-weight:700; background:#3b82f6; color:#fff;
+                 padding:1px 6px; border-radius:10px; margin-left:5px; }
+  .p-time { font-size:11px; color:#94a3b8; flex-shrink:0; }
+  .p-num { font-size:11px; font-weight:700; color:#cbd5e1; width:20px; flex-shrink:0; text-align:right; }
+  .game-action-bar { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; padding-top:14px; border-top:1px solid #e2e8f0; }
+  .games-empty { text-align:center; padding:48px 24px; color:#94a3b8; font-size:13px; }
+
+  /* ── Interactive prediction UI ── */
+  .pred-ui { display:flex; flex-direction:column; gap:14px; padding:18px; background:linear-gradient(135deg,#f0f9ff,#eff6ff); border:1px solid #bfdbfe; border-radius:14px; margin-bottom:4px; }
+  .pred-ref { text-align:center; }
+  .pred-ref-sym { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.6px; margin-bottom:4px; }
+  .pred-ref-ltp { font-size:28px; font-weight:800; color:#1e293b; line-height:1; }
+  .pred-ref-lbl { font-size:11px; color:#94a3b8; margin-top:4px; }
+  .pred-divider { height:1px; background:#dbeafe; }
+  .pred-nudge-row { display:flex; align-items:center; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .pred-nudge { padding:8px 14px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;
+                border:1.5px solid; transition:all .12s; background:#fff; flex-shrink:0; }
+  .pred-nudge.neg { border-color:#fca5a5; color:#dc2626; }
+  .pred-nudge.neg:hover { background:#fee2e2; }
+  .pred-nudge.pos { border-color:#86efac; color:#16a34a; }
+  .pred-nudge.pos:hover { background:#dcfce7; }
+  .pred-center { flex:1; min-width:140px; max-width:220px; text-align:center; }
+  .pred-val-label { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.4px; margin-bottom:6px; }
+  .pred-big-input { width:100%; text-align:center; font-size:26px; font-weight:800; color:#1d4ed8;
+                    padding:10px 8px; border:2px solid #3b82f6; border-radius:10px;
+                    background:#fff; transition:border .15s; }
+  .pred-big-input:focus { border-color:#1d4ed8; outline:none; box-shadow:0 0 0 4px #dbeafe; }
+  .pred-sentiment { margin-top:8px; font-size:12px; font-weight:600; min-height:18px; text-align:center; transition:all .2s; }
+  .pred-submit-btn { width:100%; padding:13px; font-size:14px; font-weight:700; border-radius:10px; letter-spacing:.3px; }
+  .pred-submit-btn:disabled { opacity:.5; }
+
+  /* ── Interactive MCQ tap cards ── */
+  .mcq-progress { display:flex; gap:5px; margin-bottom:16px; flex-wrap:wrap; }
+  .mcq-prog-dot { width:28px; height:5px; border-radius:3px; background:#e2e8f0; transition:background .2s; }
+  .mcq-prog-dot.answered { background:#3b82f6; }
+  .mcq-question { margin-bottom:20px; }
+  .mcq-q-text { font-size:14px; font-weight:600; color:#1e293b; margin-bottom:10px; line-height:1.4; }
+  .mcq-opt-card { display:flex; align-items:center; gap:12px; padding:11px 14px; border:2px solid #e2e8f0;
+                  border-radius:10px; cursor:pointer; margin-bottom:7px; font-size:13px;
+                  transition:all .15s; background:#fff; user-select:none; }
+  .mcq-opt-card:hover:not(.disabled) { border-color:#93c5fd; background:#f0f9ff; }
+  .mcq-opt-card.sel { border-color:#3b82f6; background:#eff6ff; }
+  .mcq-opt-card.correct-ans { border-color:#16a34a; background:#dcfce7; }
+  .mcq-opt-card.wrong-ans   { border-color:#dc2626; background:#fee2e2; }
+  .mcq-opt-card.disabled { cursor:default; }
+  .mcq-opt-letter { width:26px; height:26px; border-radius:50%; display:inline-flex; align-items:center;
+                    justify-content:center; font-size:11px; font-weight:800; flex-shrink:0;
+                    background:#f1f5f9; color:#475569; transition:all .15s; }
+  .mcq-opt-card.sel .mcq-opt-letter { background:#3b82f6; color:#fff; }
+  .mcq-opt-card.correct-ans .mcq-opt-letter { background:#16a34a; color:#fff; }
+  .mcq-opt-card.wrong-ans   .mcq-opt-letter { background:#dc2626; color:#fff; }
+  .mcq-opt-text { flex:1; color:#334155; line-height:1.4; }
+  .mcq-opt-icon { font-size:16px; flex-shrink:0; }
+  @keyframes pop-in { 0%{transform:scale(.9);opacity:0} 60%{transform:scale(1.04)} 100%{transform:scale(1);opacity:1} }
+  .anim-pop { animation:pop-in .25s ease; }
+  .gtype-select { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+  .gtype-card-sel { flex:1; min-width:100px; border:2px solid #e2e8f0; border-radius:10px; padding:12px 10px;
+                    text-align:center; cursor:pointer; transition:all .15s; background:#fff; }
+  .gtype-card-sel:hover { border-color:#93c5fd; background:#f0f9ff; }
+  .gtype-card-sel.selected { border-color:#3b82f6; background:#eff6ff; }
+  .gtype-card-sel .gc-icon { font-size:22px; margin-bottom:4px; }
+  .gtype-card-sel .gc-name { font-size:12px; font-weight:700; color:#1e293b; }
+  .gtype-card-sel .gc-desc { font-size:10px; color:#94a3b8; margin-top:2px; }
+  .form-section-title { font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase;
+                        letter-spacing:.5px; margin:16px 0 10px; padding-bottom:6px; border-bottom:1px solid #f1f5f9; }
 
   /* ── Layout ── */
   .layout { display: grid; grid-template-columns: 480px 1fr; gap: 20px;
@@ -59,6 +257,8 @@
   .btn-danger  { background: var(--red);   color: #fff; }
   .btn-success { background: var(--green); color: #fff; }
   .btn-ghost   { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .gfilter { transition: all .15s; }
+  .gfilter.active { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 700; }
   .btn-sm      { padding: 4px 10px; font-size: 12px; }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
 
@@ -214,11 +414,11 @@
   .acct-meta { font-size: 11px; color: var(--muted); }
 
   /* ── Settings drawer ── */
-  .drawer-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 400; }
+  .drawer-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 800; }
   .drawer-overlay.open { display: block; }
   .drawer { position: fixed; top: 0; right: -480px; width: 480px; height: 100vh;
             background: #fff; box-shadow: -4px 0 24px rgba(0,0,0,.12);
-            z-index: 500; transition: right .25s ease; display: flex; flex-direction: column; }
+            z-index: 900; transition: right .25s ease; display: flex; flex-direction: column; }
   .drawer.open { right: 0; }
   .drawer-header { padding: 14px 20px; border-bottom: 1px solid var(--border);
                    display: flex; align-items: center; gap: 12px; }
@@ -301,38 +501,75 @@
 </head>
 <body>
 
-<header>
-  <h1>📊 Drishti</h1>
-  <div class="spot-bar" id="spot-bar"></div>
-  <div class="live-dot" id="live-dot" title="Live prices"></div>
-  <div style="display:flex;align-items:center;gap:10px;margin-left:8px">
-    <a href="/profile" style="display:flex;align-items:center;gap:7px;text-decoration:none">
-      {% if user.picture %}
-      <img src="{{ user.picture }}" style="width:28px;height:28px;border-radius:50%;border:2px solid #334155">
-      {% endif %}
-      <span style="font-size:12px;color:#94a3b8">{{ user.name }}</span>
-    </a>
-    <span style="font-size:10px;padding:2px 7px;border-radius:20px;font-weight:700;
-      background:{% if user.role == 'super_admin' %}#7c3aed{% elif user.role == 'admin' %}#1d4ed8{% else %}#064e3b{% endif %};
-      color:#fff">
-      {{ user.role.replace('_',' ').upper() }}
-    </span>
-    <a href="/logout" style="font-size:11px;color:#64748b;text-decoration:none">Logout</a>
+<!-- Row 1: Live ticker strip -->
+<div class="ticker-strip">
+  <div class="ticker-live-badge">
+    <div class="live-dot" id="live-dot" title="Green = live prices · Red = offline/stale"></div>
+    <span class="ticker-mkt-lbl">NSE</span>
   </div>
-  <button class="hdr-btn" onclick="openDrawer()" title="Settings">⚙</button>
-</header>
+  <div class="ticker-clip">
+    <div class="ticker-track" id="spot-bar"></div>
+  </div>
+</div>
+
+<!-- Row 2: Main nav — logo + tabs + right controls -->
+<nav class="main-nav">
+  <div class="nav-brand">
+    <span class="nav-brand-icon">📊</span>
+    <span class="nav-brand-name">Drishti</span>
+  </div>
+  <div class="nav-tabs">
+    <button class="main-nav-tab active" id="nav-dashboard" onclick="switchMainTab('dashboard')">Dashboard</button>
+    <button class="main-nav-tab" id="nav-games" onclick="switchMainTab('games')">Games</button>
+  </div>
+  <div class="nav-right">
+    {% if user.role == 'client' %}
+    <div class="nav-credits-pill" id="credits-badge" onclick="switchMainTab('games')" title="Your credits">
+      💎 <span id="credits-val">—</span>
+    </div>
+    {% endif %}
+    <div class="prof-trigger" id="prof-trigger" onclick="toggleProfMenu(event)">
+      {% if user.picture %}
+      <img src="{{ user.picture }}" class="prof-avatar" alt="">
+      {% else %}
+      <div class="prof-avatar-initials">{{ user.name[0] | upper }}</div>
+      {% endif %}
+      <span class="prof-trigger-name">{{ user.name.split(' ')[0] }}</span>
+      <span class="prof-trigger-caret">▾</span>
+    </div>
+    <div class="prof-menu" id="prof-menu" onclick="event.stopPropagation()">
+      <div class="prof-menu-head">
+        <div class="prof-menu-name">{{ user.name }}</div>
+        <span class="role-chip role-chip-{{ user.role }}">{{ user.role.replace('_',' ').upper() }}</span>
+      </div>
+      {% if user.role == 'client' %}
+      <div class="prof-menu-credits">💎 <span id="credits-balance-menu">—</span> credits</div>
+      {% endif %}
+      <a href="/profile" class="prof-menu-item">Profile</a>
+      <div style="height:1px;background:#2d3f55;margin:2px 0"></div>
+      <a href="/logout" class="prof-menu-item">Sign out</a>
+    </div>
+    <button class="hdr-btn" onclick="openDrawer()" title="Settings">⚙</button>
+  </div>
+</nav>
 
 <!-- Settings drawer -->
 <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
   <div class="drawer-header">
-    <h2>{% if user.role == 'client' %}My Accounts{% else %}Settings{% endif %}</h2>
+    <h2>Settings</h2>
     <button class="drawer-close" onclick="closeDrawer()">✕</button>
   </div>
   <div class="drawer-body">
 
     {% if user.role == 'client' %}
-    <!-- Client: brokerage accounts only -->
+    <!-- Client: tabbed settings -->
+    <div class="stabs">
+      <button class="stab active" data-tab="accounts" onclick="showStab('accounts',this)">My Accounts</button>
+      <button class="stab" data-tab="profile" onclick="showStab('profile',this)">Profile</button>
+    </div>
+
+    <div class="stab-panel active" id="stab-accounts">
     <div class="settings-list" id="my-accounts-list"><div class="empty">Loading…</div></div>
     <div class="inline-form" style="margin-top:12px">
       <h4>Add Account</h4>
@@ -346,14 +583,16 @@
         <input id="client-acc-label" placeholder="e.g. Zerodha Main"></div>
       <button class="btn btn-primary btn-sm" onclick="addClientAccount()">Add Account</button>
     </div>
+    </div>
 
     {% else %}
     <!-- Admin / Super Admin: tabbed settings -->
     <div class="stabs">
-      <button class="stab active" onclick="showStab('brokers',this)">Brokers</button>
-      <button class="stab" onclick="showStab('users',this)">Users</button>
-      <button class="stab" onclick="showStab('plans',this);loadPlans()">Plans</button>
-      <button class="stab" onclick="showStab('subs',this);loadSubs()">Subscriptions</button>
+      <button class="stab active" data-tab="brokers" onclick="showStab('brokers',this)">Brokers</button>
+      <button class="stab" data-tab="users" onclick="showStab('users',this)">Users</button>
+      <button class="stab" data-tab="plans" onclick="showStab('plans',this);loadPlans()">Plans</button>
+      <button class="stab" data-tab="subs" onclick="showStab('subs',this);loadSubs()">Subscriptions</button>
+      <button class="stab" data-tab="profile" onclick="showStab('profile',this)">Profile</button>
     </div>
 
     <div class="stab-panel active" id="stab-brokers">
@@ -395,9 +634,35 @@
     </div>
     {% endif %}
 
+    <!-- Profile panel: shared by all roles -->
+    <div class="stab-panel" id="stab-profile">
+      <div style="display:flex;flex-direction:column;align-items:center;padding:20px 0 18px;gap:8px">
+        {% if user.picture %}
+        <img src="{{ user.picture }}" style="width:68px;height:68px;border-radius:50%;object-fit:cover;border:2px solid #e2e8f0">
+        {% else %}
+        <div style="width:68px;height:68px;border-radius:50%;background:#3b82f6;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:#fff">{{ user.name[0] | upper }}</div>
+        {% endif %}
+        <div style="font-size:16px;font-weight:700;color:#1e293b;margin-top:4px">{{ user.name }}</div>
+        <span class="role-chip role-chip-{{ user.role }}">{{ user.role.replace('_',' ').upper() }}</span>
+      </div>
+      <div class="settings-list">
+        <div class="settings-item">
+          <div class="s-name">Email</div>
+          <div class="s-meta" style="margin-top:2px;word-break:break-all">{{ user.email }}</div>
+        </div>
+        <div class="settings-item" style="padding-bottom:12px">
+          <label style="margin-bottom:4px">Mobile</label>
+          <input id="prof-mobile" placeholder="e.g. +91 98765 43210" value="{{ user.mobile or '' }}">
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="saveMyProfile()">Save changes</button>
+    </div>
+
   </div>
 </div>
 
+<!-- Dashboard tab -->
+<div class="main-tab active" id="tab-dashboard">
 <div class="layout">
 
   <!-- LEFT: Recommendations -->
@@ -482,6 +747,49 @@
     </div>
   </div>
 </div>
+</div><!-- end tab-dashboard -->
+
+<!-- Games tab -->
+<div class="main-tab" id="tab-games">
+  <div class="games-layout">
+    <!-- Sidebar: game list -->
+    <div class="games-sidebar">
+      <div class="games-sidebar-hdr">
+        <h2>🎮 Games</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          {% if user.role == 'client' %}
+          <span style="font-size:12px;color:#fbbf24;font-weight:700">💎 <span id="credits-balance-games">—</span></span>
+          {% endif %}
+          {% if user.role in ('super_admin','admin') %}
+          <button class="btn btn-primary btn-sm" onclick="showCreateGame()">+ Create</button>
+          {% endif %}
+        </div>
+      </div>
+      {% if user.role in ('super_admin','admin') %}
+      <div style="padding:10px 16px;border-bottom:1px solid #e2e8f0;display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm gfilter active" onclick="filterGames('all',this)">All</button>
+        <button class="btn btn-ghost btn-sm gfilter" onclick="filterGames('draft',this)">Draft</button>
+        <button class="btn btn-ghost btn-sm gfilter" onclick="filterGames('active',this)">Live</button>
+        <button class="btn btn-ghost btn-sm gfilter" onclick="filterGames('closed',this)">Closed</button>
+        <button class="btn btn-ghost btn-sm gfilter" onclick="filterGames('resolved',this)">Resolved</button>
+      </div>
+      {% else %}
+      <div style="padding:10px 16px;border-bottom:1px solid #e2e8f0;display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm gfilter active" onclick="filterGames('active',this)">Live</button>
+        <button class="btn btn-ghost btn-sm gfilter" onclick="filterGames('closed',this)">Closed</button>
+        <button class="btn btn-ghost btn-sm gfilter" onclick="filterGames('resolved',this)">Resolved</button>
+      </div>
+      {% endif %}
+      <div id="games-list" style="flex:1;overflow-y:auto;padding:12px">
+        <div class="games-empty">Loading games…</div>
+      </div>
+    </div>
+    <!-- Main: game detail / create form -->
+    <div class="games-main" id="games-main">
+      <div class="games-empty">Select a game from the list</div>
+    </div>
+  </div>
+</div><!-- end tab-games -->
 
 <div class="toast" id="toast"></div>
 
@@ -643,21 +951,18 @@ async function createRec() {
   const { symbol, legs } = result;
   const btn = document.getElementById('create-btn');
   btn.disabled = true; btn.textContent = 'Creating…';
+  let ok = false;
   try {
     const res  = await fetch('/api/recommendations/create', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ symbol, legs, note: document.getElementById('create-note').value }),
     });
     const data = await res.json();
-    if (data.ok) {
-      showToast(`Recommendation created (id=${data.trade_id}) ✓`, 'ok');
-      resetCreateForm();
-      loadRecs();
-    } else {
-      showToast(data.error || 'Create failed', 'err');
-    }
+    if (data.ok) { showToast(`Recommendation created (id=${data.trade_id}) ✓`, 'ok'); ok = true; }
+    else showToast(data.error || 'Create failed', 'err');
   } catch(e) { showToast('Network error', 'err'); }
   btn.disabled = false; btn.textContent = 'Create & Send Alert';
+  if (ok) { resetCreateForm(); loadRecs(); }
 }
 
 function resetCreateForm() {
@@ -1049,20 +1354,17 @@ async function submitAdj(recId) {
 
   if (!legs.length) { showToast('Add at least one leg', 'err'); return; }
 
+  let ok = false;
   try {
     const res  = await fetch(`/api/recommendations/${recId}/adjust`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ note, legs }),
     });
     const data = await res.json();
-    if (data.ok) {
-      showToast('Adjustment applied — Telegram alert sent ✓', 'ok');
-      toggleAdjForm(recId);
-      loadRecs();
-    } else {
-      showToast(data.error || 'Failed', 'err');
-    }
+    if (data.ok) { showToast('Adjustment applied — Telegram alert sent ✓', 'ok'); ok = true; }
+    else showToast(data.error || 'Failed', 'err');
   } catch(e) { showToast('Network error', 'err'); }
+  if (ok) { toggleAdjForm(recId); loadRecs(); }
 }
 
 function toggleRecExit(id) {
@@ -1103,6 +1405,7 @@ async function submitPush(recId, legCount, symbol) {
     return leg;
   });
 
+  let ok = false;
   try {
     const res  = await fetch('/api/account-trades/create', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -1115,15 +1418,10 @@ async function submitPush(recId, legCount, symbol) {
       }),
     });
     const data = await res.json();
-    if (data.ok) {
-      showToast('Added to account — Telegram alert sent ✓', 'ok');
-      togglePushForm(recId);
-      loadRecs();
-      loadAccountTrades();
-    } else {
-      showToast(data.error || 'Failed', 'err');
-    }
+    if (data.ok) { showToast('Added to account — Telegram alert sent ✓', 'ok'); ok = true; }
+    else showToast(data.error || 'Failed', 'err');
   } catch(e) { showToast('Network error', 'err'); }
+  if (ok) { togglePushForm(recId); loadRecs(); loadAccountTrades(); }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1305,19 +1603,17 @@ async function submitApplyAdj(atId, adjId, adjType) {
     });
   }
 
+  let ok = false;
   try {
     const res  = await fetch(`/api/account-trades/${atId}/adjust`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ adjustment_id: adjId, adj_type: adjType, legs }),
     });
     const data = await res.json();
-    if (data.ok) {
-      showToast('Adjustment applied to your position ✓', 'ok');
-      loadAccountTrades();
-    } else {
-      showToast(data.error || 'Failed', 'err');
-    }
+    if (data.ok) { showToast('Adjustment applied to your position ✓', 'ok'); ok = true; }
+    else showToast(data.error || 'Failed', 'err');
   } catch(e) { showToast('Network error', 'err'); }
+  if (ok) loadAccountTrades();
 }
 
 function toggleExit(id) {
@@ -1332,19 +1628,17 @@ async function submitExit(id, legCount) {
     prices.push(p);
   }
   const note = document.getElementById(`xnote-${id}`).value;
+  let ok = false;
   try {
     const res  = await fetch(`/api/account-trades/${id}/exit`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ prices, note }),
     });
     const data = await res.json();
-    if (data.ok) {
-      showToast('Trade closed — Telegram alert sent ✓', 'ok');
-      loadAccountTrades();
-    } else {
-      showToast(data.error || 'Exit failed', 'err');
-    }
+    if (data.ok) { showToast('Trade closed — Telegram alert sent ✓', 'ok'); ok = true; }
+    else showToast(data.error || 'Exit failed', 'err');
   } catch(e) { showToast('Network error', 'err'); }
+  if (ok) loadAccountTrades();
 }
 
 async function deleteTrade(id) {
@@ -1352,9 +1646,10 @@ async function deleteTrade(id) {
   try {
     const res  = await fetch(`/api/account-trades/${id}/delete`, { method: 'POST' });
     const data = await res.json();
-    if (data.ok) { showToast('Trade deleted ✓', 'ok'); loadAccountTrades(); }
-    else showToast(data.error || 'Delete failed', 'err');
-  } catch(e) { showToast('Network error', 'err'); }
+    if (data.ok) { showToast('Trade deleted ✓', 'ok'); }
+    else { showToast(data.error || 'Delete failed', 'err'); return; }
+  } catch(e) { showToast('Network error', 'err'); return; }
+  loadAccountTrades();
 }
 
 async function deleteRec(id) {
@@ -1362,9 +1657,10 @@ async function deleteRec(id) {
   try {
     const res  = await fetch(`/api/recommendations/${id}/delete`, { method: 'POST' });
     const data = await res.json();
-    if (data.ok) { showToast('Recommendation deleted ✓', 'ok'); loadRecommendations(); }
-    else showToast(data.error || 'Delete failed', 'err');
-  } catch(e) { showToast('Network error', 'err'); }
+    if (data.ok) { showToast('Recommendation deleted ✓', 'ok'); }
+    else { showToast(data.error || 'Delete failed', 'err'); return; }
+  } catch(e) { showToast('Network error', 'err'); return; }
+  loadRecs();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1634,20 +1930,27 @@ async function updatePrices() {
     const spotData = prices._spot || {};
     const bar = document.getElementById('spot-bar');
     if (bar && Object.keys(spotData).length) {
-      bar.innerHTML = Object.entries(spotData).map(([sym, d]) => {
+      const onePass = Object.entries(spotData).map(([sym, d]) => {
         const ltp    = d.ltp;
         const change = d.change;
         const pos    = change != null && change >= 0;
-        const chgColor = change == null ? '#94a3b8' : (pos ? '#4ade80' : '#f87171');
-        const ltpColor = stale ? '#94a3b8' : (change == null ? '#fff' : (pos ? '#4ade80' : '#f87171'));
+        const ltpColor = stale ? '#64748b' : (change == null ? '#e2e8f0' : (pos ? '#4ade80' : '#f87171'));
+        const chgColor = change == null ? '#475569' : (pos ? '#4ade80' : '#f87171');
+        const arrow  = change == null ? '' : (pos ? '▲' : '▼');
+        const pct    = change != null && ltp ? ` ${pos?'+':''}${((change/ltp)*100).toFixed(2)}%` : '';
         const chgStr = change != null
-          ? `<span style="font-size:11px;color:${chgColor};margin-left:3px">(${pos ? '+' : ''}${change.toLocaleString('en-IN', {maximumFractionDigits:0})})</span>`
+          ? `<span class="tick-chg" style="color:${chgColor}">${arrow}${Math.abs(change).toLocaleString('en-IN',{maximumFractionDigits:0})}${pct}</span>`
           : '';
-        return `<span class="spot-item">
-          <span style="color:#94a3b8;font-size:11px">${sym}</span>
-          <strong style="color:${ltpColor};font-size:13px;margin-left:4px">${fmtRs(ltp)}</strong>${chgStr}
+        return `<span class="tick-item">
+          <span class="tick-sym">${sym}</span>
+          <span class="tick-ltp" style="color:${ltpColor}">${fmtRs(ltp)}</span>
+          ${chgStr}
         </span>`;
       }).join('');
+      // Quadruple for seamless -25% loop (animation: 0 → -25%)
+      bar.innerHTML = onePass.repeat(4);
+      const n = Object.keys(spotData).length;
+      bar.style.animationDuration = `${Math.max(18, n * 7)}s`;
     }
   } catch(e) {}
 }
@@ -1657,13 +1960,19 @@ async function updatePrices() {
 // ─────────────────────────────────────────────────────────
 
 let _brokers = [], _users = [], _accounts = [];
-const _role  = "{{ user.role }}";
+const _role    = "{{ user.role }}";
+const _userId  = {{ user.id }};
 const _isAdmin = _role === 'super_admin' || _role === 'admin';
 
-function openDrawer()  {
+function openDrawer(tab)  {
+  document.getElementById('prof-menu')?.classList.remove('open');
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawer-overlay').classList.add('open');
   loadSettings();
+  if (tab) {
+    const btn = document.querySelector(`.stab[data-tab="${tab}"]`);
+    if (btn) showStab(tab, btn);
+  }
 }
 function closeDrawer() {
   document.getElementById('drawer').classList.remove('open');
@@ -1950,6 +2259,949 @@ function showToast(msg, type) {
   el.textContent = msg; el.className = `toast ${type} show`;
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+function toast(msg, type = 'ok') { showToast(msg, type); }
+
+// ─────────────────────────────────────────────────────────
+// Games system
+// ─────────────────────────────────────────────────────────
+
+// Datetime helpers: server stores UTC ISO strings; datetime-local inputs use browser local time (IST)
+function utcToLocalInput(utcStr) {
+  if (!utcStr) return '';
+  const d = new Date(utcStr);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function localInputToUtc(localStr) {
+  if (!localStr) return '';
+  return new Date(localStr).toISOString();
+}
+
+let _games = [], _gameFilter = _isAdmin ? 'all' : 'active', _activeGameId = null, _gamesLoaded = false;
+let _mcqSel = {}; // { gid: { qid: 'A' } } — tap-card MCQ selections
+
+function switchMainTab(tab) {
+  ['dashboard', 'games'].forEach(t => {
+    document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
+    document.getElementById(`nav-${t}`).classList.toggle('active', t === tab);
+  });
+  if (tab === 'games' && !_gamesLoaded) {
+    loadGames();
+    if (!_isAdmin) loadCredits();
+    _gamesLoaded = true;
+  }
+}
+
+function filterGames(status, el) {
+  _gameFilter = status;
+  document.querySelectorAll('.gfilter').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  renderGamesList();
+}
+
+const _TYPE_LABEL  = {price_prediction:'🔮 Prediction', mcq:'📝 Quiz', leaderboard:'📈 Leaderboard'};
+const _TYPE_CLASS  = {price_prediction:'gtype-prediction', mcq:'gtype-mcq', leaderboard:'gtype-leaderboard'};
+const _STATUS_DOT  = {draft:'#94a3b8', active:'#4ade80', closed:'#f87171', resolved:'#fbbf24'};
+const _STATUS_TEXT = {draft:'Draft', active:'Live', closed:'Closed', resolved:'Resolved'};
+
+async function loadGames() {
+  const r = await fetch('/api/games');
+  const d = await r.json();
+  _games = d.games || [];
+  renderGamesList();
+}
+
+function renderGamesList() {
+  const el = document.getElementById('games-list');
+  if (!el) return;
+  const list = _gameFilter === 'all' ? _games : _games.filter(g => g.status === _gameFilter);
+  if (!list.length) {
+    el.innerHTML = '<div class="games-empty">No games yet</div>';
+    return;
+  }
+  el.innerHTML = list.map(g => {
+    const isActive = _activeGameId === g.id;
+    const entered  = g.my_entry;
+    const won      = g.my_entry?.credits_won;
+    const rank     = g.my_entry?.rank;
+    return `<div class="game-card${isActive ? ' active' : ''}" onclick="openGame(${g.id})">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <span class="game-type-badge ${_TYPE_CLASS[g.game_type]||''}">${_TYPE_LABEL[g.game_type]||g.game_type}</span>
+        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${_STATUS_DOT[g.status]||'#94a3b8'};flex-shrink:0" title="${_STATUS_TEXT[g.status]||g.status}"></span>
+        <span style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">${_STATUS_TEXT[g.status]||g.status}</span>
+      </div>
+      <div style="font-size:13px;font-weight:600;color:#1e293b;margin-bottom:6px;line-height:1.3">${g.title}</div>
+      <div style="font-size:11px;color:#64748b;display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+        <span>💎 ${g.reward_pool} · Top ${g.winner_count}</span>
+        <span>👥 ${g.participant_count}</span>
+        <span>Ends ${g.end_time ? fmtIst(g.end_time) : '—'}</span>
+      </div>
+      ${entered ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <span class="entered-badge">✓ Entered</span>
+        ${rank ? `<span style="font-size:10px;color:#d97706;font-weight:700">Rank #${rank}</span>` : ''}
+        ${won ? `<span style="font-size:10px;color:#fbbf24;font-weight:700">💎 ${won} credits won</span>` : ''}
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function openGame(id) {
+  _activeGameId = id;
+  delete _mcqSel[id]; // reset tap-card state; will be re-initialised from my_entry if submitted
+  renderGamesList();
+  const main = document.getElementById('games-main');
+  main.innerHTML = `<div style="padding:40px;text-align:center;color:#94a3b8;font-size:13px">Loading…</div>`;
+  try {
+    const r = await fetch(`/api/games/${id}`);
+    const d = await r.json();
+    renderGameDetail(d.game);
+  } catch(e) {
+    main.innerHTML = `<div class="games-empty">Failed to load game. <a href="#" onclick="openGame(${id})">Retry</a></div>`;
+  }
+}
+
+function renderGameDetail(g) {
+  const main = document.getElementById('games-main');
+  if (!main) return;
+
+  const statusChip = {
+    draft:    `<span style="background:#f1f5f9;color:#64748b;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px">Draft</span>`,
+    active:   `<span style="background:#dcfce7;color:#15803d;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px">🟢 Live</span>`,
+    closed:   `<span style="background:#fee2e2;color:#dc2626;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px">Closed</span>`,
+    resolved: `<span style="background:#fef3c7;color:#d97706;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px">✅ Resolved</span>`,
+  }[g.status] || '';
+
+  const body = g.game_type === 'price_prediction' ? renderPredictionGame(g)
+             : g.game_type === 'mcq'              ? renderMcqGame(g)
+             :                                      renderLeaderboardGame(g);
+
+  let adminActions = '';
+  if (_isAdmin) {
+    const btns = [];
+    if (g.status === 'draft') {
+      btns.push(`<button class="btn btn-success btn-sm" onclick="activateGame(${g.id},this)">▶ Activate</button>`);
+      btns.push(`<button class="btn btn-ghost btn-sm" onclick="showEditGame(${g.id})">✏ Edit</button>`);
+      btns.push(`<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteGame(${g.id},this)">🗑 Delete</button>`);
+    }
+    if (g.status === 'active') {
+      btns.push(`<button class="btn btn-danger btn-sm" onclick="closeGame(${g.id},this)">⏹ Close Game</button>`);
+      btns.push(`<button class="btn btn-ghost btn-sm" onclick="showEditGame(${g.id})">✏ Edit</button>`);
+    }
+    if (g.status === 'closed') {
+      if (g.game_type === 'price_prediction') {
+        btns.push(`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="number" id="resolve-price-${g.id}" placeholder="Actual close price" style="width:170px">
+          <button class="btn btn-primary btn-sm" onclick="resolveGame(${g.id},this)">✅ Resolve & Award Credits</button>
+        </div>`);
+      } else {
+        btns.push(`<button class="btn btn-primary btn-sm" onclick="resolveGame(${g.id},this)">✅ Resolve & Award Credits</button>`);
+      }
+    }
+    if (btns.length) adminActions = `<div class="game-action-bar">${btns.join('')}</div>`;
+  }
+
+  const showLeaderboard = _isAdmin || g.status === 'resolved';
+
+  main.innerHTML = `
+    <div class="game-detail-card">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="game-type-badge ${_TYPE_CLASS[g.game_type]||''}">${_TYPE_LABEL[g.game_type]||g.game_type}</span>
+            ${statusChip}
+          </div>
+          <h2 style="font-size:16px;font-weight:700;color:#1e293b;line-height:1.3">${g.title}</h2>
+        </div>
+      </div>
+      ${g.description ? `<p style="font-size:13px;color:#475569;margin-bottom:14px;line-height:1.5">${g.description}</p>` : ''}
+      <div style="display:flex;gap:14px;flex-wrap:wrap;padding:10px 12px;background:#f8fafc;border-radius:8px;margin-bottom:16px;font-size:12px;color:#475569">
+        <span>⏰ Ends ${g.end_time ? fmtIst(g.end_time) : '—'}</span>
+        <span>💎 ${g.reward_pool} credits pool</span>
+        <span>🏆 Top ${g.winner_count} win</span>
+        <span>👥 ${g.participant_count} participants</span>
+      </div>
+      ${body}
+      ${!_isAdmin && g.status === 'active' && !g.my_entry ? renderParticipantTeaser(g) : ''}
+      ${!_isAdmin && g.status === 'active' &&  g.my_entry ? renderParticipantsPanel(g) : ''}
+      ${adminActions}
+    </div>
+    ${showLeaderboard ? renderLeaderboardSection(g) : ''}
+  `;
+
+  if (g.game_type === 'leaderboard' && g.status === 'active' && !_isAdmin) {
+    loadPortfolio(g.id);
+  }
+}
+
+function renderPredictionGame(g) {
+  const sym = g.symbol || 'NIFTY50';
+  if (_isAdmin) {
+    return `<div style="font-size:12px;color:#64748b;padding:10px 0">
+      Symbol: <strong style="color:#1e293b">${sym}</strong>
+      ${g.status === 'resolved' && g.result_value
+        ? ` · Actual close: <strong style="color:#15803d">₹${parseFloat(g.result_value).toLocaleString('en-IN',{maximumFractionDigits:2})}</strong>`
+        : (g.status === 'closed' ? ' · Awaiting resolution — enter actual close price below.' : '')}
+    </div>`;
+  }
+
+  const entry = g.my_entry;
+  const pp    = entry?.entry_data?.predicted_price;
+
+  if (pp != null) {
+    const fmtPp  = parseFloat(pp).toLocaleString('en-IN', {maximumFractionDigits:2});
+    const rank   = entry.rank;
+    const won    = entry.credits_won;
+    const actual = g.status === 'resolved' && g.result_value ? parseFloat(g.result_value) : null;
+    const diff   = actual != null ? Math.abs(parseFloat(pp) - actual) : null;
+    return `<div style="border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;padding:16px;margin-bottom:4px">
+      <div style="font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Your Entry</div>
+      <div style="font-size:20px;font-weight:700;color:#1e293b;margin-bottom:4px">₹${fmtPp}</div>
+      <div style="font-size:12px;color:#64748b">Predicted close for ${sym}</div>
+      ${actual != null ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid #bfdbfe;display:flex;gap:20px;flex-wrap:wrap">
+        <div><div style="font-size:11px;color:#64748b">Actual close</div><div style="font-size:14px;font-weight:600;color:#1e293b">₹${actual.toLocaleString('en-IN',{maximumFractionDigits:2})}</div></div>
+        <div><div style="font-size:11px;color:#64748b">Difference</div><div style="font-size:14px;font-weight:600;color:${diff<100?'#15803d':'#dc2626'}">±₹${diff.toLocaleString('en-IN',{maximumFractionDigits:2})}</div></div>
+        ${rank ? `<div><div style="font-size:11px;color:#64748b">Your rank</div><div style="font-size:14px;font-weight:700;color:#d97706">#${rank}</div></div>` : ''}
+        ${won ? `<div><div style="font-size:11px;color:#64748b">Credits won</div><div style="font-size:14px;font-weight:700;color:#fbbf24">💎 ${won}</div></div>` : ''}
+      </div>` : `<div style="margin-top:8px;font-size:12px;color:#64748b">${rank ? `Rank #${rank}` : 'Waiting for results…'}</div>`}
+    </div>`;
+  }
+
+  if (g.status !== 'active') {
+    return `<div style="padding:20px;text-align:center;color:#94a3b8;font-size:13px;background:#f8fafc;border-radius:8px">Game is ${_STATUS_TEXT[g.status]||g.status} — entries closed</div>`;
+  }
+
+  const spotEntry = _latestPrices?._spot?.[sym];
+  const refLtp    = spotEntry?.ltp ?? null;
+  const refFmt    = refLtp != null ? `₹${parseFloat(refLtp).toLocaleString('en-IN',{maximumFractionDigits:0})}` : '—';
+  const step      = sym.includes('BANK') ? 100 : 50;
+
+  return `<div class="pred-ui">
+    <div class="pred-ref">
+      <div class="pred-ref-sym">${sym} · live</div>
+      <div class="pred-ref-ltp">${refFmt}</div>
+      <div class="pred-ref-lbl">Where will it close today?</div>
+    </div>
+    <div class="pred-divider"></div>
+    <div class="pred-nudge-row">
+      <button class="pred-nudge neg" onclick="nudgePred(${g.id},${-step*10},${refLtp||0})">−${step*10}</button>
+      <button class="pred-nudge neg" onclick="nudgePred(${g.id},${-step},${refLtp||0})">−${step}</button>
+      <div class="pred-center">
+        <div class="pred-val-label">Your prediction</div>
+        <input type="number" id="pred-price-${g.id}" class="pred-big-input"
+               placeholder="${refLtp ? Math.round(refLtp) : '24000'}" step="${step}"
+               oninput="updatePredSentiment(${g.id},${refLtp||0})">
+        <div id="pred-sent-${g.id}" class="pred-sentiment" style="color:#94a3b8">Enter a price above ↑</div>
+      </div>
+      <button class="pred-nudge pos" onclick="nudgePred(${g.id},${step},${refLtp||0})">+${step}</button>
+      <button class="pred-nudge pos" onclick="nudgePred(${g.id},${step*10},${refLtp||0})">+${step*10}</button>
+    </div>
+    <button class="btn btn-primary pred-submit-btn" onclick="submitPrediction(${g.id},this)">Lock in my prediction →</button>
+    <div style="font-size:11px;color:#94a3b8;text-align:center">Closest prediction wins · One entry only</div>
+  </div>`;
+}
+
+function renderMcqGame(g) {
+  if (!g.questions || !g.questions.length) {
+    return `<div style="padding:20px;text-align:center;color:#94a3b8;font-size:13px;background:#f8fafc;border-radius:8px">No questions added yet</div>`;
+  }
+
+  const isResolved = g.status === 'resolved';
+  const myAnswers  = g.my_entry?.entry_data?.answers || {};
+  const submitted  = !!g.my_entry;
+  const rank       = g.my_entry?.rank;
+  const won        = g.my_entry?.credits_won;
+  const score      = g.my_entry?.score;
+  const gid        = g.id;
+  const locked     = submitted || isResolved || _isAdmin;
+
+  // Initialise tap-card state from submitted answers (for review mode)
+  if (submitted && !_mcqSel[gid]) _mcqSel[gid] = {...myAnswers};
+
+  let banner = '';
+  if (submitted && !isResolved) {
+    const cnt = Object.keys(myAnswers).length;
+    banner = `<div style="padding:12px 16px;background:#dcfce7;border:1px solid #86efac;border-radius:8px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:20px">✅</span>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#15803d">Answers locked in!</div>
+        <div style="font-size:12px;color:#166534">${cnt}/${g.questions.length} answered · Waiting for results</div>
+      </div>
+    </div>`;
+  } else if (isResolved && submitted) {
+    const correct = score != null ? Math.round(score) : '?';
+    banner = `<div style="padding:14px 16px;background:linear-gradient(135deg,#fef3c7,#fefce8);border:1px solid #fcd34d;border-radius:10px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:#92400e;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px">Your result</div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap">
+        <div><div style="font-size:11px;color:#78350f">Score</div><div style="font-size:22px;font-weight:800;color:#1e293b">${correct}<span style="font-size:14px;color:#94a3b8">/${g.questions.length}</span></div></div>
+        ${rank ? `<div><div style="font-size:11px;color:#78350f">Rank</div><div style="font-size:22px;font-weight:800;color:#d97706">#${rank}</div></div>` : ''}
+        ${won  ? `<div><div style="font-size:11px;color:#78350f">Credits won</div><div style="font-size:22px;font-weight:800;color:#f59e0b">💎${won}</div></div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  if (g.status !== 'active' && !submitted && !isResolved) {
+    return `${banner}<div style="padding:20px;text-align:center;color:#94a3b8;font-size:13px;background:#f8fafc;border-radius:8px">Game is ${_STATUS_TEXT[g.status]||g.status} — entries closed</div>`;
+  }
+
+  // Progress dots (active, not yet submitted)
+  let progress = '';
+  if (!locked) {
+    const sel = _mcqSel[gid] || {};
+    const dots = g.questions.map(q =>
+      `<div class="mcq-prog-dot${sel[String(q.id)] ? ' answered' : ''}"></div>`
+    ).join('');
+    progress = `<div class="mcq-progress">${dots}</div>`;
+  }
+
+  let html = banner + progress;
+  g.questions.forEach((q, i) => {
+    const sel   = (_mcqSel[gid] || {})[String(q.id)];
+    const opts  = ['A','B','C','D'].filter(o => q[`option_${o.toLowerCase()}`]);
+
+    html += `<div class="mcq-question">
+      <div class="mcq-q-text">Q${i+1}. ${q.question}</div>`;
+
+    opts.forEach(opt => {
+      const val    = q[`option_${opt.toLowerCase()}`];
+      const isMyAns = opt === (sel || myAnswers[String(q.id)]);
+      let cls = isMyAns ? 'sel' : '';
+      let icon = '';
+      if (isResolved && q.correct_opt) {
+        if (opt === q.correct_opt)               { cls = 'correct-ans'; icon = '<span class="mcq-opt-icon">✅</span>'; }
+        else if (isMyAns && opt !== q.correct_opt){ cls = 'wrong-ans';   icon = '<span class="mcq-opt-icon">❌</span>'; }
+      }
+      const clickHandler = locked ? '' : `onclick="selectMcqOpt(${gid},${q.id},'${opt}')"`;
+      html += `<div class="mcq-opt-card ${cls}${locked?' disabled':''}" data-gid="${gid}" data-qid="${q.id}" data-opt="${opt}" ${clickHandler}>
+        <span class="mcq-opt-letter">${opt}</span>
+        <span class="mcq-opt-text">${val}</span>
+        ${icon}
+      </div>`;
+    });
+    html += `</div>`;
+  });
+
+  if (!submitted && g.status === 'active' && !_isAdmin) {
+    html += `<div style="margin-top:4px">
+      <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px;font-weight:700;border-radius:10px"
+              onclick="submitMcq(${g.id},this)">Submit all answers →</button>
+    </div>`;
+  }
+  return html;
+}
+
+function renderLeaderboardGame(g) {
+  if (_isAdmin) return '';
+  if (g.status === 'active') {
+    return `<div id="portfolio-${g.id}">
+      <div style="padding:20px;text-align:center;color:#94a3b8;font-size:13px">Loading portfolio…</div>
+    </div>`;
+  }
+  if (g.status === 'resolved') {
+    const e = g.my_entry;
+    const rank = e?.rank, won = e?.credits_won;
+    return `<div style="border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;padding:16px;margin-bottom:4px">
+      <div style="font-size:11px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Your Result</div>
+      ${rank ? `<div style="display:flex;gap:20px;flex-wrap:wrap">
+        <div><div style="font-size:11px;color:#64748b">Final rank</div><div style="font-size:20px;font-weight:700;color:#d97706">#${rank}</div></div>
+        ${won ? `<div><div style="font-size:11px;color:#64748b">Credits won</div><div style="font-size:20px;font-weight:700;color:#fbbf24">💎 ${won}</div></div>` : ''}
+      </div>` : `<div style="font-size:13px;color:#64748b">Check the final leaderboard below.</div>`}
+    </div>`;
+  }
+  return `<div style="padding:16px;text-align:center;color:#94a3b8;font-size:13px;background:#f8fafc;border-radius:8px">Game is ${_STATUS_TEXT[g.status]||g.status} — trading closed</div>`;
+}
+
+function renderLeaderboardSection(g) {
+  const entries = g.entries || [];
+  const title   = g.status === 'resolved' ? '🏆 Final Results' : '📋 Participants';
+  return `<div class="game-detail-card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <span style="font-size:12px;font-weight:700;color:#1e293b">${title}</span>
+      <span style="font-size:11px;color:#94a3b8">${entries.length} ${entries.length===1?'entry':'entries'}</span>
+    </div>
+    ${renderEntriesTable(entries, g.game_type, g.status)}
+  </div>`;
+}
+
+function renderParticipantTeaser(g) {
+  const n = g.participant_count || 0;
+  if (n === 0) return '';
+  const txt = n === 1 ? '1 person has already entered'
+                       : `${n} people have already entered`;
+  return `<div class="pax-teaser">
+    <div class="pax-teaser-icon">👀</div>
+    <div>
+      <div class="pax-teaser-count">${txt}</div>
+      <div class="pax-teaser-sub">Submit your entry to see who's in — predictions stay hidden until results!</div>
+    </div>
+  </div>`;
+}
+
+function renderParticipantsPanel(g) {
+  const entries = g.entries || [];
+  if (!entries.length) return '';
+  const total      = entries.length;
+  const MAX_SHOW   = 20;
+  const shown      = entries.slice(0, MAX_SHOW);
+  const overflow   = total - MAX_SHOW;
+  const isPred     = g.game_type === 'price_prediction';
+  const refLtp     = isPred ? (_latestPrices?._spot?.[g.symbol || 'NIFTY50']?.ltp ?? null) : null;
+
+  // Summary bar for prediction games: count bullish vs bearish
+  let summaryBar = '';
+  if (isPred && refLtp) {
+    const bulls = entries.filter(e => e.predicted_price != null && parseFloat(e.predicted_price) >= refLtp).length;
+    const bears = entries.filter(e => e.predicted_price != null && parseFloat(e.predicted_price) <  refLtp).length;
+    const bullPct = total ? Math.round((bulls / total) * 100) : 0;
+    const bearPct = 100 - bullPct;
+    summaryBar = `<div style="padding:10px 14px;border-bottom:1px solid #e2e8f0;background:#f8fafc">
+      <div style="font-size:10px;font-weight:700;color:#64748b;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Crowd sentiment</div>
+      <div style="display:flex;border-radius:6px;overflow:hidden;height:8px;margin-bottom:5px">
+        <div style="width:${bullPct}%;background:#16a34a;transition:width .4s"></div>
+        <div style="width:${bearPct}%;background:#dc2626;transition:width .4s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:600">
+        <span style="color:#16a34a">📈 Bullish ${bullPct}% (${bulls})</span>
+        <span style="color:#dc2626">${bears} (${bearPct}%) Bearish 📉</span>
+      </div>
+    </div>`;
+  }
+
+  const rows = shown.map((e, i) => {
+    const isMe   = e.user_id === _userId;
+    const init   = (e.user_name || '?')[0].toUpperCase();
+    const name   = e.user_name || '?';
+    const timeStr = e.submitted_at ? fmtIst(e.submitted_at) : '';
+
+    let predCell = '';
+    if (isPred && e.predicted_price != null) {
+      const pp   = parseFloat(e.predicted_price);
+      const up   = refLtp != null ? pp >= refLtp : null;
+      const pct  = refLtp ? ` (${up?'+':''}${((pp - refLtp)/refLtp*100).toFixed(1)}%)` : '';
+      const col  = up === null ? '#64748b' : (up ? '#16a34a' : '#dc2626');
+      const arrow = up === null ? '' : (up ? '▲' : '▼');
+      predCell = `<span style="font-size:12px;font-weight:700;color:${col};flex-shrink:0">${arrow} ₹${pp.toLocaleString('en-IN',{maximumFractionDigits:0})}${pct}</span>`;
+    } else if (isPred) {
+      predCell = `<span style="font-size:11px;color:#94a3b8">—</span>`;
+    }
+
+    return `<div class="participant-row${isMe ? ' me' : ''}">
+      <span class="p-num">${i + 1}</span>
+      <span class="p-avatar">${init}</span>
+      <span class="p-name">${name}${isMe ? '<span class="p-you-badge">YOU</span>' : ''}</span>
+      ${predCell}
+      <span class="p-time">${timeStr}</span>
+    </div>`;
+  }).join('');
+
+  const overflowRow = overflow > 0
+    ? `<div class="participant-row" style="justify-content:center;color:#94a3b8;font-size:12px;padding:10px">+${overflow} more</div>`
+    : '';
+
+  const note = isPred
+    ? '📈 predictions visible · final score after close'
+    : '🔒 answers hidden until results';
+
+  return `<div class="participants-panel">
+    <div class="participants-panel-hdr">
+      <span class="participants-panel-title">👥 ${total} participant${total===1?'':'s'} in this game</span>
+      <span class="participants-panel-note">${note}</span>
+    </div>
+    ${summaryBar}
+    ${rows}${overflowRow}
+  </div>`;
+}
+
+function renderEntriesTable(entries, gameType, status) {
+  if (!entries.length) return '<div style="color:#94a3b8;font-size:13px;padding:10px 0">No entries yet</div>';
+  const scoreLabel = gameType === 'price_prediction' ? 'Diff' : gameType === 'mcq' ? 'Score' : 'P&L';
+  const scoreFmt = (e) => {
+    if (gameType === 'price_prediction') return e.score != null ? `±${parseFloat(e.score).toLocaleString('en-IN',{maximumFractionDigits:1})}` : '—';
+    if (gameType === 'mcq') return e.score != null ? `${e.score} correct` : '—';
+    return e.score != null ? gameFmtPnl(e.score) : '—';
+  };
+  return `<table class="leaderboard-table">
+    <thead><tr>
+      <th>Rank</th><th>Name</th><th>${scoreLabel}</th>
+      ${status === 'resolved' ? '<th>Credits</th>' : ''}
+    </tr></thead>
+    <tbody>${entries.map(e => {
+      const rk = e.rank;
+      const rkHtml = rk <= 3
+        ? `<span class="rank-badge rank-${rk}">${['🥇','🥈','🥉'][rk-1]}</span>`
+        : `<span class="rank-badge">${rk || '—'}</span>`;
+      return `<tr>
+        <td>${rkHtml}</td>
+        <td style="font-weight:500">${e.user_name || '—'}</td>
+        <td>${scoreFmt(e)}</td>
+        ${status === 'resolved' ? `<td>${e.credits_won ? `<span style="color:#d97706;font-weight:700">💎${e.credits_won}</span>` : '—'}</td>` : ''}
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+function gameFmtPnl(v) {
+  if (v == null) return '—';
+  const s = v >= 0 ? '+' : '';
+  return `<span style="color:${v>=0?'#16a34a':'#dc2626'};font-weight:600">${s}₹${Math.abs(v).toLocaleString('en-IN',{maximumFractionDigits:0})}</span>`;
+}
+
+async function loadPortfolio(gid) {
+  const r = await fetch(`/api/games/${gid}/portfolio`);
+  const d = await r.json();
+  const pf = d.portfolio || {};
+  const el = document.getElementById(`portfolio-${gid}`);
+  if (!el) return;
+
+  const pnlColor = pf.pnl >= 0 ? '#16a34a' : '#dc2626';
+  const positions = pf.positions || [];
+  const trades    = pf.trades   || [];
+
+  el.innerHTML = `
+    <div class="portfolio-bar">
+      <div class="portfolio-stat">
+        <div class="val">₹${(pf.cash || 0).toLocaleString('en-IN',{maximumFractionDigits:0})}</div>
+        <div class="lbl">Cash</div>
+      </div>
+      <div class="portfolio-stat">
+        <div class="val">₹${(pf.portfolio_value || 0).toLocaleString('en-IN',{maximumFractionDigits:0})}</div>
+        <div class="lbl">Portfolio Value</div>
+      </div>
+      <div class="portfolio-stat">
+        <div class="val" style="color:${pnlColor}">${pf.pnl >= 0 ? '+' : ''}₹${(pf.pnl || 0).toLocaleString('en-IN',{maximumFractionDigits:0})}</div>
+        <div class="lbl">P&L</div>
+      </div>
+    </div>
+    ${positions.length ? `
+    <table class="leaderboard-table" style="margin-bottom:14px">
+      <thead><tr><th>Symbol</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&L</th></tr></thead>
+      <tbody>${positions.map(p => `<tr>
+        <td style="font-weight:600">${p.symbol}</td>
+        <td>${p.qty}</td>
+        <td>₹${(p.avg_price||0).toLocaleString('en-IN',{maximumFractionDigits:1})}</td>
+        <td>${p.ltp != null ? '₹'+p.ltp.toLocaleString('en-IN',{maximumFractionDigits:1}) : '—'}</td>
+        <td>${gameFmtPnl(p.pnl)}</td>
+      </tr>`).join('')}</tbody>
+    </table>` : '<div style="font-size:12px;color:#94a3b8;margin-bottom:14px">No open positions</div>'}
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px">
+      <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:10px">Virtual Trade</div>
+      <div style="display:grid;grid-template-columns:1fr 80px 80px 100px;gap:8px;align-items:end">
+        <div><label>Symbol</label>
+          <select id="vt-symbol-${gid}">
+            <option>NIFTY50</option><option>BANKNIFTY</option><option>FINNIFTY</option>
+            <option>MIDCPNIFTY</option><option>SENSEX</option>
+          </select>
+        </div>
+        <div><label>Action</label>
+          <select id="vt-action-${gid}"><option>BUY</option><option>SELL</option></select>
+        </div>
+        <div><label>Qty</label>
+          <input type="number" id="vt-qty-${gid}" min="1" placeholder="1" style="width:80px">
+        </div>
+        <div><label>Price (LTP)</label>
+          <input type="number" id="vt-price-${gid}" placeholder="auto" step="0.5">
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <button class="btn btn-primary btn-sm" onclick="submitVirtualTrade(${gid},this)">Execute</button>
+        <span style="font-size:11px;color:#94a3b8;margin-left:8px">Uses live price if price left blank</span>
+      </div>
+    </div>`;
+}
+
+function _btnLoading(btn, text = 'Loading…') {
+  if (!btn) return () => {};
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = text;
+  return () => { btn.disabled = false; btn.innerHTML = orig; };
+}
+
+async function submitPrediction(gid, btn) {
+  const price = parseFloat(document.getElementById(`pred-price-${gid}`).value);
+  if (!price || isNaN(price)) { toast('Enter a price first', 'err'); return; }
+  const restore = _btnLoading(btn, '🔒 Locking in…');
+  try {
+    const r = await fetch(`/api/games/${gid}/enter`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({entry_data:{predicted_price: price}})
+    });
+    const d = await r.json();
+    if (d.ok) { toast('Prediction locked! 🎯'); await loadGames(); await openGame(gid); }
+    else { toast(d.error || 'Error', 'err'); restore(); }
+  } catch(e) { toast('Network error', 'err'); restore(); }
+}
+
+function nudgePred(gid, delta, refLtp) {
+  const el = document.getElementById(`pred-price-${gid}`);
+  const cur = parseFloat(el.value) || refLtp || 0;
+  el.value = Math.round(cur + delta);
+  updatePredSentiment(gid, refLtp);
+}
+
+function updatePredSentiment(gid, refLtp) {
+  const el   = document.getElementById(`pred-price-${gid}`);
+  const sent = document.getElementById(`pred-sent-${gid}`);
+  if (!sent) return;
+  const val = parseFloat(el.value);
+  if (!val || isNaN(val) || !refLtp) { sent.textContent = 'Enter a price above ↑'; sent.style.color = '#94a3b8'; return; }
+  const diff  = val - refLtp;
+  const pct   = ((diff / refLtp) * 100).toFixed(2);
+  const up    = diff >= 0;
+  sent.style.color = up ? '#16a34a' : '#dc2626';
+  sent.textContent = `${up ? '📈 +' : '📉 '}${pct}% ${up ? 'above' : 'below'} current · ${up ? 'Bullish' : 'Bearish'}`;
+}
+
+function selectMcqOpt(gid, qid, opt) {
+  if (!_mcqSel[gid]) _mcqSel[gid] = {};
+  _mcqSel[gid][String(qid)] = opt;
+
+  // Update option card states for this question
+  document.querySelectorAll(`.mcq-opt-card[data-gid="${gid}"][data-qid="${qid}"]`).forEach(card => {
+    const isThis = card.dataset.opt === opt;
+    card.classList.toggle('sel', isThis);
+    const letter = card.querySelector('.mcq-opt-letter');
+    if (letter) { letter.style.background = isThis ? '#3b82f6' : ''; letter.style.color = isThis ? '#fff' : ''; }
+    if (isThis) card.classList.add('anim-pop');
+  });
+
+  // Update progress dots
+  const answered = Object.keys(_mcqSel[gid]).length;
+  document.querySelectorAll('.mcq-prog-dot').forEach((dot, i) => {
+    dot.classList.toggle('answered', i < answered);
+  });
+}
+
+async function submitMcq(gid, btn) {
+  const answers = _mcqSel[gid] || {};
+  const restore = _btnLoading(btn, 'Submitting…');
+  try {
+    const r = await fetch(`/api/games/${gid}/enter`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({entry_data:{answers}})
+    });
+    const d = await r.json();
+    if (d.ok) { toast('Answers submitted!'); await loadGames(); await openGame(gid); }
+    else { toast(d.error || 'Error', 'err'); restore(); }
+  } catch(e) { toast('Network error', 'err'); restore(); }
+}
+
+async function submitVirtualTrade(gid, btn) {
+  const symbol = document.getElementById(`vt-symbol-${gid}`).value;
+  const action = document.getElementById(`vt-action-${gid}`).value;
+  const qty    = parseInt(document.getElementById(`vt-qty-${gid}`).value);
+  const priceEl = document.getElementById(`vt-price-${gid}`);
+  let price = parseFloat(priceEl.value);
+
+  if (!qty || qty < 1) { toast('Enter quantity', 'err'); return; }
+
+  if (!price || isNaN(price)) {
+    price = _latestPrices?._spot?.[symbol]?.ltp;
+    if (!price) { toast('Enter price manually (live price not available)', 'err'); return; }
+  }
+
+  const restore = _btnLoading(btn, 'Executing…');
+  try {
+    const r = await fetch(`/api/games/${gid}/trade`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({symbol, action, price, quantity: qty})
+    });
+    const d = await r.json();
+    if (d.ok) { toast('Trade executed!'); await loadPortfolio(gid); }
+    else toast(d.error || 'Error', 'err');
+  } finally { restore(); }
+}
+
+// Admin actions
+function showCreateGame() {
+  _activeGameId = null;
+  renderGamesList();
+  document.getElementById('games-main').innerHTML = renderCreateGameForm();
+}
+
+function renderCreateGameForm(existing) {
+  const g = existing || {};
+  const isEdit = !!g.id;
+  const curType = g.game_type || 'price_prediction';
+
+  const typeCards = isEdit
+    ? `<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+        <span class="game-type-badge ${_TYPE_CLASS[curType]||''}" style="font-size:12px;padding:4px 12px">${_TYPE_LABEL[curType]||curType}</span>
+        <span style="font-size:11px;color:#94a3b8">Game type cannot be changed after creation</span>
+       </div>
+       <input type="hidden" id="gf-type" value="${curType}">`
+    : `<div class="gtype-select">
+        ${[
+          {v:'price_prediction', icon:'🔮', name:'Price Prediction', desc:'Guess the closing price'},
+          {v:'mcq',              icon:'📝', name:'Quiz (MCQ)',        desc:'Multiple choice questions'},
+          {v:'leaderboard',      icon:'📈', name:'Trading Challenge', desc:'Virtual portfolio battle'},
+        ].map(t => `<div class="gtype-card-sel${curType===t.v?' selected':''}" onclick="selectGameType('${t.v}',this)">
+          <div class="gc-icon">${t.icon}</div>
+          <div class="gc-name">${t.name}</div>
+          <div class="gc-desc">${t.desc}</div>
+        </div>`).join('')}
+       </div>
+       <input type="hidden" id="gf-type" value="${curType}">`;
+
+  return `<div class="game-detail-card">
+    <h2 style="font-size:15px;font-weight:700;margin-bottom:16px">${isEdit ? 'Edit Game' : 'New Game'}</h2>
+
+    <div class="form-section-title">Game Type</div>
+    ${typeCards}
+
+    <div class="form-section-title">Details</div>
+    <div class="form-row"><label>Title</label>
+      <input id="gf-title" value="${g.title || ''}" placeholder="e.g. Where will Nifty close today?"></div>
+    <div class="form-row"><label>Description <span style="font-weight:400;text-transform:none;font-size:10px">(optional)</span></label>
+      <input id="gf-desc" value="${g.description || ''}" placeholder="Brief context for participants"></div>
+    <div id="gf-symbol-row" style="${curType==='mcq'?'display:none':''}">
+      <div class="form-row"><label>Symbol</label>
+        <select id="gf-symbol">
+          ${['NIFTY50','BANKNIFTY','FINNIFTY','MIDCPNIFTY','SENSEX'].map(s =>
+            `<option ${g.symbol===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div class="form-section-title">Schedule <span style="font-weight:400;text-transform:none;font-size:10px">(your local time — IST if you're in India)</span></div>
+    <div class="form-grid-2">
+      <div class="form-row"><label>Opens at</label>
+        <input type="datetime-local" id="gf-start" value="${utcToLocalInput(g.start_time||'')}"></div>
+      <div class="form-row"><label>Closes at</label>
+        <input type="datetime-local" id="gf-end" value="${utcToLocalInput(g.end_time||'')}"></div>
+    </div>
+
+    <div class="form-section-title">Rewards</div>
+    <div class="form-grid-2">
+      <div class="form-row"><label>Credit Pool</label>
+        <input type="number" id="gf-pool" value="${g.reward_pool ?? 100}" min="0" placeholder="100"></div>
+      <div class="form-row"><label>Winners</label>
+        <input type="number" id="gf-winners" value="${g.winner_count ?? 3}" min="1" placeholder="3"></div>
+    </div>
+    <div id="gf-lb-row" style="${curType==='leaderboard'?'':'display:none'}">
+      <div class="form-row"><label>Starting Cash (₹)</label>
+        <input type="number" id="gf-cash" value="${g.initial_cash ?? 1000000}" min="10000"></div>
+    </div>
+
+    <div id="gf-mcq-section" style="${curType==='mcq'?'':'display:none'}">
+      <div class="form-section-title">Questions</div>
+      <div id="gf-questions"></div>
+      <button class="add-leg-btn" onclick="addQuestion()">+ Add Question</button>
+    </div>
+
+    <div style="margin-top:18px;display:flex;gap:8px">
+      <button class="btn btn-primary btn-sm" onclick="${isEdit ? `saveEditGame(${g.id},this)` : 'saveCreateGame(this)'}">${isEdit ? 'Save Changes' : 'Create Game'}</button>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('games-main').innerHTML='<div class=games-empty>Select a game from the list</div>'">Cancel</button>
+    </div>
+  </div>`;
+}
+
+let _questions = [];
+
+function selectGameType(type, cardEl) {
+  document.getElementById('gf-type').value = type;
+  document.querySelectorAll('.gtype-card-sel').forEach(c => c.classList.remove('selected'));
+  cardEl.classList.add('selected');
+  _applyGameTypeVisibility(type);
+}
+
+function onGameTypeChange() {
+  _applyGameTypeVisibility(document.getElementById('gf-type').value);
+}
+
+function _applyGameTypeVisibility(type) {
+  document.getElementById('gf-mcq-section').style.display  = type === 'mcq' ? '' : 'none';
+  document.getElementById('gf-lb-row').style.display       = type === 'leaderboard' ? '' : 'none';
+  document.getElementById('gf-symbol-row').style.display   = type === 'mcq' ? 'none' : '';
+}
+
+function addQuestion() {
+  _questions.push({question:'', option_a:'', option_b:'', option_c:'', option_d:'', correct_opt:'A'});
+  renderQuestions();
+}
+
+function removeQuestion(i) {
+  _questions.splice(i, 1);
+  renderQuestions();
+}
+
+function renderQuestions() {
+  const el = document.getElementById('gf-questions');
+  if (!el) return;
+  el.innerHTML = _questions.map((q, i) => `
+    <div class="leg-row" style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span class="leg-num">Question ${i+1}</span>
+        <button class="remove-leg" onclick="removeQuestion(${i})">✕</button>
+      </div>
+      <div class="form-row"><input placeholder="Question text" value="${q.question||''}"
+        oninput="_questions[${i}].question=this.value"></div>
+      <div class="form-grid-2" style="margin-bottom:6px">
+        <input placeholder="A) ..." value="${q.option_a||''}" oninput="_questions[${i}].option_a=this.value">
+        <input placeholder="B) ..." value="${q.option_b||''}" oninput="_questions[${i}].option_b=this.value">
+        <input placeholder="C) ..." value="${q.option_c||''}" oninput="_questions[${i}].option_c=this.value">
+        <input placeholder="D) ..." value="${q.option_d||''}" oninput="_questions[${i}].option_d=this.value">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="margin:0;text-transform:none">Correct:</label>
+        <select style="width:70px" onchange="_questions[${i}].correct_opt=this.value">
+          ${['A','B','C','D'].map(o => `<option ${q.correct_opt===o?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </div>
+    </div>`).join('');
+}
+
+async function saveCreateGame(btn) {
+  const type = document.getElementById('gf-type').value;
+  const payload = {
+    title:        document.getElementById('gf-title').value.trim(),
+    description:  document.getElementById('gf-desc').value.trim(),
+    game_type:    type,
+    symbol:       type !== 'mcq' ? document.getElementById('gf-symbol').value : null,
+    start_time:   localInputToUtc(document.getElementById('gf-start').value),
+    end_time:     localInputToUtc(document.getElementById('gf-end').value),
+    reward_pool:  parseInt(document.getElementById('gf-pool').value) || 0,
+    winner_count: parseInt(document.getElementById('gf-winners').value) || 1,
+    initial_cash: parseInt(document.getElementById('gf-cash')?.value) || 1000000,
+    questions:    type === 'mcq' ? _questions : undefined,
+  };
+  if (!payload.title) { toast('Title required', 'err'); return; }
+  const restore = _btnLoading(btn, 'Creating…');
+  try {
+    const r = await fetch('/api/games', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (d.ok) { toast('Game created!'); _questions = []; await loadGames(); await openGame(d.id); }
+    else { toast(d.error || 'Error', 'err'); restore(); }
+  } catch(e) { toast('Network error', 'err'); restore(); }
+}
+
+async function showEditGame(gid) {
+  const r = await fetch(`/api/games/${gid}`);
+  const d = await r.json();
+  const g = d.game;
+  _questions = (g.questions || []).map(q => ({...q}));
+  document.getElementById('games-main').innerHTML = renderCreateGameForm(g);
+  if (g.game_type === 'mcq') renderQuestions();
+}
+
+async function saveEditGame(gid, btn) {
+  const type = document.getElementById('gf-type').value;
+  const payload = {
+    title:        document.getElementById('gf-title').value.trim(),
+    description:  document.getElementById('gf-desc').value.trim(),
+    symbol:       type !== 'mcq' ? document.getElementById('gf-symbol').value : null,
+    start_time:   localInputToUtc(document.getElementById('gf-start').value),
+    end_time:     localInputToUtc(document.getElementById('gf-end').value),
+    reward_pool:  parseInt(document.getElementById('gf-pool').value) || 0,
+    winner_count: parseInt(document.getElementById('gf-winners').value) || 1,
+    initial_cash: parseInt(document.getElementById('gf-cash')?.value) || 1000000,
+    questions:    type === 'mcq' ? _questions : undefined,
+  };
+  const restore = _btnLoading(btn, 'Saving…');
+  try {
+    const r = await fetch(`/api/games/${gid}`, {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (d.ok) { toast('Saved!'); await loadGames(); await openGame(gid); }
+    else { toast(d.error || 'Error', 'err'); restore(); }
+  } catch(e) { toast('Network error', 'err'); restore(); }
+}
+
+async function activateGame(gid, btn) {
+  if (!confirm('Activate this game? Clients will be able to participate.')) return;
+  const restore = _btnLoading(btn, '▶ Activating…');
+  try {
+    const r = await fetch(`/api/games/${gid}/activate`, {method:'POST'});
+    const d = await r.json();
+    if (d.ok) { toast('Game activated!'); await loadGames(); await openGame(gid); }
+    else { toast(d.error || 'Error', 'err'); restore(); }
+  } catch(e) { toast('Network error', 'err'); restore(); }
+}
+
+async function closeGame(gid, btn) {
+  if (!confirm('Close this game? No new entries will be accepted.')) return;
+  const restore = _btnLoading(btn, '⏹ Closing…');
+  try {
+    const r = await fetch(`/api/games/${gid}/close`, {method:'POST'});
+    const d = await r.json();
+    if (d.ok) { toast('Game closed!'); await loadGames(); await openGame(gid); }
+    else { toast(d.error || 'Error', 'err'); restore(); }
+  } catch(e) { toast('Network error', 'err'); restore(); }
+}
+
+async function resolveGame(gid, btn) {
+  const priceEl = document.getElementById(`resolve-price-${gid}`);
+  const result_value = priceEl ? priceEl.value : null;
+  if (!confirm('Resolve and distribute credits? This cannot be undone.')) return;
+  const restore = _btnLoading(btn, '✅ Resolving…');
+  try {
+    const r = await fetch(`/api/games/${gid}/resolve`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({result_value})
+    });
+    const d = await r.json();
+    if (d.ok) { toast(`Resolved! ${d.winners} winner(s) credited.`); await loadGames(); await openGame(gid); }
+    else { toast(d.error || 'Error', 'err'); restore(); }
+  } catch(e) { toast('Network error', 'err'); restore(); }
+}
+
+async function deleteGame(gid, btn) {
+  if (!confirm('Delete this draft game?')) return;
+  const restore = _btnLoading(btn, '🗑 Deleting…');
+  try {
+    const r = await fetch(`/api/games/${gid}/delete`, {method:'POST'});
+    const d = await r.json();
+    if (d.ok) {
+      toast('Deleted');
+      _activeGameId = null;
+      document.getElementById('games-main').innerHTML = '<div class="games-empty">Select a game from the list</div>';
+      await loadGames();
+    } else { toast(d.error || 'Error', 'err'); restore(); }
+  } catch(e) { toast('Network error', 'err'); restore(); }
+}
+
+async function loadCredits() {
+  if (_isAdmin) return;
+  const r = await fetch('/api/credits');
+  const d = await r.json();
+  const bal = d.balance ?? 0;
+  const pill = document.getElementById('credits-val');
+  const menu = document.getElementById('credits-balance-menu');
+  const balG = document.getElementById('credits-balance-games');
+  if (pill) pill.textContent = bal;
+  if (menu) menu.textContent = bal;
+  if (balG) balG.textContent = bal;
+}
+
+// ─────────────────────────────────────────────────────────
+// Profile dropdown
+// ─────────────────────────────────────────────────────────
+
+function toggleProfMenu(e) {
+  e.stopPropagation();
+  document.getElementById('prof-menu').classList.toggle('open');
+}
+
+document.addEventListener('click', () => {
+  document.getElementById('prof-menu')?.classList.remove('open');
+});
+
+async function saveMyProfile() {
+  const mobile = (document.getElementById('prof-mobile')?.value || '').trim();
+  const res = await fetch('/api/users/{{ user.id }}/profile', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ mobile })
+  });
+  const d = await res.json();
+  if (d.ok) showToast('Profile saved', 'ok');
+  else showToast(d.error || 'Error saving profile', 'err');
 }
 
 // ─────────────────────────────────────────────────────────
