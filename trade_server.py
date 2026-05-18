@@ -1054,6 +1054,7 @@ def api_profile_save():
         profile = get_user_trading_profile(uid) or {}
         return jsonify(profile=profile)
     data = request.json or {}
+    print(f"[api/profile] POST uid={uid} data={data}", flush=True)
     upsert_user_trading_profile(
         user_id     = uid,
         segment     = data.get("segment", ""),
@@ -1062,6 +1063,8 @@ def api_profile_save():
         focus       = data.get("focus", ""),
         setup_done  = bool(data.get("setup_done", True)),
     )
+    profile = get_user_trading_profile(uid)
+    print(f"[api/profile] saved → {profile}", flush=True)
     return jsonify(ok=True)
 
 

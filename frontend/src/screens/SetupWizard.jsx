@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { saveProfile } from '../api/settings'
+import { saveProfile, getProfile } from '../api/settings'
+import useAuthStore from '../store/authStore'
 import './SetupWizard.css'
 
 const SEGMENTS  = [
@@ -35,6 +36,7 @@ function Chips({ options, value, multi, onChange }) {
 }
 
 export default function SetupWizard({ user }) {
+  const { setUser } = useAuthStore()
   const [step,       setStep]       = useState(1)
   const [segment,    setSegment]    = useState('')
   const [riskType,   setRiskType]   = useState('')
@@ -57,12 +59,20 @@ export default function SetupWizard({ user }) {
 
   async function finish() {
     if (!validateStep3()) return
+    setErr('')
     setSaving(true)
     try {
       const res = await saveProfile({ segment, risk_type: riskType, trader_type: traderType, focus, setup_done: true })
-      if (res.ok === false) { setErr(res.error || 'Failed to save. Please try again.'); return }
-      // Full reload — App.jsx re-initialises with setup_done:true and checks subscription
-      window.location.href = '/app'
+      console.log('[wizard] POST /api/profile →', res)
+      if (!res?.ok) { setErr(res?.error || 'Failed to save. Please try again.'); return }
+      // Verify the save persisted in DB (fail loudly if we can confirm it didn't)
+      const profile = await getProfile()
+      console.log('[wizard] verify GET /api/profile →', profile)
+      if (profile != null && !profile?.setup_done) { setErr('Save did not persist — please try again.'); return }
+      setUser({ ...user, setup_done: true })
+    } catch (e) {
+      console.error('[wizard] finish error:', e)
+      setErr('Unexpected error: ' + e.message)
     } finally {
       setSaving(false)
     }
