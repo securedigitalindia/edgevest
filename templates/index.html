@@ -794,12 +794,11 @@ function renderRecItem(r) {
 
     if (hasPnl) {
       const roiStr = r.margin_required
-        ? (() => { const roi = (totalPnl / r.margin_required) * 100; return `<span style="font-size:11px;color:var(--muted);margin-left:6px">${roi >= 0 ? '+' : ''}${roi.toFixed(1)}% ROI</span>`; })()
+        ? (() => { const roi = (totalPnl / r.margin_required) * 100; return `<span style="font-size:11px;font-weight:600;margin-left:5px;color:${totalPnl>=0?'#16a34a':'#dc2626'}">(${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%)</span>`; })()
         : '';
       pnlBar = `<div class="net-pnl-bar">
-        <span class="net-pnl-label">Realized P&amp;L${r.margin_required ? `<span style="font-weight:400;color:var(--muted)"> · Margin ₹${Math.round(r.margin_required).toLocaleString('en-IN')}</span>` : ''}</span>
-        <span class="net-pnl-value ${totalPnl >= 0 ? 'pnl-pos':'pnl-neg'}">${fmtPnl(totalPnl)}</span>
-        ${roiStr}
+        <span class="net-pnl-label">Realized P&amp;L</span>
+        <span style="display:flex;align-items:center"><span class="net-pnl-value ${totalPnl >= 0 ? 'pnl-pos':'pnl-neg'}">${fmtPnl(totalPnl)}</span>${roiStr}</span>
       </div>`;
     } else { pnlBar = ''; }
     legsHtml = parts.join('');
@@ -912,10 +911,19 @@ function renderRecItem(r) {
     </div>
     <div class="rec-legs">${legsHtml}</div>
     ${r.status === 'open' ? `<div class="net-pnl-bar">
-      <span class="net-pnl-label">Unrealised P&amp;L${r.margin_required ? `<span style="font-weight:400;color:var(--muted)"> · Margin ₹${Math.round(r.margin_required).toLocaleString('en-IN')}</span>` : ''}</span>
-      <span class="net-pnl-value pnl-neu" id="rnet-${r.id}">—</span>
-      ${r.margin_required ? `<span style="font-size:11px;color:var(--muted);margin-left:6px" id="rroi-${r.id}"></span>` : ''}
+      <span class="net-pnl-label">Unrealised P&amp;L</span>
+      <span style="display:flex;align-items:center">
+        <span class="net-pnl-value pnl-neu" id="rnet-${r.id}">—</span>
+        ${r.margin_required ? `<span style="font-size:11px;font-weight:600;margin-left:5px" id="rroi-${r.id}"></span>` : ''}
+      </span>
     </div>` : pnlBar}
+    ${r.margin_required || r.account_count > 0 ? `<div class="net-pnl-bar" style="border-top:none;padding-top:2px">
+      <span class="net-pnl-label" style="color:var(--muted);font-size:11px">
+        ${r.margin_required ? `Margin ₹${Math.round(r.margin_required).toLocaleString('en-IN')}` : ''}
+        ${r.margin_required && r.account_count > 0 ? ' &nbsp;·&nbsp; ' : ''}
+        ${r.account_count > 0 ? `${r.account_count} account${r.account_count > 1 ? 's' : ''}` : ''}
+      </span>
+    </div>` : ''}
     ${adjHistory}
     ${adminFooter}
     ${clientFooter}
@@ -1618,7 +1626,7 @@ async function updatePrices() {
         const roiEl = document.getElementById(`rroi-${r.id}`);
         if (roiEl && r.margin_required) {
           const roi = (rnet / r.margin_required) * 100;
-          roiEl.textContent = `${roi >= 0 ? '+' : ''}${roi.toFixed(1)}% ROI`;
+          roiEl.textContent = `(${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%)`;
           roiEl.style.color = rnet >= 0 ? '#16a34a' : '#dc2626';
         }
       }
