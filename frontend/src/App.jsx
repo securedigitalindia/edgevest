@@ -15,8 +15,14 @@ function AppShell() {
   usePrices()
 
   const { user, ready } = useAuthStore()
-  const [tab, setTab]     = useState('dashboard')
+  const [tab, setTab]       = useState('dashboard')
   const [drawer, setDrawer] = useState(false)
+  const [drawerTab, setDrawerTab] = useState(null)
+
+  function openDrawer(initialTab) {
+    setDrawerTab(initialTab ?? null)
+    setDrawer(true)
+  }
 
   if (!ready) return <div className="empty" style={{marginTop:80}}>Loading…</div>
 
@@ -28,15 +34,11 @@ function AppShell() {
   return (
     <>
       <TickerStrip />
-      <MainNav activeTab={tab} onTabChange={setTab} onOpenDrawer={() => setDrawer(true)} />
-      <SettingsDrawer open={drawer} onClose={() => setDrawer(false)} />
+      <MainNav activeTab={tab} onTabChange={setTab} onOpenDrawer={openDrawer} />
+      <SettingsDrawer open={drawer} onClose={() => setDrawer(false)} initialTab={drawerTab} />
 
-      <div style={{ display: tab === 'dashboard' ? 'block' : 'none' }}>
-        <Dashboard />
-      </div>
-      <div style={{ display: tab === 'games' ? 'block' : 'none' }}>
-        <Games />
-      </div>
+      {tab === 'dashboard' && <Dashboard openDrawer={openDrawer} />}
+      {tab === 'games'     && <Games />}
     </>
   )
 }

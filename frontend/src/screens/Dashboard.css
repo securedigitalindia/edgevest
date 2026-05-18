@@ -1,0 +1,62 @@
+.dash-layout { display:grid; grid-template-columns:480px 1fr; gap:20px; padding:20px 24px; max-width:1400px; }
+@media (max-width:960px) { .dash-layout { grid-template-columns:1fr; } }
+
+/* Tabs (positions panel) */
+.pos-tab { padding:4px 12px; font-size:12px; font-weight:600; cursor:pointer; border:none; background:none; color:var(--muted); border-bottom:2px solid transparent; }
+.pos-tab.active { color:var(--blue); border-bottom-color:var(--blue); }
+
+/* Trade / history table */
+.legs-table { width:100%; border-collapse:collapse; font-size:13px; }
+.legs-table th { font-size:11px; font-weight:600; color:var(--muted); text-align:left; padding:7px 14px; border-bottom:1px solid var(--border); text-transform:uppercase; letter-spacing:.4px; background:#f8fafc; }
+.legs-table td { padding:9px 14px; border-bottom:1px solid #f1f5f9; vertical-align:top; }
+.legs-table tr:last-child td { border-bottom:none; }
+
+.side-buy  { color:var(--green); font-weight:700; }
+.side-sell { color:var(--red);   font-weight:700; }
+.pnl-pos   { color:var(--green); font-weight:600; }
+.pnl-neg   { color:var(--red);   font-weight:600; }
+.pnl-neu   { color:var(--muted); }
+.ltp-cell  { font-weight:600; }
+
+/* Segment chips */
+.seg-chip { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; border:1.5px solid #e2e8f0; background:#fff; color:#64748b; cursor:pointer; transition:all .15s; }
+.seg-chip:hover { border-color:var(--blue); color:var(--blue); }
+.seg-chip.active { background:var(--blue); border-color:var(--blue); color:#fff; }
+
+/* Rec item */
+.rec-item { border:1px solid var(--border); border-radius:8px; margin-bottom:10px; overflow:hidden; background:#fff; }
+.rec-header { padding:10px 14px; background:#f8fafc; border-bottom:1px solid var(--border); }
+.rec-symbol { font-weight:700; font-size:15px; color:#0f172a; }
+.rec-legs   { padding:10px 14px; }
+
+/* Open leg row */
+.rec-leg-row { display:flex; align-items:flex-start; gap:10px; padding:6px 0; border-bottom:1px solid #f8fafc; }
+.rec-leg-row:last-child { border-bottom:none; }
+.rec-leg-name  { flex:1; }
+.rec-leg-sym   { font-size:13px; font-weight:700; color:#1e293b; }
+.rec-leg-contract { font-size:11px; color:var(--muted); }
+.rec-leg-meta  { font-size:12px; color:var(--muted); white-space:nowrap; padding-top:1px; }
+
+/* Exit leg block (exited rec) */
+.exit-block { padding:5px 0; border-bottom:1px solid #f1f5f9; }
+.exit-block:last-child { border-bottom:none; }
+
+/* P&L bar */
+.pnl-bar { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; border-top:1px solid var(--border); background:#f8fafc; font-size:13px; }
+.pnl-bar-lbl { color:var(--muted); font-size:12px; }
+
+/* Leg group header */
+.leg-grp-hdr { font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; padding-bottom:2px; }
+
+/* Push / exit / adj inline forms */
+.inline-action { padding:12px; border-top-width:2px; border-top-style:solid; }
+.inline-action h4 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
+.action-adj   { border-top-color:#e0e7ff; background:#f5f3ff; }
+.action-adj h4  { color:#3730a3; }
+.action-exit  { border-top-color:#fee2e2; background:#fff9f9; }
+.action-exit h4 { color:var(--red); }
+.action-push  { border-top-color:#bfdbfe; background:#f0f7ff; }
+.action-push h4 { color:#1d4ed8; }
+
+/* Pending adj banner */
+.pending-adj-banner { padding:8px 12px; border-top:2px solid #fbbf24; background:#fffbeb; font-size:12px; }

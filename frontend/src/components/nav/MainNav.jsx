@@ -57,7 +57,7 @@ export default function MainNav({ activeTab, onTabChange, onOpenDrawer }) {
                 <span className={`role-chip role-chip-${user.role}`}>{user.role.replace('_',' ').toUpperCase()}</span>
               </div>
               {isClient && <div className="prof-menu-credits">💎 {credits?.balance ?? '—'} credits</div>}
-              <a href="/profile" className="prof-menu-item">Profile</a>
+              <div className="prof-menu-item" style={{cursor:'pointer'}} onClick={() => { setMenuOpen(false); onOpenDrawer('profile') }}>Profile</div>
               <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
               <a href="/logout" className="prof-menu-item">Sign out</a>
             </div>

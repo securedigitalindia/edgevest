@@ -70,3 +70,8 @@ input::placeholder { color: #94a3b8; }
 
 @keyframes pop-in { 0%{transform:scale(.9);opacity:0} 60%{transform:scale(1.04)} 100%{transform:scale(1);opacity:1} }
 .anim-pop { animation: pop-in .2s ease; }
+
+/* Toasts */
+.toast     { padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 16px rgba(0,0,0,.18); min-width: 180px; max-width: 320px; line-height: 1.4; }
+.toast-ok  { background: #1a2e1a; color: #4ade80; border: 1px solid #166534; }
+.toast-err { background: #2e1a1a; color: #f87171; border: 1px solid #991b1b; }

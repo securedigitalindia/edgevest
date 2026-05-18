@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { getSpotPrices } from '../api/prices'
+import { fetchPrices } from '../api/trades'
 import usePriceStore from '../store/priceStore'
 
 const POLL_MS = 5000
@@ -11,8 +11,8 @@ export default function usePrices() {
   useEffect(() => {
     async function poll() {
       try {
-        const data = await getSpotPrices()
-        setSpot(data.spot || {}, false)
+        const data = await fetchPrices([])
+        setSpot(data._spot || {}, false)
       } catch {
         setSpot({}, true)
       }
