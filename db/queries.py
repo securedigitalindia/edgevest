@@ -1352,6 +1352,25 @@ def get_cached_spot(keys: list) -> tuple[dict, str | None]:
 
 
 
+def delete_account_trade(account_trade_id: int) -> None:
+    """Hard-delete an open account trade and all its legs."""
+    conn = get_connection()
+    conn.execute("DELETE FROM account_trade_legs WHERE account_trade_id = ?", (account_trade_id,))
+    conn.execute("DELETE FROM account_trades WHERE id = ? AND status = 'open'", (account_trade_id,))
+    conn.commit()
+    conn.close()
+
+
+def delete_recommendation(trade_id: int) -> None:
+    """Hard-delete an open recommendation, its legs and adjustments."""
+    conn = get_connection()
+    conn.execute("DELETE FROM trade_legs WHERE trade_id = ?", (trade_id,))
+    conn.execute("DELETE FROM trade_adjustments WHERE trade_id = ?", (trade_id,))
+    conn.execute("DELETE FROM recommended_trades WHERE id = ? AND status = 'open'", (trade_id,))
+    conn.commit()
+    conn.close()
+
+
 def get_open_trade_ikeys() -> list[str]:
     """All distinct instrument_keys currently held in open recommended + account trades."""
     conn = get_connection()

@@ -608,21 +608,22 @@ def api_account_trade_adjust(at_id):
 @app.route("/api/account-trades/<int:at_id>/exit", methods=["POST"])
 @require_login
 def api_account_trade_exit(at_id):
-    from db.queries import get_open_account_trades
+    from db.queries import get_open_account_trades, get_accounts_for_user
     data   = request.json or {}
     prices = data.get("prices", [])
     note   = data.get("note", "")
     user   = current_user()
 
+    if is_admin():
+        return jsonify(ok=False, error="Admins cannot exit client trades"), 403
+
     if not prices:
         return jsonify(ok=False, error="prices are required"), 400
 
-    if user["role"] == "client":
-        from db.queries import get_accounts_for_user
-        own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
-        trade   = next((t for t in get_open_account_trades() if t["id"] == at_id), None)
-        if not trade or trade["account_id"] not in own_ids:
-            return jsonify(ok=False, error="Forbidden — not your trade"), 403
+    own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
+    trade   = next((t for t in get_open_account_trades() if t["id"] == at_id), None)
+    if not trade or trade["account_id"] not in own_ids:
+        return jsonify(ok=False, error="Forbidden — not your trade"), 403
 
     try:
         from live.manual_trade import close_account_trade
@@ -630,6 +631,37 @@ def api_account_trade_exit(at_id):
         return jsonify(ok=True)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 400
+
+
+@app.route("/api/account-trades/<int:at_id>/delete", methods=["POST"])
+@require_login
+def api_account_trade_delete(at_id):
+    from db.queries import get_open_account_trades, get_accounts_for_user, delete_account_trade
+    user = current_user()
+
+    if is_admin():
+        return jsonify(ok=False, error="Admins cannot delete client trades"), 403
+
+    own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
+    trade   = next((t for t in get_open_account_trades() if t["id"] == at_id), None)
+    if not trade or trade["account_id"] not in own_ids:
+        return jsonify(ok=False, error="Forbidden — not your trade"), 403
+
+    delete_account_trade(at_id)
+    return jsonify(ok=True)
+
+
+@app.route("/api/recommendations/<int:rec_id>/delete", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_recommendation_delete(rec_id):
+    from db.queries import get_recommendation, delete_recommendation
+    rec = get_recommendation(rec_id)
+    if not rec:
+        return jsonify(ok=False, error="Not found"), 404
+    if rec["status"] != "open":
+        return jsonify(ok=False, error="Only open recommendations can be deleted"), 400
+    delete_recommendation(rec_id)
+    return jsonify(ok=True)
 
 
 @app.route("/api/account-trades/history")

@@ -843,6 +843,7 @@ function renderRecItem(r) {
     <div class="rec-footer">
       <button class="btn btn-primary btn-sm" onclick="toggleAdjForm(${r.id})">Adjust</button>
       <button class="btn btn-danger btn-sm" onclick="toggleRecExit(${r.id})">Exit</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:#fca5a5" onclick="deleteRec(${r.id})">Delete</button>
     </div>
     <div class="adj-form" id="adjform-${r.id}">
       ${renderAdjForm(r)}
@@ -1222,7 +1223,8 @@ function renderTradeCard(t) {
     </div>
     ${pendingSection}
     <div class="trade-footer">
-      <button class="btn btn-danger btn-sm" onclick="toggleExit(${t.id})">Exit Trade</button>
+      ${!_isAdmin ? `<button class="btn btn-danger btn-sm" onclick="toggleExit(${t.id})">Exit Trade</button>` : ''}
+      ${!_isAdmin ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:#fca5a5" onclick="deleteTrade(${t.id})">Delete</button>` : ''}
     </div>
     <div class="exit-form" id="xform-${t.id}">
       <h4>Exit Trade</h4>
@@ -1327,6 +1329,26 @@ async function submitExit(id, legCount) {
     } else {
       showToast(data.error || 'Exit failed', 'err');
     }
+  } catch(e) { showToast('Network error', 'err'); }
+}
+
+async function deleteTrade(id) {
+  if (!confirm('Delete this trade? This cannot be undone.')) return;
+  try {
+    const res  = await fetch(`/api/account-trades/${id}/delete`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) { showToast('Trade deleted ✓', 'ok'); loadAccountTrades(); }
+    else showToast(data.error || 'Delete failed', 'err');
+  } catch(e) { showToast('Network error', 'err'); }
+}
+
+async function deleteRec(id) {
+  if (!confirm('Delete this recommendation? This cannot be undone.')) return;
+  try {
+    const res  = await fetch(`/api/recommendations/${id}/delete`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) { showToast('Recommendation deleted ✓', 'ok'); loadRecommendations(); }
+    else showToast(data.error || 'Delete failed', 'err');
   } catch(e) { showToast('Network error', 'err'); }
 }
 
