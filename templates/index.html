@@ -1226,7 +1226,7 @@ function renderTradeCard(t) {
       ${!_isAdmin ? `<button class="btn btn-danger btn-sm" onclick="toggleExit(${t.id})">Exit Trade</button>` : ''}
       ${!_isAdmin ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:#fca5a5" onclick="deleteTrade(${t.id})">Delete</button>` : ''}
     </div>
-    <div class="exit-form" id="xform-${t.id}">
+    ${!_isAdmin ? `<div class="exit-form" id="xform-${t.id}">
       <h4>Exit Trade</h4>
       ${exitInputs}
       <div class="exit-form-footer">
@@ -1237,7 +1237,7 @@ function renderTradeCard(t) {
                 onclick="submitExit(${t.id},${(t.current_legs || t.legs).length})">Confirm Exit</button>
         <button class="btn btn-ghost btn-sm" onclick="toggleExit(${t.id})">Cancel</button>
       </div>
-    </div>
+    </div>` : ''}
   </div>`;
 }
 
