@@ -1231,10 +1231,10 @@ function renderTradeCard(t) {
       <span class="net-pnl-value pnl-neu" id="net-${t.id}">—</span>
     </div>
     ${pendingSection}
-    <div class="trade-footer">
-      ${!_isAdmin ? `<button class="btn btn-danger btn-sm" onclick="toggleExit(${t.id})">Exit Trade</button>` : ''}
-      ${!_isAdmin ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:#fca5a5" onclick="deleteTrade(${t.id})">Delete</button>` : ''}
-    </div>
+    ${!_isAdmin ? `<div class="trade-footer">
+      <button class="btn btn-danger btn-sm" onclick="toggleExit(${t.id})">Exit Trade</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:#fca5a5" onclick="deleteTrade(${t.id})">Delete</button>
+    </div>` : ''}
     ${!_isAdmin ? `<div class="exit-form" id="xform-${t.id}">
       <h4>Exit Trade</h4>
       ${exitInputs}
