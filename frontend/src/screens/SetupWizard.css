@@ -1,3 +1,5 @@
+/* ─── Base (desktop) ─────────────────────────────────────── */
+
 .wiz-overlay {
   min-height: 100dvh;
   background: #f8fafc;
@@ -6,6 +8,9 @@
   align-items: center;
   padding: 40px 16px 60px;
 }
+
+/* Mobile topbar hidden on desktop */
+.wiz-topbar { display: none; }
 
 .wiz-brand {
   font-size: 18px;
@@ -26,7 +31,7 @@
   box-shadow: 0 4px 24px rgba(0,0,0,.07);
 }
 
-/* Progress */
+/* Progress bar */
 .wiz-progress {
   height: 3px;
   background: #e2e8f0;
@@ -41,7 +46,7 @@
   transition: width 0.35s cubic-bezier(.4,0,.2,1);
 }
 
-/* Step content */
+/* Step slide animations */
 @keyframes wiz-slide-fwd {
   from { opacity: 0; transform: translateX(22px); }
   to   { opacity: 1; transform: translateX(0); }
@@ -53,6 +58,7 @@
 .wiz-step-fwd { animation: wiz-slide-fwd 0.22s ease; }
 .wiz-step-bwd { animation: wiz-slide-bwd 0.22s ease; }
 
+/* Step text */
 .wiz-step-lbl {
   font-size: 11px;
   font-weight: 700;
@@ -101,7 +107,7 @@
 .wiz-field-lbl:first-of-type { margin-top: 0; }
 .wiz-hint { font-size: 11px; color: #94a3b8; font-weight: 500; text-transform: none; letter-spacing: 0; }
 
-/* Chips */
+/* Chips — desktop: pill style */
 .wiz-chips {
   display: flex;
   flex-wrap: wrap;
@@ -170,74 +176,184 @@
 }
 .wiz-btn-ghost:hover { border-color: #94a3b8; color: #334155; }
 
+
+/* ─── Mobile ≤ 600px ─────────────────────────────────────── */
 @media (max-width: 600px) {
-  /* Full-screen native feel — no floating card */
+
+  /* Full-screen white layout */
   .wiz-overlay {
     padding: 0;
     background: #fff;
     align-items: stretch;
   }
 
-  .wiz-brand {
-    padding: 28px 20px 0;
+  /* Top nav bar */
+  .wiz-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: env(safe-area-inset-top, 0px) 16px 0;
+    padding-top: max(env(safe-area-inset-top, 0px), 12px);
+    padding-bottom: 10px;
+  }
+  .wiz-back-btn {
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: none;
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+    color: #0f172a;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-family: inherit;
+  }
+  .wiz-topbar .wiz-progress {
+    flex: 1;
     margin-bottom: 0;
-    font-size: 17px;
+  }
+  .wiz-topbar-spacer {
+    width: 36px;
+    flex-shrink: 0;
   }
 
+  /* Brand: smaller, below topbar */
+  .wiz-brand {
+    padding: 8px 20px 0;
+    margin-bottom: 0;
+    font-size: 15px;
+  }
+
+  /* Card: full-screen, no visual card chrome */
   .wiz-card {
     border: none;
     border-radius: 0;
     box-shadow: none;
-    padding: 24px 20px;
-    padding-bottom: calc(20px + env(safe-area-inset-bottom, 16px));
+    padding: 16px 20px 0;
     flex: 1;
     display: flex;
     flex-direction: column;
+    overflow-y: auto;
   }
 
-  /* Progress bar sits right below the brand on mobile */
-  .wiz-progress {
-    margin-bottom: 24px;
-  }
+  /* Hide desktop progress bar (topbar has it) */
+  .wiz-progress-card { display: none; }
 
-  /* Step fills the card so actions push to bottom */
+  /* Step fills the card height */
   .wiz-step {
     flex: 1;
     display: flex;
     flex-direction: column;
   }
 
+  .wiz-step-lbl { margin-bottom: 6px; }
+
   .wiz-card h2 {
-    font-size: 20px;
+    font-size: 24px;
+    margin-bottom: 10px;
   }
 
   .wiz-desc {
-    font-size: 13px;
+    font-size: 14px;
+    line-height: 1.55;
     margin-bottom: 20px;
   }
 
-  /* Bigger tap targets for chips */
-  .wiz-chip {
-    padding: 10px 16px;
-    font-size: 14px;
+  /* Identity block: centered card style */
+  .wiz-identity {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 20px 16px;
+    gap: 10px;
+    border-radius: 14px;
   }
+  .wiz-name  { font-size: 16px; }
+  .wiz-email { font-size: 13px; }
+
+  /* Chips: full-width rows with radio/checkbox indicator */
+  .wiz-chips {
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 0;
+  }
+  .wiz-chip {
+    width: 100%;
+    border-radius: 12px;
+    padding: 15px 16px;
+    font-size: 15px;
+    font-weight: 500;
+    border-width: 1.5px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  /* Radio circle on the right */
+  .wiz-chip::after {
+    content: '';
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid #d1d5db;
+    flex-shrink: 0;
+    background: #fff;
+    transition: all .15s;
+  }
+  /* Multi-select: square checkbox */
+  [data-multi] .wiz-chip::after { border-radius: 5px; }
+
+  .wiz-chip.active {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 600;
+  }
+  .wiz-chip.active::after {
+    border-color: #3b82f6;
+    background: #3b82f6
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M5 12l4 4L19 7' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / 13px no-repeat;
+  }
+
+  /* No hover effect on touch */
+  .wiz-chip:hover { border-color: inherit; color: inherit; }
+  .wiz-chip.active:hover { border-color: #3b82f6; color: #1d4ed8; }
 
   /* Field label spacing */
   .wiz-field-lbl {
-    margin-top: 20px;
+    margin-top: 22px;
+    font-size: 11px;
+    letter-spacing: .5px;
   }
 
-  /* Push actions to bottom of screen */
+  /* Error message */
+  .wiz-err {
+    font-size: 13px;
+    margin-top: 14px;
+  }
+
+  /* Actions: sticky at bottom via margin-top:auto + sticky padding */
   .wiz-actions {
     margin-top: auto;
-    padding-top: 24px;
+    padding: 20px 0 calc(20px + env(safe-area-inset-bottom, 0px));
+    position: sticky;
+    bottom: 0;
+    background: #fff;
   }
 
-  /* Taller buttons for touch */
-  .wiz-btn-primary,
-  .wiz-btn-ghost {
-    padding: 14px 20px;
-    font-size: 15px;
-    border-radius: 10px;
+  /* Hide desktop back button; back is in topbar */
+  .wiz-desktop-back { display: none; }
+
+  /* Primary button: full-width, tall */
+  .wiz-btn-primary {
+    padding: 16px 20px;
+    font-size: 16px;
+    border-radius: 12px;
+    letter-spacing: 0.1px;
   }
 }

@@ -25,7 +25,7 @@ function Chips({ options, value, multi, onChange }) {
     }
   }
   return (
-    <div className="wiz-chips">
+    <div className="wiz-chips" data-multi={multi ? '' : undefined}>
       {options.map(([v, lbl]) => (
         <div key={v} className={`wiz-chip${selected.includes(v) ? ' active' : ''}`} onClick={() => toggle(v)}>
           {lbl}
@@ -49,7 +49,6 @@ export default function SetupWizard({ user }) {
   function nextStep() { setErr(''); setDir('fwd'); setStep(s => s + 1) }
   function prevStep() { setErr(''); setDir('bwd'); setStep(s => s - 1) }
 
-  // Enter key clicks the primary action button of the current step
   useEffect(() => {
     function onKey(e) {
       if (e.key !== 'Enter') return
@@ -85,16 +84,34 @@ export default function SetupWizard({ user }) {
     }
   }
 
+  const pct        = `${(step / 3) * 100}%`
   const totalSteps = 3
 
   return (
     <div className="wiz-overlay">
+
+      {/* Mobile-only topbar: back chevron + progress */}
+      <div className="wiz-topbar">
+        <button
+          className="wiz-back-btn"
+          onClick={prevStep}
+          aria-label="Back"
+          style={{ visibility: step === 1 ? 'hidden' : 'visible' }}
+        >
+          ‹
+        </button>
+        <div className="wiz-progress">
+          <div className="wiz-progress-fill" style={{ width: pct }} />
+        </div>
+        <div className="wiz-topbar-spacer" />
+      </div>
+
       <div className="wiz-brand">Dri<span>sh</span>ti</div>
 
       <div className="wiz-card">
-        {/* Progress bar */}
-        <div className="wiz-progress">
-          <div className="wiz-progress-fill" style={{ width: `${(step / 3) * 100}%` }} />
+        {/* Desktop-only progress bar */}
+        <div className="wiz-progress wiz-progress-card">
+          <div className="wiz-progress-fill" style={{ width: pct }} />
         </div>
 
         {/* Step 1 — Welcome */}
@@ -133,7 +150,7 @@ export default function SetupWizard({ user }) {
 
             {err && <div className="wiz-err">{err}</div>}
             <div className="wiz-actions">
-              <button className="wiz-btn-ghost" onClick={prevStep}>← Back</button>
+              <button className="wiz-btn-ghost wiz-desktop-back" onClick={prevStep}>← Back</button>
               <button className="wiz-btn-primary" onClick={() => { if (validateStep2()) nextStep() }}>Next →</button>
             </div>
           </div>
@@ -157,7 +174,7 @@ export default function SetupWizard({ user }) {
 
             {err && <div className="wiz-err">{err}</div>}
             <div className="wiz-actions">
-              <button className="wiz-btn-ghost" onClick={prevStep}>← Back</button>
+              <button className="wiz-btn-ghost wiz-desktop-back" onClick={prevStep}>← Back</button>
               <button className="wiz-btn-primary" onClick={finish} disabled={saving}>
                 {saving ? 'Saving…' : 'Finish setup'}
               </button>
