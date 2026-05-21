@@ -19,7 +19,7 @@ from flask import (Flask, request, jsonify,
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
 
-_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
+_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "edgevest-fe", "dist")
 
 app = Flask(__name__, static_folder=_DIST, static_url_path="/assets")
 app.secret_key = os.environ["SECRET_KEY"]
@@ -989,7 +989,7 @@ def api_spot():
 
 
 # ─────────────────────────────────────────────────────────
-# React frontend — serve build for all non-API routes
+# edgevest-fe — serve React build for all non-API routes
 # ─────────────────────────────────────────────────────────
 
 @app.route("/", defaults={"path": ""})
