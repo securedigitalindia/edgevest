@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useGames, useCreateGame, useUpdateGame } from '../hooks/useGames'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getCredits, getPlans, subscribeWithCredits } from '../api/games'
+import { useQuery } from '@tanstack/react-query'
+import { getCredits } from '../api/games'
 import useAuthStore from '../store/authStore'
 import GameDetail from '../components/games/GameDetail'
 import { useToast } from '../components/common/Toast'
@@ -201,69 +201,6 @@ function GameForm({ existing, onDone }) {
   )
 }
 
-// ─── Gem store (subscribe with credits) ──────────────────────────────────────
-
-function StorePanel({ credits }) {
-  const toast = useToast()
-  const qc    = useQueryClient()
-  const { data: plans = [] } = useQuery({ queryKey: ['plans'], queryFn: getPlans })
-
-  const buy = useMutation({
-    mutationFn: subscribeWithCredits,
-    onSuccess: res => {
-      if (res.ok) {
-        toast('Subscription activated! 🎉', 'ok')
-        qc.invalidateQueries({ queryKey: ['credits'] })
-        // Force a full page reload so App re-fetches /api/me and subscription_valid updates
-        setTimeout(() => window.location.reload(), 800)
-      } else {
-        toast(res.error || 'Failed', 'err')
-      }
-    },
-    onError: () => toast('Something went wrong', 'err'),
-  })
-
-  const balance = credits?.balance ?? 0
-
-  return (
-    <div style={{margin:'12px 0 4px',padding:'14px',background:'linear-gradient(135deg,#1e1b4b,#312e81)',borderRadius:12,color:'#fff'}}>
-      <div style={{fontSize:12,fontWeight:700,textTransform:'uppercase',letterSpacing:.6,color:'#a5b4fc',marginBottom:10}}>
-        💎 Gem Store
-      </div>
-      <div style={{fontSize:13,color:'#c7d2fe',marginBottom:12}}>
-        Your balance: <span style={{fontWeight:700,color:'#fbbf24',fontSize:15}}>💎 {balance}</span>
-      </div>
-      {plans.length === 0 && (
-        <div style={{fontSize:12,color:'#818cf8'}}>No plans available right now.</div>
-      )}
-      {plans.map(plan => {
-        const canAfford = balance >= plan.gem_cost
-        return (
-          <div key={plan.id} style={{background:'rgba(255,255,255,.08)',borderRadius:8,padding:'10px 12px',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
-            <div>
-              <div style={{fontWeight:700,fontSize:13}}>{plan.name}</div>
-              <div style={{fontSize:11,color:'#a5b4fc',marginTop:2}}>{plan.duration_days} days · {plan.description}</div>
-            </div>
-            <button
-              disabled={!canAfford || buy.isPending}
-              onClick={() => buy.mutate(plan.id)}
-              style={{
-                flexShrink:0, padding:'6px 12px', borderRadius:6, border:'none',
-                background: canAfford ? '#fbbf24' : '#374151',
-                color: canAfford ? '#1c1917' : '#9ca3af',
-                fontWeight:700, fontSize:12, cursor: canAfford ? 'pointer' : 'not-allowed',
-                whiteSpace:'nowrap',
-              }}
-            >
-              {plan.gem_cost > 0 ? `💎 ${plan.gem_cost}` : 'Free'}
-            </button>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function Games({ subscribed }) {
@@ -310,8 +247,6 @@ export default function Games({ subscribed }) {
             </button>
           ))}
         </div>
-
-        {isClient && !subscribed && <StorePanel credits={credits} />}
 
         <div className="games-list-scroll">
           {isLoading && <div className="games-empty">Loading games…</div>}

@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useRecs, useRecPrices, useCreateRec, useDeleteRec, useExitRec, useAdjustRec, useCreateAccountTrade,
          useTrades, useTradeHistory, useExitTrade, useApplyAdjTrade, useDeleteTrade,
          useAccounts } from '../hooks/useTrades'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { getCredits, getPlans, subscribeWithCredits } from '../api/games'
 import useAuthStore from '../store/authStore'
 import { searchInstruments } from '../api/trades'
 import { useToast } from '../components/common/Toast'
@@ -952,16 +954,88 @@ function TradesPanel({ isAdmin }) {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 function NoSubscriptionGate({ onGoGames }) {
+  const toast = useToast()
+  const qc    = useQueryClient()
+  const { data: credits } = useQuery({ queryKey: ['credits'], queryFn: getCredits, refetchInterval: 15000 })
+  const { data: plans = [] } = useQuery({ queryKey: ['plans'], queryFn: getPlans })
+
+  const buy = useMutation({
+    mutationFn: subscribeWithCredits,
+    onSuccess: res => {
+      if (res.ok) {
+        toast('Subscription activated! 🎉', 'ok')
+        qc.invalidateQueries({ queryKey: ['credits'] })
+        setTimeout(() => window.location.reload(), 800)
+      } else {
+        toast(res.error || 'Failed', 'err')
+      }
+    },
+    onError: () => toast('Something went wrong', 'err'),
+  })
+
+  const balance = credits?.balance ?? 0
+  const cheapest = plans.length ? Math.min(...plans.map(p => p.gem_cost).filter(c => c > 0)) : null
+  const canUnlock = cheapest != null && balance >= cheapest
+
   return (
     <div style={{minHeight:'60vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'32px 16px'}}>
-      <div style={{maxWidth:420,textAlign:'center'}}>
-        <div style={{fontSize:48,marginBottom:16}}>🔒</div>
-        <div style={{fontSize:20,fontWeight:700,color:'#0f172a',marginBottom:8}}>No active subscription</div>
-        <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.6,marginBottom:24}}>
-          Play games to earn 💎 gems, then use them to unlock access to live market signals and trade recommendations.
+      <div style={{maxWidth:460,width:'100%'}}>
+
+        {/* Header */}
+        <div style={{textAlign:'center',marginBottom:28}}>
+          <div style={{fontSize:44,marginBottom:12}}>🔒</div>
+          <div style={{fontSize:20,fontWeight:700,color:'#0f172a',marginBottom:8}}>No active subscription</div>
+          <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.6}}>
+            Play games to earn 💎 gems, then redeem them below to unlock live signals.
+          </div>
         </div>
-        <button className="btn btn-primary" style={{fontSize:14,padding:'10px 24px'}} onClick={onGoGames}>
-          Go to Games →
+
+        {/* Gem balance */}
+        <div style={{background:'#fefce8',border:'1px solid #fde68a',borderRadius:10,padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+          <span style={{fontSize:13,color:'#92400e',fontWeight:600}}>Your gem balance</span>
+          <span style={{fontSize:20,fontWeight:800,color:'#d97706'}}>💎 {balance}</span>
+        </div>
+
+        {/* Plans */}
+        {plans.map(plan => {
+          const afford = balance >= plan.gem_cost
+          const need   = plan.gem_cost - balance
+          return (
+            <div key={plan.id} style={{
+              border:`1.5px solid ${afford ? '#6366f1' : 'var(--border)'}`,
+              borderRadius:10, padding:'14px 16px', marginBottom:10,
+              background: afford ? '#f5f3ff' : '#fff',
+              display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+            }}>
+              <div>
+                <div style={{fontWeight:700,fontSize:14,color:'#1e293b'}}>{plan.name}</div>
+                <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{plan.duration_days} days access · {plan.description}</div>
+                {!afford && <div style={{fontSize:11,color:'#f59e0b',marginTop:4,fontWeight:600}}>Need {need} more gems — play games to earn!</div>}
+              </div>
+              <button
+                disabled={!afford || buy.isPending}
+                onClick={() => buy.mutate(plan.id)}
+                style={{
+                  flexShrink:0, padding:'8px 16px', borderRadius:7, border:'none',
+                  background: afford ? '#6366f1' : '#e2e8f0',
+                  color: afford ? '#fff' : '#94a3b8',
+                  fontWeight:700, fontSize:13,
+                  cursor: afford ? 'pointer' : 'not-allowed', whiteSpace:'nowrap',
+                }}
+              >
+                {afford ? `Redeem 💎 ${plan.gem_cost}` : `💎 ${plan.gem_cost}`}
+              </button>
+            </div>
+          )
+        })}
+
+        {/* CTA to Games */}
+        <button
+          className="btn btn-ghost"
+          style={{width:'100%',justifyContent:'center',marginTop:8,fontSize:13}}
+          onClick={onGoGames}
+        >
+          {canUnlock ? 'Play more games →' : 'Go earn gems in Games →'}
         </button>
       </div>
     </div>
