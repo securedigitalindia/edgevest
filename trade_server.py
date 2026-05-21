@@ -32,6 +32,8 @@ def _close_db(exc):
     if db is not None:
         db.close()
 PORT = 5555
+# In dev, set FRONTEND_URL=http://localhost:5173 so post-auth redirects go to Vite
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "")
 
 oauth = OAuth(app)
 google = oauth.register(
@@ -141,18 +143,21 @@ def refresh_session():
 
 @app.route("/login")
 def login():
-    return redirect("/")
+    return redirect(FRONTEND_URL or "/")
 
 @app.route("/auth/google")
 def auth_google():
-    redirect_uri = url_for("auth_callback", _external=True)
+    if FRONTEND_URL:
+        redirect_uri = FRONTEND_URL + "/auth/callback"
+    else:
+        redirect_uri = url_for("auth_callback", _external=True)
     return google.authorize_redirect(redirect_uri)
 
 @app.route("/auth/callback")
 def auth_callback():
     token    = google.authorize_access_token()
     userinfo = token.get("userinfo") or google.userinfo()
-    from db.queries import upsert_user, get_user_trading_profile
+    from db.queries import upsert_user
     user = upsert_user(
         google_id = userinfo["sub"],
         email     = userinfo["email"],
@@ -160,17 +165,17 @@ def auth_callback():
         picture   = userinfo.get("picture", ""),
     )
     if not user["active"]:
-        return redirect("/")
+        return redirect(FRONTEND_URL or "/")
     session["user"] = user
     if user["role"] == "client":
         from db.queries import expire_stale_subscriptions
         expire_stale_subscriptions()
-    return redirect("/")
+    return redirect(FRONTEND_URL or "/")
 
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect("/")
+    return redirect(FRONTEND_URL or "/")
 
 
 # ─────────────────────────────────────────────────────────
@@ -180,10 +185,16 @@ def logout():
 @app.route("/api/me")
 @require_login
 def api_me():
-    from db.queries import get_user_trading_profile, is_subscription_valid
-    user    = dict(current_user())
+    from db.queries import get_user_by_google_id, get_user_trading_profile, is_subscription_valid
+    user = dict(current_user())
+    # Verify user still exists in DB (handles deleted-account + stale session)
+    db_user = get_user_by_google_id(user.get("google_id", ""))
+    if not db_user:
+        session.clear()
+        return jsonify(error="Unauthorized"), 401
+    user    = db_user
     profile = get_user_trading_profile(user["id"])
-    user["setup_done"]        = bool(profile and profile.get("setup_done"))
+    user["setup_done"]         = bool(profile and profile.get("setup_done"))
     user["subscription_valid"] = is_subscription_valid(user["id"]) if user.get("role") == "client" else True
     return jsonify(user=user)
 

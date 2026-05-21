@@ -9,6 +9,7 @@ import { ToastProvider } from './components/common/Toast'
 import Dashboard from './screens/Dashboard'
 import Games from './screens/Games'
 import SetupWizard from './screens/SetupWizard'
+import Landing from './screens/Landing'
 import './index.css'
 
 function AppShell() {
@@ -28,8 +29,7 @@ function AppShell() {
   if (!ready) return <div className="empty" style={{marginTop:80}}>Loading…</div>
 
   if (!user) {
-    window.location.href = '/auth/google'
-    return null
+    return <Landing />
   }
 
   if (!user.setup_done) {
