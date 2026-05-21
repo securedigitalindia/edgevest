@@ -582,10 +582,10 @@ def get_active_plans() -> list[dict]:
     conn = get_connection()
     try:
         rows = conn.execute("""
-            SELECT id, name, description, price, duration_days, active, created_at
+            SELECT id, name, description, price, gem_cost, duration_days, active, created_at
             FROM subscription_plans WHERE active = 1 ORDER BY price ASC
         """).fetchall()
-        cols = ["id", "name", "description", "price", "duration_days", "active", "created_at"]
+        cols = ["id", "name", "description", "price", "gem_cost", "duration_days", "active", "created_at"]
         return [dict(zip(cols, r)) for r in rows]
     finally:
         conn.close()
@@ -595,10 +595,10 @@ def get_all_plans() -> list[dict]:
     conn = get_connection()
     try:
         rows = conn.execute("""
-            SELECT id, name, description, price, duration_days, active, created_at
+            SELECT id, name, description, price, gem_cost, duration_days, active, created_at
             FROM subscription_plans ORDER BY id DESC
         """).fetchall()
-        cols = ["id", "name", "description", "price", "duration_days", "active", "created_at"]
+        cols = ["id", "name", "description", "price", "gem_cost", "duration_days", "active", "created_at"]
         return [dict(zip(cols, r)) for r in rows]
     finally:
         conn.close()
@@ -1817,3 +1817,59 @@ def get_credit_history(user_id: int, limit: int = 30) -> list[dict]:
     """, (user_id, limit)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def subscribe_with_credits(user_id: int, plan_id: int) -> dict:
+    """
+    Redeem gems to activate a subscription. Returns {ok, balance, error}.
+    Atomic: deduct credits and activate subscription in one transaction.
+    """
+    conn = get_connection()
+    try:
+        plan = conn.execute(
+            "SELECT id, name, gem_cost, duration_days, active FROM subscription_plans WHERE id = ?",
+            (plan_id,)
+        ).fetchone()
+        if not plan or not plan["active"]:
+            return {"ok": False, "error": "Invalid or inactive plan"}
+        gem_cost = plan["gem_cost"]
+        if gem_cost <= 0:
+            return {"ok": False, "error": "This plan cannot be purchased with gems"}
+
+        row = conn.execute(
+            "SELECT balance FROM user_credits WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        balance = row["balance"] if row else 0
+        if balance < gem_cost:
+            return {"ok": False, "error": f"Not enough gems — need {gem_cost}, have {balance}"}
+
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        today   = datetime.now(timezone.utc).date()
+        from datetime import timedelta
+        end_date = (today + timedelta(days=plan["duration_days"])).isoformat()
+
+        # Deduct credits
+        conn.execute("""
+            INSERT INTO credit_transactions (user_id, amount, reason, ref_id, note, created_at)
+            VALUES (?, ?, 'subscription_purchase', ?, ?, ?)
+        """, (user_id, -gem_cost, str(plan_id), plan["name"], now_str))
+        conn.execute("""
+            UPDATE user_credits SET balance = balance - ?, updated_at = ?
+            WHERE user_id = ?
+        """, (gem_cost, now_str, user_id))
+
+        # Activate subscription
+        conn.execute("UPDATE subscriptions SET status='expired' WHERE user_id=? AND status='active'",
+                     (user_id,))
+        conn.execute("""
+            INSERT INTO subscriptions (user_id, plan_id, status, start_date, end_date, amount_paid, created_at)
+            VALUES (?, ?, 'active', ?, ?, 0, ?)
+        """, (user_id, plan_id, today.isoformat(), end_date, now_str))
+
+        conn.commit()
+        new_balance = conn.execute(
+            "SELECT balance FROM user_credits WHERE user_id = ?", (user_id,)
+        ).fetchone()["balance"]
+        return {"ok": True, "balance": new_balance}
+    finally:
+        conn.close()

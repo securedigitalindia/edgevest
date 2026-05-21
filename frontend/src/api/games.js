@@ -11,4 +11,6 @@ export const deleteGame      = id        => api.post(`/games/${id}/delete`).then
 export const submitEntry     = (id, data)=> api.post(`/games/${id}/enter`, data).then(r => r.data)
 export const getPortfolio    = id        => api.get(`/games/${id}/portfolio`).then(r => r.data)
 export const submitVirtualTrade = (id, data) => api.post(`/games/${id}/trade`, data).then(r => r.data)
-export const getCredits      = ()        => api.get('/credits').then(r => r.data)
+export const getCredits            = ()       => api.get('/credits').then(r => r.data)
+export const getPlans              = ()       => api.get('/plans').then(r => r.data.plans)
+export const subscribeWithCredits  = plan_id  => api.post('/subscribe-with-credits', { plan_id }).then(r => r.data)

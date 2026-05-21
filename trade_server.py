@@ -1045,6 +1045,18 @@ def api_subscribe():
     return jsonify(ok=True)
 
 
+@app.route("/api/subscribe-with-credits", methods=["POST"])
+@require_login
+def api_subscribe_with_credits():
+    data    = request.json or {}
+    plan_id = data.get("plan_id")
+    if not plan_id:
+        return jsonify(ok=False, error="plan_id required"), 400
+    from db.queries import subscribe_with_credits
+    result = subscribe_with_credits(current_user()["id"], int(plan_id))
+    return jsonify(result), (200 if result["ok"] else 400)
+
+
 @app.route("/api/profile", methods=["GET", "POST"])
 @require_login
 def api_profile_save():

@@ -36,19 +36,16 @@ function AppShell() {
     return <SetupWizard user={user} />
   }
 
-  if (user.subscription_valid === false) {
-    window.location.href = '/subscribe'
-    return null
-  }
+  const subscribed = user.subscription_valid !== false
 
   return (
     <>
       <TickerStrip />
-      <MainNav activeTab={tab} onTabChange={setTab} onOpenDrawer={openDrawer} />
+      <MainNav activeTab={tab} onTabChange={setTab} onOpenDrawer={openDrawer} subscribed={subscribed} />
       <SettingsDrawer open={drawer} onClose={() => setDrawer(false)} initialTab={drawerTab} />
 
-      {tab === 'dashboard' && <Dashboard openDrawer={openDrawer} />}
-      {tab === 'games'     && <Games />}
+      {tab === 'dashboard' && <Dashboard openDrawer={openDrawer} subscribed={subscribed} onGoGames={() => setTab('games')} />}
+      {tab === 'games'     && <Games subscribed={subscribed} />}
     </>
   )
 }

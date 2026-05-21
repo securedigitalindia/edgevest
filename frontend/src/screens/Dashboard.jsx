@@ -951,9 +951,30 @@ function TradesPanel({ isAdmin }) {
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
-export default function Dashboard({ openDrawer }) {
+function NoSubscriptionGate({ onGoGames }) {
+  return (
+    <div style={{minHeight:'60vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'32px 16px'}}>
+      <div style={{maxWidth:420,textAlign:'center'}}>
+        <div style={{fontSize:48,marginBottom:16}}>🔒</div>
+        <div style={{fontSize:20,fontWeight:700,color:'#0f172a',marginBottom:8}}>No active subscription</div>
+        <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.6,marginBottom:24}}>
+          Play games to earn 💎 gems, then use them to unlock access to live market signals and trade recommendations.
+        </div>
+        <button className="btn btn-primary" style={{fontSize:14,padding:'10px 24px'}} onClick={onGoGames}>
+          Go to Games →
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default function Dashboard({ openDrawer, subscribed, onGoGames }) {
   const user    = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
+
+  if (!isAdmin && !subscribed) {
+    return <NoSubscriptionGate onGoGames={onGoGames} />
+  }
 
   return (
     <div className="dash-layout">
