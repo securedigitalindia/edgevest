@@ -578,7 +578,7 @@ function RecsPanel({ isAdmin, openDrawer }) {
             <div style={{fontSize:28,marginBottom:10}}>🏦</div>
             <div style={{fontSize:14,fontWeight:700,marginBottom:6}}>Set up your accounts</div>
             <div style={{fontSize:13,color:'var(--muted)',marginBottom:18}}>Add your brokerage accounts to start pushing trades from recommendations.</div>
-            <button className="btn btn-primary" onClick={openDrawer}>Open Account Settings →</button>
+            <button className="btn btn-primary" onClick={() => openDrawer('accounts')}>Open Account Settings →</button>
           </div>
         </div>
       )}
