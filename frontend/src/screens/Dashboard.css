@@ -1,4 +1,4 @@
-.dash-layout { display:grid; grid-template-columns:480px 1fr; gap:20px; padding:20px 24px; max-width:1400px; }
+.dash-layout { display:grid; grid-template-columns:480px 1fr; gap:20px; padding:20px 24px; max-width:1400px; margin:0 auto; }
 @media (max-width:960px) { .dash-layout { grid-template-columns:1fr; } }
 
 /* Tabs (positions panel) */

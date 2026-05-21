@@ -204,7 +204,7 @@ function LegGroupSection({ label, legs, rec, exitLegs, exitOffset, bg, isExited 
       <div className="rec-leg-name">
         <div className="rec-leg-sym">
           {l.symbol || rec.symbol}
-          {l.auto_adjust && <span title="auto-roll" style={{color:'#6366f1',fontSize:10,marginLeft:3}}>↻</span>}
+          {!!l.auto_adjust && <span title="auto-roll" style={{color:'#6366f1',fontSize:10,marginLeft:3}}>↻</span>}
         </div>
         <div className="rec-leg-contract">
           {l.strike ? Number(l.strike).toLocaleString('en-IN') + ' ' : ''}{l.instrument_type}{l.expiry_str ? ' · ' + l.expiry_str : ''}

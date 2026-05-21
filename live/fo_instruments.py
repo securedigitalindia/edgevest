@@ -226,10 +226,10 @@ def fo_ikey(
     weekly          : True for weekly options
     """
     _ensure_loaded()
-    underlying = _UNDERLYING_KEYS.get(symbol.upper())
+    underlying = _UNDERLYING_KEYS.get(symbol.upper()) or _symbol_to_underlying.get(symbol.upper())
     if not underlying:
         print(f"  [fo_instruments]  unknown symbol {symbol!r} — "
-              f"supported: {list(_UNDERLYING_KEYS)}", flush=True)
+              f"supported: {list(_UNDERLYING_KEYS)} + any NSE F&O stock", flush=True)
         return None
     key = _generic_index.get((underlying, instrument_type.upper(), expiry, strike, weekly))
     if key is None:
@@ -241,7 +241,7 @@ def fo_ikey(
 def fo_lot_size(symbol: str, expiry: date) -> int | None:
     """Lot size for any NSE F&O underlying at the given expiry."""
     _ensure_loaded()
-    underlying = _UNDERLYING_KEYS.get(symbol.upper())
+    underlying = _UNDERLYING_KEYS.get(symbol.upper()) or _symbol_to_underlying.get(symbol.upper())
     if not underlying:
         return None
     return _generic_lot_sizes.get((underlying, expiry))
@@ -278,7 +278,7 @@ def resolve_expiry(symbol: str, expiry_str: str) -> date | None:
         print(f"  [fo_instruments]  cannot parse expiry {expiry_str!r}", flush=True)
         return None
 
-    underlying = _UNDERLYING_KEYS.get(symbol.upper())
+    underlying = _UNDERLYING_KEYS.get(symbol.upper()) or _symbol_to_underlying.get(symbol.upper())
     if not underlying:
         return None
 
