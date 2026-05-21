@@ -990,17 +990,24 @@ function NoSubscriptionGate({ onGoGames }) {
           </div>
         </div>
 
-        {/* Gem balance */}
-        <div style={{background:'#fefce8',border:'1px solid #fde68a',borderRadius:10,padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
-          <span style={{fontSize:13,color:'#92400e',fontWeight:600}}>Your gem balance</span>
-          <span style={{fontSize:20,fontWeight:800,color:'#d97706'}}>💎 {balance}</span>
+        {/* Gem balance + how to earn */}
+        <div style={{background:'#fefce8',border:'1px solid #fde68a',borderRadius:10,padding:'14px 18px',marginBottom:16}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+            <span style={{fontSize:13,color:'#92400e',fontWeight:600}}>Your gem balance</span>
+            <span style={{fontSize:20,fontWeight:800,color:'#d97706'}}>💎 {balance}</span>
+          </div>
+          <div style={{fontSize:11,color:'#b45309',lineHeight:1.5}}>
+            Earn gems by playing games — price predictions, quizzes, and trading challenges. Winners get 💎 gems from the reward pool.
+          </div>
         </div>
 
         {/* Plans */}
         {plans.map(plan => {
-          const gemCost = plan.gem_cost ?? 0
-          const afford  = gemCost > 0 && balance >= gemCost
-          const need    = gemCost - balance
+          const gemCost  = plan.gem_cost ?? 0
+          const isFree   = gemCost === 0
+          const afford   = isFree || balance >= gemCost
+          const need     = gemCost - balance
+          const active   = afford && !buy.isPending
           return (
             <div key={plan.id} style={{
               border:`1.5px solid ${afford ? '#6366f1' : 'var(--border)'}`,
@@ -1008,24 +1015,30 @@ function NoSubscriptionGate({ onGoGames }) {
               background: afford ? '#f5f3ff' : '#fff',
               display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
             }}>
-              <div>
+              <div style={{flex:1,minWidth:0}}>
                 <div style={{fontWeight:700,fontSize:14,color:'#1e293b'}}>{plan.name}</div>
                 <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{plan.duration_days} days · {plan.description}</div>
-                <div style={{fontSize:12,fontWeight:600,color:'#6366f1',marginTop:3}}>💎 {gemCost} gems</div>
-                {!afford && need > 0 && <div style={{fontSize:11,color:'#f59e0b',marginTop:3,fontWeight:600}}>Need {need} more gems — play games to earn!</div>}
+                <div style={{fontSize:12,fontWeight:700,color: afford ? '#6366f1' : '#94a3b8',marginTop:4}}>
+                  {isFree ? 'Free' : `💎 ${gemCost} gems`}
+                </div>
+                {!afford && need > 0 && (
+                  <div style={{fontSize:11,color:'#f59e0b',marginTop:3,fontWeight:600}}>
+                    {need} more gems needed — go play games!
+                  </div>
+                )}
               </div>
               <button
-                disabled={!afford || buy.isPending}
+                disabled={!active}
                 onClick={() => buy.mutate(plan.id)}
                 style={{
                   flexShrink:0, padding:'8px 16px', borderRadius:7, border:'none',
-                  background: afford ? '#6366f1' : '#e2e8f0',
-                  color: afford ? '#fff' : '#94a3b8',
+                  background: active ? '#6366f1' : '#e2e8f0',
+                  color: active ? '#fff' : '#94a3b8',
                   fontWeight:700, fontSize:13,
-                  cursor: afford ? 'pointer' : 'not-allowed', whiteSpace:'nowrap',
+                  cursor: active ? 'pointer' : 'not-allowed', whiteSpace:'nowrap',
                 }}
               >
-                {afford ? `Redeem 💎 ${gemCost}` : `💎 ${gemCost}`}
+                {isFree ? 'Claim Free' : afford ? `Redeem 💎 ${gemCost}` : `💎 ${gemCost}`}
               </button>
             </div>
           )
@@ -1037,7 +1050,7 @@ function NoSubscriptionGate({ onGoGames }) {
           style={{width:'100%',justifyContent:'center',marginTop:8,fontSize:13}}
           onClick={onGoGames}
         >
-          {canUnlock ? 'Play more games →' : 'Go earn gems in Games →'}
+          {canUnlock ? 'Play more games →' : '🎮 Go earn gems in Games →'}
         </button>
       </div>
     </div>
