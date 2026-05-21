@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import useAuthStore from '../../store/authStore'
 import api from '../../api/client'
 import { useToast } from '../common/Toast'
 import { useBrokers, useAddBroker, useAccounts, useAddAccount } from '../../hooks/useTrades'
 import { useUsers, useSaveUserProfile, useProfile, useSaveProfile, usePlans, useCreatePlan, useTogglePlan, useSubs } from '../../hooks/useSettings'
+import { getCredits } from '../../api/games'
 import './SettingsDrawer.css'
 
 export default function SettingsDrawer({ open, onClose, initialTab }) {
@@ -43,9 +45,10 @@ export default function SettingsDrawer({ open, onClose, initialTab }) {
               <button className={`stab${tab==='users'?' active':''}`}    onClick={()=>setTab('users')}>Users</button>
               <button className={`stab${tab==='plans'?' active':''}`}    onClick={()=>setTab('plans')}>Plans</button>
               <button className={`stab${tab==='subs'?' active':''}`}     onClick={()=>setTab('subs')}>Subscriptions</button>
-            </> : (
+            </> : (<>
               <button className={`stab${tab==='accounts'?' active':''}`} onClick={()=>setTab('accounts')}>My Accounts</button>
-            )}
+              <button className={`stab${tab==='gems'?' active':''}`}     onClick={()=>setTab('gems')}>💎 Gems</button>
+            </>)}
             <button className={`stab${tab==='profile'?' active':''}`}   onClick={()=>setTab('profile')}>Profile</button>
           </div>
 
@@ -53,6 +56,7 @@ export default function SettingsDrawer({ open, onClose, initialTab }) {
             <ProfileTab user={user} mobile={mobile} setMobile={setMobile} onSave={saveProfile} />
           )}
           {tab === 'accounts' && <AccountsTab />}
+          {tab === 'gems'     && <GemsTab />}
           {tab === 'brokers'  && <BrokersTab />}
           {tab === 'users'    && <UsersTab isSuperAdmin={isSuperAdmin} />}
           {tab === 'plans'    && <PlansTab />}
@@ -172,6 +176,62 @@ function ProfileTab({ user, mobile, setMobile, onSave }) {
       <div style={{marginTop:20,paddingTop:16,borderTop:'1px solid #f1f5f9'}}>
         <a href="/logout" style={{fontSize:13,color:'var(--red)',fontWeight:600}}>Sign out</a>
       </div>
+    </div>
+  )
+}
+
+// ─── Gems (client) ───────────────────────────────────────────────────────────
+
+const REASON_LABEL = {
+  game_win:               '🏆 Game win',
+  game_reward:            '🎮 Game reward',
+  subscription_purchase:  '🔓 Subscription',
+  manual:                 '⚙️ Manual',
+  refund:                 '↩️ Refund',
+}
+
+function GemsTab() {
+  const { data, isLoading } = useQuery({ queryKey: ['credits'], queryFn: getCredits, refetchInterval: 30000 })
+  const balance = data?.balance ?? 0
+  const history = data?.history ?? []
+
+  function fmtTs(ts) {
+    if (!ts) return ''
+    const d = new Date(ts.replace('Z','') + (ts.endsWith('Z') ? '' : 'Z'))
+    return d.toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true })
+  }
+
+  return (
+    <div className="stab-panel active">
+      {/* Balance card */}
+      <div style={{background:'linear-gradient(135deg,#1e1b4b,#312e81)',borderRadius:10,padding:'16px 18px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div>
+          <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:.6,color:'#a5b4fc',marginBottom:4}}>Gem Balance</div>
+          <div style={{fontSize:28,fontWeight:800,color:'#fbbf24'}}>💎 {balance}</div>
+        </div>
+        <div style={{fontSize:11,color:'#818cf8',textAlign:'right',lineHeight:1.6}}>
+          Earn by winning<br/>games &amp; quizzes.<br/>Spend on plans.
+        </div>
+      </div>
+
+      {/* History */}
+      <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:.5,color:'var(--muted)',marginBottom:8}}>Transaction History</div>
+      {isLoading && <div className="empty">Loading…</div>}
+      {!isLoading && !history.length && <div className="empty">No transactions yet. Play a game to earn your first gems!</div>}
+      {history.map(tx => (
+        <div key={tx.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderBottom:'1px solid #f1f5f9'}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:600,color:'#1e293b'}}>
+              {REASON_LABEL[tx.reason] || tx.reason}
+              {tx.note ? <span style={{fontWeight:400,color:'var(--muted)'}}> · {tx.note}</span> : null}
+            </div>
+            <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>{fmtTs(tx.created_at)}</div>
+          </div>
+          <div style={{fontWeight:700,fontSize:14,color: tx.amount > 0 ? 'var(--green)' : 'var(--red)',whiteSpace:'nowrap'}}>
+            {tx.amount > 0 ? '+' : ''}{tx.amount} 💎
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
