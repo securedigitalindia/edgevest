@@ -974,7 +974,7 @@ function NoSubscriptionGate({ onGoGames }) {
   })
 
   const balance = credits?.balance ?? 0
-  const cheapest = plans.length ? Math.min(...plans.map(p => p.gem_cost).filter(c => c > 0)) : null
+  const cheapest = plans.length ? Math.min(...plans.map(p => p.gem_cost ?? 0).filter(c => c > 0)) : null
   const canUnlock = cheapest != null && balance >= cheapest
 
   return (
@@ -998,8 +998,9 @@ function NoSubscriptionGate({ onGoGames }) {
 
         {/* Plans */}
         {plans.map(plan => {
-          const afford = balance >= plan.gem_cost
-          const need   = plan.gem_cost - balance
+          const gemCost = plan.gem_cost ?? 0
+          const afford  = gemCost > 0 && balance >= gemCost
+          const need    = gemCost - balance
           return (
             <div key={plan.id} style={{
               border:`1.5px solid ${afford ? '#6366f1' : 'var(--border)'}`,
@@ -1009,8 +1010,9 @@ function NoSubscriptionGate({ onGoGames }) {
             }}>
               <div>
                 <div style={{fontWeight:700,fontSize:14,color:'#1e293b'}}>{plan.name}</div>
-                <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{plan.duration_days} days access · {plan.description}</div>
-                {!afford && <div style={{fontSize:11,color:'#f59e0b',marginTop:4,fontWeight:600}}>Need {need} more gems — play games to earn!</div>}
+                <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{plan.duration_days} days · {plan.description}</div>
+                <div style={{fontSize:12,fontWeight:600,color:'#6366f1',marginTop:3}}>💎 {gemCost} gems</div>
+                {!afford && need > 0 && <div style={{fontSize:11,color:'#f59e0b',marginTop:3,fontWeight:600}}>Need {need} more gems — play games to earn!</div>}
               </div>
               <button
                 disabled={!afford || buy.isPending}
@@ -1023,7 +1025,7 @@ function NoSubscriptionGate({ onGoGames }) {
                   cursor: afford ? 'pointer' : 'not-allowed', whiteSpace:'nowrap',
                 }}
               >
-                {afford ? `Redeem 💎 ${plan.gem_cost}` : `💎 ${plan.gem_cost}`}
+                {afford ? `Redeem 💎 ${gemCost}` : `💎 ${gemCost}`}
               </button>
             </div>
           )
