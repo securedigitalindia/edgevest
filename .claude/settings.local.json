@@ -7,7 +7,30 @@
       "WebSearch",
       "WebFetch(domain:upstox.com)",
       "WebFetch(domain:upstox.github.io)",
-      "WebFetch(domain:community.upstox.com)"
+      "WebFetch(domain:community.upstox.com)",
+      "Bash(sqlite3 /Users/aj/projects/drishti/trades.db \".tables\")",
+      "Bash(sqlite3 /Users/aj/projects/drishti/trades.db \"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;\")",
+      "Bash(sqlite3 *)",
+      "Bash(python main.py init)",
+      "Bash(python *)",
+      "Bash(grep -n \"^<div class=\\\\\"layout\\\\\">\\\\|^</div>$\" /Users/aj/projects/drishti/templates/index.html)",
+      "Bash(npm --version)",
+      "Bash(npm create *)",
+      "Bash(npm install *)",
+      "Bash(pip show *)",
+      "Bash(npm run *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git -C /Users/aj/projects/drishti/frontend add src/App.css src/App.jsx src/api/client.js src/api/games.js src/api/trades.js src/api/settings.js src/components/drawer/SettingsDrawer.jsx src/components/games/ src/components/nav/MainNav.jsx src/hooks/useGames.js src/hooks/usePrices.js src/hooks/useSettings.js src/hooks/useTrades.js src/index.css src/screens/Dashboard.jsx src/screens/Dashboard.css src/screens/Games.css src/screens/Games.jsx vite.config.js)",
+      "Bash(git -C /Users/aj/projects/drishti/frontend commit -m ' *)",
+      "Bash(xargs ls -la)",
+      "Bash(xargs cat)",
+      "Bash(python3 *)",
+      "Bash(git -C /Users/aj/projects/drishti add frontend/src/screens/Dashboard.jsx frontend/src/screens/Games.jsx)",
+      "Bash(git -C /Users/aj/projects/drishti commit -m ' *)",
+      "Bash(git -C /Users/aj/projects/drishti add frontend/src/screens/Dashboard.jsx)",
+      "Bash(git -C /Users/aj/projects/drishti add frontend/src/components/drawer/SettingsDrawer.jsx)",
+      "Bash(git *)"
     ]
   }
 }

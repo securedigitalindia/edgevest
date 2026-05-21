@@ -14,12 +14,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dotenv import load_dotenv
 load_dotenv()
 
-from flask import (Flask, render_template, request, jsonify,
-                   session, redirect, url_for, abort, g)
+from flask import (Flask, request, jsonify,
+                   session, redirect, url_for, abort, g, send_from_directory)
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
 
-app = Flask(__name__)
+_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
+
+app = Flask(__name__, static_folder=_DIST, static_url_path="/assets")
 app.secret_key = os.environ["SECRET_KEY"]
 CORS(app, origins=["http://localhost:5173"], supports_credentials=True)
 
@@ -76,16 +78,14 @@ def require_role(*roles):
     return decorator
 
 def require_subscription(f):
-    """For client-role users: redirect to /subscribe if no valid active subscription."""
+    """For client-role API callers: return 402 if no valid active subscription."""
     @wraps(f)
     def wrapped(*args, **kwargs):
         user = current_user()
         if user and user["role"] == "client":
             from db.queries import is_subscription_valid
             if not is_subscription_valid(user["id"]):
-                if request.path.startswith("/api/"):
-                    return jsonify(error="No active subscription"), 402
-                return redirect(url_for("subscribe_page", expired=1))
+                return jsonify(error="No active subscription"), 402
         return f(*args, **kwargs)
     return wrapped
 
@@ -141,7 +141,7 @@ def refresh_session():
 
 @app.route("/login")
 def login():
-    return redirect(url_for("index"))
+    return redirect("/")
 
 @app.route("/auth/google")
 def auth_google():
@@ -160,22 +160,17 @@ def auth_callback():
         picture   = userinfo.get("picture", ""),
     )
     if not user["active"]:
-        return redirect(url_for("index", error="deactivated"))
+        return redirect("/")
     session["user"] = user
     if user["role"] == "client":
-        from db.queries import get_user_trading_profile, is_subscription_valid, expire_stale_subscriptions
-        profile = get_user_trading_profile(user["id"])
-        if not profile or not profile.get("setup_done"):
-            return redirect(url_for("app_index"))   # React wizard handles setup
+        from db.queries import expire_stale_subscriptions
         expire_stale_subscriptions()
-        if not is_subscription_valid(user["id"]):
-            return redirect(url_for("subscribe_page"))
-    return redirect(url_for("app_index"))
+    return redirect("/")
 
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("index"))
+    return redirect("/")
 
 
 # ─────────────────────────────────────────────────────────
@@ -983,48 +978,16 @@ def api_spot():
 
 
 # ─────────────────────────────────────────────────────────
-# Page
+# React frontend — serve build for all non-API routes
 # ─────────────────────────────────────────────────────────
 
-@app.route("/")
-def index():
-    if current_user():
-        return redirect(url_for("app_index"))
-    return render_template("landing.html")
-
-
-@app.route("/app")
-@require_login
-@require_subscription
-def app_index():
-    return render_template("index.html", user=current_user())
-
-
-@app.route("/profile/setup")
-@require_login
-def profile_setup():
-    from db.queries import get_user_trading_profile
-    profile = get_user_trading_profile(current_user()["id"])
-    return render_template("profile_setup.html", user=current_user(), profile=profile)
-
-
-@app.route("/profile")
-@require_login
-def profile_page():
-    from db.queries import get_user_trading_profile
-    profile = get_user_trading_profile(current_user()["id"])
-    return render_template("profile.html", user=current_user(), profile=profile)
-
-
-@app.route("/subscribe")
-@require_login
-def subscribe_page():
-    from db.queries import get_active_plans, get_user_subscription
-    plans   = get_active_plans()
-    sub     = get_user_subscription(current_user()["id"])
-    expired = request.args.get("expired", 0)
-    return render_template("subscribe.html", user=current_user(),
-                           plans=plans, subscription=sub, expired=expired)
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_react(path):
+    full = os.path.join(_DIST, path)
+    if path and os.path.exists(full):
+        return send_from_directory(_DIST, path)
+    return send_from_directory(_DIST, "index.html")
 
 
 @app.route("/api/subscribe", methods=["POST"])
