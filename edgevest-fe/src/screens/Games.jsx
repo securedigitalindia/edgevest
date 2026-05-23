@@ -224,8 +224,10 @@ export default function Games({ subscribed }) {
     if (newId) setSelId(newId)
   }
 
+  const hasDetail = selId !== null || editing !== null
+
   return (
-    <div className="games-layout">
+    <div className={`games-layout${hasDetail ? ' has-detail' : ''}`}>
       {/* Sidebar */}
       <div className="games-sidebar">
         <div className="games-sidebar-hdr">
@@ -282,6 +284,7 @@ export default function Games({ subscribed }) {
 
       {/* Main panel */}
       <div className="games-main">
+        <button className="games-back-btn" onClick={() => { setSelId(null); setEditing(null) }}>← Back to games</button>
         {editing !== null
           ? <GameForm existing={editing?.id ? editing : null} onDone={handleFormDone} />
           : selId

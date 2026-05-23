@@ -1,5 +1,6 @@
-.dash-layout { display:grid; grid-template-columns:480px 1fr; gap:20px; padding:20px 24px; max-width:1400px; margin:0 auto; }
+.dash-layout { display:grid; grid-template-columns:min(480px,100%) 1fr; gap:20px; padding:20px 24px; max-width:1400px; margin:0 auto; }
 @media (max-width:960px) { .dash-layout { grid-template-columns:1fr; } }
+@media (max-width:768px)  { .dash-layout { padding:12px; gap:12px; } }
 
 /* Tabs (positions panel) */
 .pos-tab { padding:4px 12px; font-size:12px; font-weight:600; cursor:pointer; border:none; background:none; color:var(--muted); border-bottom:2px solid transparent; }

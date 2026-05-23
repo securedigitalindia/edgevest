@@ -99,6 +99,22 @@ def is_super_admin(user=None):
     u = user or current_user()
     return u and u["role"] == "super_admin"
 
+def _normalize_legs(legs: list) -> list:
+    """Ensure both naming conventions work: type↔instrument_type, expiry↔expiry_str."""
+    out = []
+    for l in legs:
+        leg = dict(l)
+        if "type" in leg and "instrument_type" not in leg:
+            leg["instrument_type"] = leg["type"]
+        if "instrument_type" in leg and "type" not in leg:
+            leg["type"] = leg["instrument_type"]
+        if "expiry" in leg and "expiry_str" not in leg:
+            leg["expiry_str"] = leg["expiry"]
+        if "expiry_str" in leg and "expiry" not in leg:
+            leg["expiry"] = leg["expiry_str"]
+        out.append(leg)
+    return out
+
 def _ist_str(utc_str: str) -> str:
     from datetime import datetime, timezone
     from zoneinfo import ZoneInfo
@@ -472,7 +488,7 @@ def api_rec_adjust(rec_id):
 
     data = request.json or {}
     note = data.get("note", "")
-    legs = data.get("legs", [])
+    legs = _normalize_legs(data.get("legs", []))
 
     if not legs:
         return jsonify(ok=False, error="Provide at least one leg"), 400
@@ -495,7 +511,7 @@ def api_rec_adjust(rec_id):
 def api_rec_create():
     data   = request.json or {}
     symbol = data.get("symbol", "")
-    legs   = data.get("legs", [])
+    legs   = _normalize_legs(data.get("legs", []))
     note   = data.get("note", "")
     if not symbol or not legs:
         return jsonify(ok=False, error="symbol and legs are required"), 400
@@ -565,7 +581,7 @@ def api_account_trade_create():
     rec_id     = data.get("recommended_trade_id")
     account_id = data.get("account_id")
     symbol     = data.get("symbol", "")
-    legs       = data.get("legs", [])
+    legs       = _normalize_legs(data.get("legs", []))
     note       = data.get("note", "")
     user       = current_user()
 
@@ -598,7 +614,7 @@ def api_account_trade_adjust(at_id):
     data                = request.json or {}
     trade_adjustment_id = data.get("adjustment_id")
     adj_type            = data.get("adj_type", "")
-    legs                = data.get("legs", [])
+    legs                = _normalize_legs(data.get("legs", []))
     user                = current_user()
 
     if not trade_adjustment_id or not legs:

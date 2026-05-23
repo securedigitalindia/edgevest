@@ -24,3 +24,42 @@
 .hdr-btn { background:none; border:none; color:#64748b; font-size:17px; cursor:pointer; line-height:1; padding:4px; border-radius:6px; transition:all .15s; }
 .hdr-btn:hover { color:#fff; background:#1e293b; }
 @keyframes pop-in { 0%{transform:scale(.9);opacity:0} 60%{transform:scale(1.04)} 100%{transform:scale(1);opacity:1} }
+
+/* ── Bottom nav (mobile only) ── */
+.bottom-nav { display:none; }
+
+@media (max-width: 768px) {
+  .nav-tabs { display:none; }
+  .prof-trigger-name { display:none; }
+  .prof-trigger-caret { display:none; }
+  .nav-credits-pill span { display:none; }
+
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 56px;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: #0f172a;
+    border-top: 1px solid #1e293b;
+    z-index: 600;
+  }
+  .bottom-nav-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color .15s;
+    letter-spacing: .2px;
+  }
+  .bottom-nav-tab.active { color: #3b82f6; }
+  .bottom-nav-tab-icon { font-size: 20px; line-height: 1; }
+}
