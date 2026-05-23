@@ -884,7 +884,7 @@ def api_game_delete(gid):
 @app.route("/api/games/<int:gid>/enter", methods=["POST"])
 @require_login
 def api_game_enter(gid):
-    from db.queries import get_game, submit_entry
+    from db.queries import get_game, submit_entry, create_game_virtual_account
     if is_admin():
         return jsonify(ok=False, error="Admins cannot enter games"), 403
     game = get_game(gid)
@@ -894,7 +894,10 @@ def api_game_enter(gid):
         return jsonify(ok=False, error="Game is not accepting entries"), 400
     d = request.json or {}
     entry_data = d.get("entry_data", {})
-    eid = submit_entry(gid, current_user()["id"], entry_data)
+    uid = current_user()["id"]
+    eid = submit_entry(gid, uid, entry_data)
+    if game["game_type"] == "leaderboard":
+        create_game_virtual_account(gid, uid, f"🎮 {game['title']}", game["initial_cash"])
     return jsonify(ok=True, entry_id=eid)
 
 
@@ -936,17 +939,16 @@ def api_game_trade(gid):
 @app.route("/api/games/<int:gid>/portfolio", methods=["GET"])
 @require_login
 def api_game_portfolio(gid):
-    from db.queries import get_game, get_virtual_portfolio
-    from config import SPOT_IKEYS
+    from db.queries import get_game, get_game_portfolio, get_connection
     game = get_game(gid)
     if not game or game["game_type"] != "leaderboard":
         return jsonify(error="Not a leaderboard game"), 400
-    ikey_to_sym = {v: k for k, v in SPOT_IKEYS.items()}
-    from db.queries import get_cached_spot
-    price_rows, _ = get_cached_spot(list(SPOT_IKEYS.values()))
-    prices = {ikey_to_sym[ik]: v["ltp"] for ik, v in price_rows.items() if ik in ikey_to_sym}
+    conn   = get_connection()
+    prices = {r["instrument_key"]: r["ltp"]
+              for r in conn.execute("SELECT instrument_key, ltp FROM price_cache").fetchall()}
+    conn.close()
     uid = current_user()["id"]
-    pf = get_virtual_portfolio(gid, uid, prices)
+    pf  = get_game_portfolio(gid, uid, prices)
     return jsonify(portfolio=pf)
 
 

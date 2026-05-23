@@ -308,7 +308,11 @@ function PushForm({ rec, prices, onClose }) {
         <label>Account</label>
         <select value={acctId} onChange={e => setAcctId(e.target.value)}>
           <option value="">Select account…</option>
-          {accounts.map(a => <option key={a.id} value={a.id}>{a.label || [a.user_name, a.broker].filter(Boolean).join(' · ')}</option>)}
+          {accounts.map(a => (
+            <option key={a.id} value={a.id}>
+              {a.game_id ? `🎮 ${a.label}` : (a.label || [a.user_name, a.broker].filter(Boolean).join(' · '))}
+            </option>
+          ))}
         </select>
       </div>
       {rec.legs.map((l, i) => {

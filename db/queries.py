@@ -495,24 +495,130 @@ def update_user_role(user_id: int, role: str) -> None:
 
 
 def get_accounts_for_user(user_id: int) -> list[dict]:
-    """All accounts belonging to a specific user."""
+    """All accounts (real + game virtual) belonging to a specific user."""
     conn = get_connection()
     rows = conn.execute("""
-        SELECT a.id, a.label, a.account_no, a.active,
+        SELECT a.id, a.label, a.account_no, a.active, a.game_id, a.capital,
                u.id, u.name, u.mobile, b.id, b.name
         FROM accounts a
         LEFT JOIN users u ON u.id = a.user_id
         LEFT JOIN brokers b ON b.id = a.broker_id
         WHERE a.user_id = ?
-        ORDER BY b.name
+        ORDER BY a.game_id IS NOT NULL, b.name
     """, (user_id,)).fetchall()
     conn.close()
     return [
         {"id": r[0], "label": r[1], "account_no": r[2], "active": bool(r[3]),
-         "user_id": r[4], "user_name": r[5], "user_mobile": r[6],
-         "broker_id": r[7], "broker": r[8]}
+         "game_id": r[4], "capital": r[5],
+         "user_id": r[6], "user_name": r[7], "user_mobile": r[8],
+         "broker_id": r[9], "broker": r[10]}
         for r in rows
     ]
+
+
+def create_game_virtual_account(game_id: int, user_id: int, label: str, capital: float) -> int:
+    """Create a virtual account for a user in a leaderboard game. Idempotent."""
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT id FROM accounts WHERE game_id = ? AND user_id = ?", (game_id, user_id)
+    ).fetchone()
+    if existing:
+        conn.close()
+        return existing[0]
+    cur = conn.execute(
+        "INSERT INTO accounts (user_id, broker_id, game_id, capital, label, active) VALUES (?, NULL, ?, ?, ?, 1)",
+        (user_id, game_id, capital, label)
+    )
+    aid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return aid
+
+
+def get_game_virtual_account(game_id: int, user_id: int) -> dict | None:
+    """Return the virtual account for a user in a leaderboard game."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT id, label, capital FROM accounts WHERE game_id = ? AND user_id = ?",
+        (game_id, user_id)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {"id": row[0], "label": row[1], "capital": row[2] or 0}
+
+
+def get_game_portfolio(game_id: int, user_id: int, prices: dict) -> dict:
+    """
+    Compute portfolio for a user's virtual game account.
+    prices = {instrument_key: ltp}
+    Returns capital, positions (open legs), realized_pnl, unrealized_pnl, total_pnl.
+    """
+    acct = get_game_virtual_account(game_id, user_id)
+    if not acct:
+        return {"account_id": None, "capital": 0, "pnl": 0,
+                "realized_pnl": 0, "unrealized_pnl": 0, "positions": []}
+
+    capital    = acct["capital"]
+    account_id = acct["id"]
+
+    # Realized P&L from closed trades
+    realized_pnl = 0.0
+    for t in get_closed_account_trades(account_id=account_id):
+        legs = get_account_trade_legs(t["id"])
+        entry_legs = [l for l in legs if l["action"] == "entry"]
+        exit_legs  = [l for l in legs if l["action"] == "exit"]
+        for xl in exit_legs:
+            el = next((l for l in entry_legs if l["instrument_key"] == xl["instrument_key"]), None)
+            if not el:
+                continue
+            qty = el["lots"] * (el["lot_size"] or 1)
+            if el["side"] == "BUY":
+                realized_pnl += (xl["price"] - el["price"]) * qty
+            else:
+                realized_pnl += (el["price"] - xl["price"]) * qty
+
+    # Unrealized P&L from open trades
+    unrealized_pnl = 0.0
+    positions = []
+    for t in get_open_account_trades(account_id=account_id):
+        legs = get_account_trade_legs(t["id"])
+        exited_ikeys  = {l["instrument_key"] for l in legs if l["action"] == "exit"}
+        current_legs  = [l for l in legs if l["action"] == "entry"
+                         and l["instrument_key"] not in exited_ikeys
+                         and not l["adjustment_id"]]
+        for l in current_legs:
+            ltp = prices.get(l["instrument_key"]) if l["instrument_key"] else None
+            qty = l["lots"] * (l["lot_size"] or 1)
+            leg_pnl = 0.0
+            if ltp:
+                leg_pnl = (ltp - l["price"]) * qty if l["side"] == "BUY" \
+                          else (l["price"] - ltp) * qty
+            unrealized_pnl += leg_pnl
+            positions.append({
+                "trade_id":       t["id"],
+                "symbol":         t["symbol"],
+                "side":           l["side"],
+                "instrument_type": l["instrument_type"],
+                "strike":         l["strike"],
+                "expiry_str":     l["expiry_str"],
+                "lots":           l["lots"],
+                "lot_size":       l["lot_size"],
+                "entry_price":    l["price"],
+                "instrument_key": l["instrument_key"],
+                "ltp":            ltp,
+                "pnl":            round(leg_pnl, 2),
+            })
+
+    total_pnl = realized_pnl + unrealized_pnl
+    return {
+        "account_id":    account_id,
+        "capital":       capital,
+        "realized_pnl":  round(realized_pnl, 2),
+        "unrealized_pnl": round(unrealized_pnl, 2),
+        "pnl":           round(total_pnl, 2),
+        "positions":     positions,
+    }
 
 
 def update_user_profile(user_id: int, mobile: str = "", note: str = "") -> None:
@@ -1754,13 +1860,39 @@ def resolve_game(game_id: int, result_value: str | None = None) -> int:
         scored.sort(key=lambda x: (-x["score"], x["ts"]))
 
     elif game["game_type"] == "leaderboard":
-        from config import SPOT_IKEYS
-        ikey_to_sym = {v: k for k, v in SPOT_IKEYS.items()}
+        # Fetch current LTPs from price_cache (keyed by instrument_key)
         price_rows = conn.execute("SELECT instrument_key, ltp FROM price_cache").fetchall()
-        prices = {ikey_to_sym.get(r["instrument_key"], r["instrument_key"]): r["ltp"]
-                  for r in price_rows}
+        prices = {r["instrument_key"]: r["ltp"] for r in price_rows}
+
         for e in entries:
-            pf = get_virtual_portfolio(game_id, e["user_id"], prices)
+            acct = get_game_virtual_account(game_id, e["user_id"])
+            if not acct:
+                scored.append({"id": e["id"], "user_id": e["user_id"],
+                               "score": 0, "ts": e["submitted_at"]})
+                continue
+
+            # Auto square-off all open positions at current LTP (no Telegram)
+            for t in get_open_account_trades(account_id=acct["id"]):
+                legs = get_account_trade_legs(t["id"])
+                exited_ikeys = {l["instrument_key"] for l in legs if l["action"] == "exit"}
+                open_legs    = [l for l in legs if l["action"] == "entry"
+                                and l["instrument_key"] not in exited_ikeys]
+                if not open_legs:
+                    continue
+                exit_legs = [{
+                    "action":          "exit",
+                    "side":            "BUY" if l["side"] == "SELL" else "SELL",
+                    "instrument_type": l["instrument_type"],
+                    "instrument_key":  l["instrument_key"],
+                    "strike":          l["strike"],
+                    "expiry_str":      l["expiry_str"],
+                    "lots":            l["lots"],
+                    "lot_size":        l["lot_size"],
+                    "price":           prices.get(l["instrument_key"]) or l["price"],
+                } for l in open_legs]
+                mark_account_trade_closed(t["id"], exit_legs, now, note="auto square-off at game close")
+
+            pf = get_game_portfolio(game_id, e["user_id"], prices)
             scored.append({"id": e["id"], "user_id": e["user_id"],
                            "score": pf.get("pnl", 0), "ts": e["submitted_at"]})
         scored.sort(key=lambda x: (-x["score"], x["ts"]))

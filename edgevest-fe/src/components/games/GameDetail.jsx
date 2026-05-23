@@ -307,32 +307,22 @@ function LeaderboardGame({ game, isAdmin }) {
 }
 
 function PortfolioView({ gid }) {
-  const { data, isLoading } = usePortfolio(gid)
-  const trade  = useSubmitVirtualTrade(gid)
-  const spot   = usePriceStore(s => s.spot)
-  const toast  = useToast()
-  const [sym,    setSym]    = useState('NIFTY50')
-  const [action, setAction] = useState('BUY')
-  const [qty,    setQty]    = useState('')
-  const [price,  setPrice]  = useState('')
+  const { data, isLoading, refetch } = usePortfolio(gid)
 
   if (isLoading) return <div style={{padding:20,textAlign:'center',color:'#94a3b8',fontSize:13}}>Loading portfolio…</div>
 
   const pf        = data?.portfolio || {}
   const positions = pf.positions || []
-  const pnlColor  = (pf.pnl || 0) >= 0 ? '#16a34a' : '#dc2626'
+  const pnl       = pf.pnl || 0
+  const pnlColor  = pnl >= 0 ? '#16a34a' : '#dc2626'
 
-  async function execute() {
-    const q = parseInt(qty)
-    if (!q || q < 1) return toast('Enter quantity', 'err')
-    let p = parseFloat(price)
-    if (!p || isNaN(p)) {
-      p = spot[sym]?.ltp
-      if (!p) return toast('Enter price manually (live price not available)', 'err')
-    }
-    const res = await trade.mutateAsync({ symbol: sym, action, price: p, quantity: q })
-    if (res.ok) { toast('Trade executed!', 'ok'); setQty(''); setPrice('') }
-    else toast(res.error || 'Error', 'err')
+  if (!pf.account_id) {
+    return (
+      <div style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:8,padding:20,textAlign:'center'}}>
+        <div style={{fontSize:13,color:'#64748b',marginBottom:8}}>Your virtual trading account is being set up.</div>
+        <div style={{fontSize:12,color:'#94a3b8'}}>Go to Dashboard → push a recommendation to your 🎮 game account to start trading.</div>
+      </div>
+    )
   }
 
   return (
@@ -340,72 +330,51 @@ function PortfolioView({ gid }) {
       {/* Summary bar */}
       <div className="portfolio-bar">
         <div className="portfolio-stat">
-          <div className="val">{fmtRs(pf.cash)}</div>
-          <div className="lbl">Cash</div>
+          <div className="val">{fmtRs(pf.capital)}</div>
+          <div className="lbl">Capital</div>
         </div>
         <div className="portfolio-stat">
-          <div className="val">{fmtRs(pf.portfolio_value)}</div>
-          <div className="lbl">Portfolio Value</div>
+          <div className="val" style={{color: pf.unrealized_pnl >= 0 ? '#16a34a' : '#dc2626'}}>
+            {pf.unrealized_pnl >= 0 ? '+' : ''}{fmtRs(pf.unrealized_pnl)}
+          </div>
+          <div className="lbl">Unrealized P&amp;L</div>
         </div>
         <div className="portfolio-stat">
-          <div className="val" style={{color:pnlColor}}>{(pf.pnl||0) >= 0 ? '+' : ''}{fmtRs(pf.pnl)}</div>
-          <div className="lbl">P&amp;L</div>
+          <div className="val" style={{color:pnlColor,fontWeight:700}}>
+            {pnl >= 0 ? '+' : ''}{fmtRs(pnl)}
+          </div>
+          <div className="lbl">Total P&amp;L</div>
         </div>
       </div>
 
-      {/* Positions */}
+      {/* Open positions */}
       {positions.length ? (
-        <table className="leaderboard-table" style={{marginBottom:14}}>
-          <thead><tr><th>Symbol</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&amp;L</th></tr></thead>
+        <table className="leaderboard-table" style={{marginBottom:10}}>
+          <thead><tr><th>Symbol</th><th>Side</th><th>Legs</th><th>Entry</th><th>LTP</th><th>P&amp;L</th></tr></thead>
           <tbody>
             {positions.map((p, i) => {
-              const pnl = p.pnl || 0
+              const leg = `${p.strike ? Number(p.strike).toLocaleString('en-IN') + ' ' : ''}${p.instrument_type}${p.expiry_str ? ' ' + p.expiry_str : ''}`
+              const qty = (p.lots || 0) * (p.lot_size || 1)
               return (
                 <tr key={i}>
                   <td style={{fontWeight:600}}>{p.symbol}</td>
-                  <td>{p.qty}</td>
-                  <td>{fmtRs(p.avg_price, 1)}</td>
-                  <td>{p.ltp != null ? fmtRs(p.ltp, 1) : '—'}</td>
-                  <td><span style={{color: pnl>=0?'#16a34a':'#dc2626', fontWeight:600}}>{pnl>=0?'+':''}{fmtRs(pnl)}</span></td>
+                  <td><span className={p.side==='BUY'?'side-buy':'side-sell'}>{p.side}</span></td>
+                  <td style={{fontSize:11,color:'#64748b'}}>{leg} · {p.lots}L ({qty})</td>
+                  <td>{fmtRs(p.entry_price, 2)}</td>
+                  <td>{p.ltp != null ? fmtRs(p.ltp, 2) : '—'}</td>
+                  <td><span style={{color:p.pnl>=0?'#16a34a':'#dc2626',fontWeight:600}}>{p.pnl>=0?'+':''}{fmtRs(p.pnl)}</span></td>
                 </tr>
               )
             })}
           </tbody>
         </table>
       ) : (
-        <div style={{fontSize:12,color:'#94a3b8',marginBottom:14}}>No open positions</div>
+        <div style={{fontSize:12,color:'#94a3b8',marginBottom:10,padding:'12px 0'}}>No open positions</div>
       )}
 
-      {/* Virtual trade form */}
-      <div style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:8,padding:14}}>
-        <div style={{fontSize:11,fontWeight:700,color:'#64748b',textTransform:'uppercase',marginBottom:10}}>Virtual Trade</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 80px 80px 100px',gap:8,alignItems:'end'}}>
-          <div>
-            <label>Symbol</label>
-            <select value={sym} onChange={e=>setSym(e.target.value)}>
-              <option>NIFTY50</option><option>BANKNIFTY</option><option>FINNIFTY</option>
-              <option>MIDCPNIFTY</option><option>SENSEX</option>
-            </select>
-          </div>
-          <div>
-            <label>Action</label>
-            <select value={action} onChange={e=>setAction(e.target.value)}>
-              <option>BUY</option><option>SELL</option>
-            </select>
-          </div>
-          <div>
-            <label>Qty</label>
-            <input type="number" min="1" placeholder="1" value={qty} onChange={e=>setQty(e.target.value)} style={{width:80}} />
-          </div>
-          <div>
-            <label>Price (LTP)</label>
-            <input type="number" placeholder="auto" step="0.5" value={price} onChange={e=>setPrice(e.target.value)} />
-          </div>
-        </div>
-        <div style={{marginTop:10,display:'flex',alignItems:'center',gap:10}}>
-          <button className="btn btn-primary btn-sm" onClick={execute} disabled={trade.isPending}>Execute</button>
-          <span style={{fontSize:11,color:'#94a3b8'}}>Uses live price if left blank</span>
-        </div>
+      <div style={{fontSize:11,color:'#94a3b8',display:'flex',alignItems:'center',gap:8}}>
+        <span>Push recommendations to your <strong>🎮 {pf.label || 'game account'}</strong> from the Dashboard to trade.</span>
+        <button className="btn btn-ghost btn-sm" onClick={refetch} style={{padding:'2px 8px',fontSize:11}}>↻</button>
       </div>
     </div>
   )
