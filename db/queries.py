@@ -189,13 +189,13 @@ _TRADE_SELECT = ", ".join(_TRADE_COLS)
 
 _ACCT_TRADE_COLS = [
     "id", "recommended_trade_id", "account_id", "status",
-    "entry_time", "exit_time", "note",
+    "entry_time", "exit_time", "note", "margin",
 ]
 
 _ACCT_LEG_COLS = [
     "id", "account_trade_id", "action", "side", "instrument_type",
     "instrument_key", "strike", "expiry_str", "lots", "lot_size", "price", "ts",
-    "adjustment_id",
+    "adjustment_id", "margin",
 ]
 
 _ADJ_COLS = ["id", "trade_id", "adj_type", "note", "ts"]
@@ -429,6 +429,11 @@ def upsert_user(google_id: str, email: str, name: str, picture: str) -> dict:
             (google_id, email, name, picture, role, now)
         )
         conn.commit()
+        if role == "client":
+            from config import SIGNUP_CREDITS
+            new_uid = conn.execute("SELECT id FROM users WHERE google_id=?", (google_id,)).fetchone()[0]
+            _award_credits_tx(conn, new_uid, SIGNUP_CREDITS, "signup_bonus", ref_id=None, note="Welcome bonus")
+            conn.commit()
 
     row = conn.execute(
         "SELECT id,google_id,email,name,picture,role,mobile,note,active FROM users WHERE google_id=?",
@@ -499,10 +504,11 @@ def get_accounts_for_user(user_id: int) -> list[dict]:
     conn = get_connection()
     rows = conn.execute("""
         SELECT a.id, a.label, a.account_no, a.active, a.game_id, a.capital,
-               u.id, u.name, u.mobile, b.id, b.name
+               u.id, u.name, u.mobile, b.id, b.name, g.status
         FROM accounts a
         LEFT JOIN users u ON u.id = a.user_id
         LEFT JOIN brokers b ON b.id = a.broker_id
+        LEFT JOIN games g ON g.id = a.game_id
         WHERE a.user_id = ?
         ORDER BY a.game_id IS NOT NULL, b.name
     """, (user_id,)).fetchall()
@@ -511,7 +517,7 @@ def get_accounts_for_user(user_id: int) -> list[dict]:
         {"id": r[0], "label": r[1], "account_no": r[2], "active": bool(r[3]),
          "game_id": r[4], "capital": r[5],
          "user_id": r[6], "user_name": r[7], "user_mobile": r[8],
-         "broker_id": r[9], "broker": r[10]}
+         "broker_id": r[9], "broker": r[10], "game_status": r[11]}
         for r in rows
     ]
 
@@ -548,19 +554,21 @@ def get_game_virtual_account(game_id: int, user_id: int) -> dict | None:
     return {"id": row[0], "label": row[1], "capital": row[2] or 0}
 
 
-def get_game_portfolio(game_id: int, user_id: int, prices: dict) -> dict:
+def get_account_portfolio(account_id: int, prices: dict) -> dict:
     """
-    Compute portfolio for a user's virtual game account.
+    Compute portfolio summary for any account (real or game virtual).
     prices = {instrument_key: ltp}
-    Returns capital, positions (open legs), realized_pnl, unrealized_pnl, total_pnl.
+    Returns label, capital, positions (open legs), realized_pnl, unrealized_pnl, total_pnl.
     """
-    acct = get_game_virtual_account(game_id, user_id)
-    if not acct:
-        return {"account_id": None, "capital": 0, "pnl": 0,
+    conn = get_connection()
+    row  = conn.execute("SELECT id, label, capital FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    conn.close()
+    if not row:
+        return {"account_id": None, "label": None, "capital": None, "pnl": 0,
                 "realized_pnl": 0, "unrealized_pnl": 0, "positions": []}
 
-    capital    = acct["capital"]
-    account_id = acct["id"]
+    label   = row[1]
+    capital = row[2]
 
     # Realized P&L from closed trades
     realized_pnl = 0.0
@@ -578,15 +586,17 @@ def get_game_portfolio(game_id: int, user_id: int, prices: dict) -> dict:
             else:
                 realized_pnl += (el["price"] - xl["price"]) * qty
 
-    # Unrealized P&L from open trades
+    # Unrealized P&L and used capital from open trades
     unrealized_pnl = 0.0
+    used_capital   = 0.0
     positions = []
     for t in get_open_account_trades(account_id=account_id):
+        used_capital += t.get("margin") or 0
         legs = get_account_trade_legs(t["id"])
-        exited_ikeys  = {l["instrument_key"] for l in legs if l["action"] == "exit"}
-        current_legs  = [l for l in legs if l["action"] == "entry"
-                         and l["instrument_key"] not in exited_ikeys
-                         and not l["adjustment_id"]]
+        exited_ikeys = {l["instrument_key"] for l in legs if l["action"] == "exit"}
+        current_legs = [l for l in legs if l["action"] == "entry"
+                        and l["instrument_key"] not in exited_ikeys
+                        and not l["adjustment_id"]]
         for l in current_legs:
             ltp = prices.get(l["instrument_key"]) if l["instrument_key"] else None
             qty = l["lots"] * (l["lot_size"] or 1)
@@ -596,29 +606,61 @@ def get_game_portfolio(game_id: int, user_id: int, prices: dict) -> dict:
                           else (l["price"] - ltp) * qty
             unrealized_pnl += leg_pnl
             positions.append({
-                "trade_id":       t["id"],
-                "symbol":         t["symbol"],
-                "side":           l["side"],
+                "trade_id":        t["id"],
+                "symbol":          t["symbol"],
+                "side":            l["side"],
                 "instrument_type": l["instrument_type"],
-                "strike":         l["strike"],
-                "expiry_str":     l["expiry_str"],
-                "lots":           l["lots"],
-                "lot_size":       l["lot_size"],
-                "entry_price":    l["price"],
-                "instrument_key": l["instrument_key"],
-                "ltp":            ltp,
-                "pnl":            round(leg_pnl, 2),
+                "strike":          l["strike"],
+                "expiry_str":      l["expiry_str"],
+                "lots":            l["lots"],
+                "lot_size":        l["lot_size"],
+                "entry_price":     l["price"],
+                "instrument_key":  l["instrument_key"],
+                "ltp":             ltp,
+                "pnl":             round(leg_pnl, 2),
             })
 
     total_pnl = realized_pnl + unrealized_pnl
     return {
-        "account_id":    account_id,
-        "capital":       capital,
-        "realized_pnl":  round(realized_pnl, 2),
+        "account_id":     account_id,
+        "label":          label,
+        "capital":        capital,
+        "used_capital":   round(used_capital, 2),
+        "realized_pnl":   round(realized_pnl, 2),
         "unrealized_pnl": round(unrealized_pnl, 2),
-        "pnl":           round(total_pnl, 2),
-        "positions":     positions,
+        "pnl":            round(total_pnl, 2),
+        "positions":      positions,
     }
+
+
+def get_game_portfolio(game_id: int, user_id: int, prices: dict) -> dict:
+    """Compute portfolio for a user's virtual game account. Delegates to get_account_portfolio."""
+    acct = get_game_virtual_account(game_id, user_id)
+    if not acct:
+        return {"account_id": None, "label": None, "capital": 0, "pnl": 0,
+                "realized_pnl": 0, "unrealized_pnl": 0, "positions": []}
+    return get_account_portfolio(acct["id"], prices)
+
+
+def update_account_capital(account_id: int, capital: float) -> None:
+    """Set (or replace) the capital for an account."""
+    conn = get_connection()
+    conn.execute("UPDATE accounts SET capital = ? WHERE id = ?", (capital, account_id))
+    conn.commit()
+    conn.close()
+
+
+def add_account_capital(account_id: int, amount: float) -> float:
+    """Add amount to existing capital (top-up). Returns new capital."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE accounts SET capital = COALESCE(capital, 0) + ? WHERE id = ?",
+        (amount, account_id)
+    )
+    conn.commit()
+    new_cap = conn.execute("SELECT capital FROM accounts WHERE id = ?", (account_id,)).fetchone()[0]
+    conn.close()
+    return new_cap
 
 
 def update_user_profile(user_id: int, mobile: str = "", note: str = "") -> None:
@@ -878,7 +920,7 @@ def get_accounts() -> list[dict]:
 
 def add_account(
     user_id: int, broker_id: int,
-    account_no: str = "", label: str = "",
+    account_no: str = "", label: str = "", capital: float | None = None,
 ) -> int:
     conn = get_connection()
     exists = conn.execute(
@@ -889,8 +931,8 @@ def add_account(
         conn.close()
         raise ValueError("An account for this user with this broker already exists.")
     cur = conn.execute(
-        "INSERT INTO accounts (user_id, broker_id, account_no, label) VALUES (?, ?, ?, ?)",
-        (user_id, broker_id, account_no.strip() or None, label.strip() or None),
+        "INSERT INTO accounts (user_id, broker_id, account_no, label, capital) VALUES (?, ?, ?, ?, ?)",
+        (user_id, broker_id, account_no.strip() or None, label.strip() or None, capital),
     )
     row_id = cur.lastrowid
     conn.commit()
@@ -908,6 +950,7 @@ def create_account_trade(
     recommended_trade_id: int | None = None,
     note: str = "",
     entry_time: str | None = None,
+    margin: float | None = None,
 ) -> int:
     """Insert account_trade + account_trade_legs. Returns new id."""
     from datetime import datetime, timezone
@@ -915,20 +958,21 @@ def create_account_trade(
     conn = get_connection()
     cur = conn.execute("""
         INSERT INTO account_trades
-            (recommended_trade_id, account_id, status, entry_time, note)
-        VALUES (?, ?, 'open', ?, ?)
-    """, (recommended_trade_id, account_id, now, note or None))
+            (recommended_trade_id, account_id, status, entry_time, note, margin)
+        VALUES (?, ?, 'open', ?, ?, ?)
+    """, (recommended_trade_id, account_id, now, note or None, margin))
     at_id = cur.lastrowid
     conn.executemany("""
         INSERT INTO account_trade_legs
             (account_trade_id, action, side, instrument_type, instrument_key,
-             strike, expiry_str, lots, lot_size, price, ts, adjustment_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             strike, expiry_str, lots, lot_size, price, ts, adjustment_id, margin)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, [
         (at_id, l["action"], l["side"], l["instrument_type"],
          l.get("instrument_key"), _float_or_none(l.get("strike")),
          l.get("expiry_str"), l.get("lots", 1), l.get("lot_size", 0),
-         _float_or_none(l.get("price")), l.get("ts", now), None)
+         _float_or_none(l.get("price")), l.get("ts", now), None,
+         _float_or_none(l.get("margin")))
         for l in legs
     ])
     conn.commit()

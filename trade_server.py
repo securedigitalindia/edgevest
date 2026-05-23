@@ -366,20 +366,60 @@ def api_accounts():
         broker_id  = data.get("broker_id")
         account_no = data.get("account_no", "")
         label      = data.get("label", "")
+        capital    = data.get("capital")
         if user["role"] == "client":
             user_id = user["id"]
         else:
             return jsonify(ok=False, error="Only clients can add accounts"), 403
         if not broker_id:
             return jsonify(ok=False, error="user_id and broker_id are required"), 400
+        if not capital or float(capital) <= 0:
+            return jsonify(ok=False, error="Initial capital is required"), 400
         try:
-            aid = add_account(user_id, broker_id, account_no, label)
+            aid = add_account(user_id, broker_id, account_no, label, float(capital))
             return jsonify(ok=True, id=aid)
         except ValueError as e:
             return jsonify(ok=False, error=str(e)), 400
     if user["role"] == "client":
         return jsonify(accounts=get_accounts_for_user(user["id"]))
     return jsonify(accounts=get_accounts())
+
+
+@app.route("/api/accounts/<int:aid>/capital", methods=["POST"])
+@require_login
+def api_account_capital(aid):
+    from db.queries import get_accounts_for_user, update_account_capital, add_account_capital
+    user    = current_user()
+    own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
+    if aid not in own_ids:
+        return jsonify(ok=False, error="Forbidden"), 403
+    data   = request.json or {}
+    action = data.get("action", "set")   # "set" or "add"
+    amount = data.get("amount")
+    if amount is None or float(amount) <= 0:
+        return jsonify(ok=False, error="amount must be > 0"), 400
+    if action == "add":
+        new_cap = add_account_capital(aid, float(amount))
+    else:
+        update_account_capital(aid, float(amount))
+        new_cap = float(amount)
+    return jsonify(ok=True, capital=new_cap)
+
+
+@app.route("/api/accounts/<int:aid>/portfolio")
+@require_login
+def api_account_portfolio(aid):
+    from db.queries import get_accounts_for_user, get_account_portfolio, get_connection
+    user    = current_user()
+    own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
+    if aid not in own_ids and not is_admin():
+        return jsonify(error="Forbidden"), 403
+    conn   = get_connection()
+    prices = {r["instrument_key"]: r["ltp"]
+              for r in conn.execute("SELECT instrument_key, ltp FROM price_cache").fetchall()}
+    conn.close()
+    pf = get_account_portfolio(aid, prices)
+    return jsonify(portfolio=pf)
 
 
 # ─────────────────────────────────────────────────────────
@@ -438,6 +478,7 @@ def api_recommendations():
             "realized_pnl":    realized_pnl,
             "adjustments":     adjustments,
             "margin_required": r.get("margin_required"),
+            "margin_final":    r.get("margin_final"),
         })
     return jsonify(recommendations=out)
 
@@ -501,6 +542,11 @@ def api_rec_adjust(rec_id):
             send_adjustment_alert(trade["symbol"], "adjustment", legs, note)
         except Exception as e:
             print(f"  [adjust alert failed]  {e}", flush=True)
+        try:
+            from live.manual_trade import recalculate_recommendation_margin
+            recalculate_recommendation_margin(rec_id)
+        except Exception as e:
+            print(f"  [rec adjust margin recalc skipped]  {e}", flush=True)
         return jsonify(ok=True, adjustment_id=adj_id)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 400
@@ -540,8 +586,10 @@ def api_account_trades():
     if user["role"] == "client":
         from db.queries import get_accounts_for_user
         own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
-        trades  = [t for t in get_open_account_trades()
-                   if t["account_id"] in own_ids]
+        if account_id and account_id in own_ids:
+            trades = get_open_account_trades(account_id=account_id)
+        else:
+            trades = [t for t in get_open_account_trades() if t["account_id"] in own_ids]
     else:
         trades = get_open_account_trades(account_id=account_id)
 
@@ -570,6 +618,7 @@ def api_account_trades():
             "applied_adjustments": applied_adjs,
             "pending_adj_count":   len(pending_adjs),
             "pending_adjustments": pending_adjs,
+            "margin":              t.get("margin"),
         })
     return jsonify(trades=out)
 
@@ -585,8 +634,6 @@ def api_account_trade_create():
     note       = data.get("note", "")
     user       = current_user()
 
-    if not rec_id:
-        return jsonify(ok=False, error="recommended_trade_id is required"), 400
     if not account_id or not symbol or not legs:
         return jsonify(ok=False, error="account_id, symbol and legs are required"), 400
 
@@ -630,6 +677,11 @@ def api_account_trade_adjust(at_id):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         add_account_adjustment(at_id, trade_adjustment_id, legs, now, adj_type=adj_type)
+        try:
+            from live.manual_trade import recalculate_account_trade_margin
+            recalculate_account_trade_margin(at_id)
+        except Exception as me:
+            print(f"  [adjust]  margin recalc skipped: {me}", flush=True)
         return jsonify(ok=True)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 400
@@ -705,7 +757,12 @@ def api_account_trades_history():
     account_id = request.args.get("account_id", type=int)
 
     if user["role"] == "client":
-        trades = get_closed_account_trades(user_id=user["id"])
+        from db.queries import get_accounts_for_user
+        own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
+        if account_id and account_id in own_ids:
+            trades = get_closed_account_trades(account_id=account_id)
+        else:
+            trades = get_closed_account_trades(user_id=user["id"])
     else:
         trades = get_closed_account_trades(account_id=account_id)
 

@@ -281,9 +281,11 @@ function McqGame({ game, isAdmin }) {
 // ─── Leaderboard game ─────────────────────────────────────────────────────────
 
 function LeaderboardGame({ game, isAdmin }) {
-  const e    = game.my_entry
-  const rank = e?.rank
-  const won  = e?.credits_won
+  const e      = game.my_entry
+  const rank   = e?.rank
+  const won    = e?.credits_won
+  const submit = useSubmitEntry(game.id)
+  const toast  = useToast()
 
   if (isAdmin) return null
 
@@ -301,7 +303,28 @@ function LeaderboardGame({ game, isAdmin }) {
     )
   }
 
-  if (game.status === 'active') return <PortfolioView gid={game.id} />
+  if (game.status === 'active' && !e) {
+    async function doJoin() {
+      const res = await submit.mutateAsync({})
+      if (res.ok) toast('Joined! Your virtual account is ready.', 'ok')
+      else toast(res.error || 'Error joining', 'err')
+    }
+    return (
+      <div style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:10,padding:20,textAlign:'center',marginBottom:4}}>
+        <div style={{fontSize:15,fontWeight:700,color:'#1e293b',marginBottom:6}}>Join the Trading Challenge</div>
+        <div style={{fontSize:13,color:'#64748b',marginBottom:16}}>
+          A virtual account with starting capital will be created for you.<br/>
+          Push recommendations from the Dashboard to trade.
+        </div>
+        <button className="btn btn-primary" style={{padding:'10px 28px',fontSize:14,fontWeight:700,borderRadius:8}}
+          onClick={doJoin} disabled={submit.isPending}>
+          {submit.isPending ? 'Joining…' : 'Join Game →'}
+        </button>
+      </div>
+    )
+  }
+
+  if (game.status === 'active' && e) return <PortfolioView gid={game.id} />
 
   return <div className="game-closed-msg">Game is {game.status} — trading closed</div>
 }
@@ -319,15 +342,22 @@ function PortfolioView({ gid }) {
   if (!pf.account_id) {
     return (
       <div style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:8,padding:20,textAlign:'center'}}>
-        <div style={{fontSize:13,color:'#64748b',marginBottom:8}}>Your virtual trading account is being set up.</div>
-        <div style={{fontSize:12,color:'#94a3b8'}}>Go to Dashboard → push a recommendation to your 🎮 game account to start trading.</div>
+        <div style={{fontSize:13,color:'#64748b'}}>Setting up your virtual account…</div>
+        <button className="btn btn-ghost btn-sm" onClick={refetch} style={{marginTop:8}}>↻ Refresh</button>
       </div>
     )
   }
 
   return (
     <div>
-      {/* Summary bar */}
+      {/* Account reference header */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+        <span style={{fontSize:13,fontWeight:600,color:'#1e293b'}}>
+          {pf.label || `Virtual Account #${pf.account_id}`}
+        </span>
+        <button className="btn btn-ghost btn-sm" onClick={refetch} style={{padding:'3px 8px',fontSize:11}}>↻</button>
+      </div>
+
       <div className="portfolio-bar">
         <div className="portfolio-stat">
           <div className="val">{fmtRs(pf.capital)}</div>
@@ -347,7 +377,6 @@ function PortfolioView({ gid }) {
         </div>
       </div>
 
-      {/* Open positions */}
       {positions.length ? (
         <table className="leaderboard-table" style={{marginBottom:10}}>
           <thead><tr><th>Symbol</th><th>Side</th><th>Legs</th><th>Entry</th><th>LTP</th><th>P&amp;L</th></tr></thead>
@@ -369,13 +398,10 @@ function PortfolioView({ gid }) {
           </tbody>
         </table>
       ) : (
-        <div style={{fontSize:12,color:'#94a3b8',marginBottom:10,padding:'12px 0'}}>No open positions</div>
+        <div style={{fontSize:12,color:'#94a3b8',padding:'12px 0',marginBottom:4}}>
+          No open positions · add trades from the Dashboard
+        </div>
       )}
-
-      <div style={{fontSize:11,color:'#94a3b8',display:'flex',alignItems:'center',gap:8}}>
-        <span>Push recommendations to your <strong>🎮 {pf.label || 'game account'}</strong> from the Dashboard to trade.</span>
-        <button className="btn btn-ghost btn-sm" onClick={refetch} style={{padding:'2px 8px',fontSize:11}}>↻</button>
-      </div>
     </div>
   )
 }

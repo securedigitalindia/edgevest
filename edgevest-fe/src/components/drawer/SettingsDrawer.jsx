@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import useAuthStore from '../../store/authStore'
 import api from '../../api/client'
 import { useToast } from '../common/Toast'
-import { useBrokers, useAddBroker, useAccounts, useAddAccount } from '../../hooks/useTrades'
+import { useBrokers, useAddBroker, useAccounts, useAddAccount, useUpdateAccountCapital } from '../../hooks/useTrades'
 import { useUsers, useSaveUserProfile, useProfile, useSaveProfile, usePlans, useCreatePlan, useTogglePlan, useSubs } from '../../hooks/useSettings'
 import { getCredits } from '../../api/games'
 import './SettingsDrawer.css'
@@ -238,6 +238,82 @@ function GemsTab() {
 
 // ─── My Accounts (client) ─────────────────────────────────────────────────────
 
+function fmtRs(v) {
+  if (v == null) return null
+  return '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
+}
+
+function AccountCapitalRow({ account }) {
+  const toast   = useToast()
+  const upd     = useUpdateAccountCapital(account.id)
+  const [open,   setOpen]   = useState(false)
+  const [action, setAction] = useState('set')  // 'set' | 'add'
+  const [amount, setAmount] = useState('')
+
+  async function save() {
+    const v = parseFloat(amount)
+    if (!v || v <= 0) return toast('Enter a valid amount', 'err')
+    const res = await upd.mutateAsync({ action, amount: v })
+    if (res.ok) {
+      toast(action === 'add' ? `+${fmtRs(v)} added ✓` : `Capital set to ${fmtRs(v)} ✓`, 'ok')
+      setOpen(false); setAmount('')
+    } else toast(res.error || 'Failed', 'err')
+  }
+
+  const name = account.game_id
+    ? account.label
+    : (account.label || [account.broker, account.account_no].filter(Boolean).join(' · ') || `Account ${account.id}`)
+
+  return (
+    <div style={{borderBottom:'1px solid #f1f5f9',paddingBottom:8,marginBottom:8}}>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:600,fontSize:13,color:'#1e293b'}}>{name}</div>
+          <div style={{fontSize:11,color:'var(--muted)',marginTop:1,display:'flex',gap:8,flexWrap:'wrap'}}>
+            {account.broker && !account.game_id && <span>{account.broker}</span>}
+            {account.account_no && <span>{account.account_no}</span>}
+            {account.capital != null
+              ? <span style={{color:'#16a34a',fontWeight:600}}>Capital: {fmtRs(account.capital)}</span>
+              : <span style={{color:'#f59e0b'}}>No capital set</span>}
+          </div>
+        </div>
+        {!account.game_id && (
+          <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}
+            style={{fontSize:11,padding:'3px 8px'}}>
+            {open ? 'Cancel' : account.capital != null ? '+ Top-up' : 'Set Capital'}
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div style={{marginTop:8,background:'#f8fafc',border:'1px solid var(--border)',borderRadius:6,padding:10,display:'flex',gap:8,alignItems:'flex-end',flexWrap:'wrap'}}>
+          <div style={{display:'flex',border:'1px solid var(--border)',borderRadius:6,overflow:'hidden',flexShrink:0}}>
+            <button onClick={()=>setAction('set')}
+              style={{padding:'5px 10px',fontSize:11,fontWeight:600,border:'none',cursor:'pointer',
+                background:action==='set'?'var(--blue)':'#fff',color:action==='set'?'#fff':'var(--muted)'}}>
+              Set
+            </button>
+            <button onClick={()=>setAction('add')}
+              style={{padding:'5px 10px',fontSize:11,fontWeight:600,border:'none',cursor:'pointer',
+                background:action==='add'?'var(--green)':'#fff',color:action==='add'?'#fff':'var(--muted)'}}>
+              Add
+            </button>
+          </div>
+          <div style={{flex:1,minWidth:100}}>
+            <input type="number" step="1000" placeholder="Amount (₹)" value={amount}
+              onChange={e=>setAmount(e.target.value)}
+              style={{width:'100%',padding:'5px 8px',fontSize:13,border:'1px solid var(--border)',borderRadius:6}} />
+          </div>
+          <button className="btn btn-success btn-sm" onClick={save} disabled={upd.isPending}
+            style={{whiteSpace:'nowrap'}}>
+            {upd.isPending ? '…' : 'Save'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AccountsTab() {
   const { data: accounts = [], isLoading } = useAccounts()
   const { data: brokers  = [] }            = useBrokers()
@@ -246,29 +322,27 @@ function AccountsTab() {
   const [brokerId, setBrokerId] = useState('')
   const [acctNo,   setAcctNo]   = useState('')
   const [label,    setLabel]    = useState('')
+  const [capital,  setCapital]  = useState('')
 
   async function add() {
-    if (!brokerId) { toast('Select a broker', 'err'); return }
-    const res = await addAccount.mutateAsync({ broker_id: parseInt(brokerId), account_no: acctNo, label })
-    if (res.ok) { toast('Account added ✓', 'ok'); setBrokerId(''); setAcctNo(''); setLabel('') }
+    if (!brokerId)                         return toast('Select a broker', 'err')
+    if (!capital || parseFloat(capital) <= 0) return toast('Enter initial capital', 'err')
+    const res = await addAccount.mutateAsync({ broker_id: parseInt(brokerId), account_no: acctNo, label, capital: parseFloat(capital) })
+    if (res.ok) { toast('Account added ✓', 'ok'); setBrokerId(''); setAcctNo(''); setLabel(''); setCapital('') }
     else toast(res.error || 'Failed', 'err')
   }
 
+  // Only show real accounts in management (game accounts are managed via game lifecycle)
+  const realAccounts = accounts.filter(a => !a.game_id)
+
   return (
     <div className="stab-panel active">
-      <div className="settings-list">
+      <div style={{marginBottom:12}}>
         {isLoading && <div className="empty">Loading…</div>}
-        {!isLoading && !accounts.length && <div className="empty">No accounts yet. Add one below.</div>}
-        {accounts.map(a => (
-          <div key={a.id} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:'1px solid #f1f5f9'}}>
-            <div style={{flex:1}}>
-              <div style={{fontWeight:600,fontSize:13}}>{a.label || [a.broker, a.account_no].filter(Boolean).join(' · ')}</div>
-              {(a.broker || a.account_no) && <div style={{fontSize:11,color:'var(--muted)'}}>{[a.broker, a.account_no].filter(Boolean).join('  ·  ')}</div>}
-            </div>
-          </div>
-        ))}
+        {!isLoading && !realAccounts.length && <div style={{color:'var(--muted)',fontSize:13,padding:'8px 0'}}>No accounts yet.</div>}
+        {realAccounts.map(a => <AccountCapitalRow key={a.id} account={a} />)}
       </div>
-      <div style={{background:'#f8fafc',border:'1px solid var(--border)',borderRadius:8,padding:12,marginTop:4}}>
+      <div style={{background:'#f8fafc',border:'1px solid var(--border)',borderRadius:8,padding:12}}>
         <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:.5,color:'var(--muted)',marginBottom:10}}>Add Account</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
           <div className="form-row">
@@ -283,9 +357,15 @@ function AccountsTab() {
             <input placeholder="Broker account ID" value={acctNo} onChange={e=>setAcctNo(e.target.value)} />
           </div>
         </div>
-        <div className="form-row">
-          <label>Label (optional)</label>
-          <input placeholder="e.g. Zerodha Main" value={label} onChange={e=>setLabel(e.target.value)} />
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          <div className="form-row">
+            <label>Label (optional)</label>
+            <input placeholder="e.g. Zerodha Main" value={label} onChange={e=>setLabel(e.target.value)} />
+          </div>
+          <div className="form-row">
+            <label>Initial Capital (₹) *</label>
+            <input type="number" step="10000" placeholder="e.g. 500000" value={capital} onChange={e=>setCapital(e.target.value)} />
+          </div>
         </div>
         <button className="btn btn-primary btn-sm" onClick={add} disabled={addAccount.isPending}>Add Account</button>
       </div>

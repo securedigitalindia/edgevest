@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRecs, useRecPrices, useCreateRec, useDeleteRec, useExitRec, useAdjustRec, useCreateAccountTrade,
          useTrades, useTradeHistory, useExitTrade, useApplyAdjTrade, useDeleteTrade,
-         useAccounts } from '../hooks/useTrades'
+         useAccounts, useAccountPortfolio } from '../hooks/useTrades'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getCredits, getPlans, subscribeWithCredits } from '../api/games'
 import useAuthStore from '../store/authStore'
@@ -275,7 +275,7 @@ function RecLegs({ rec }) {
 
 // ─── Push to account form (client) ───────────────────────────────────────────
 
-function PushForm({ rec, prices, onClose }) {
+function PushForm({ rec, prices, onClose, openDrawer }) {
   const { data: accounts = [] } = useAccounts()
   const [acctId, setAcctId]     = useState('')
   const [legData, setLegData]   = useState(rec.legs.map(l => {
@@ -306,14 +306,17 @@ function PushForm({ rec, prices, onClose }) {
       <h4>Push to Account</h4>
       <div className="form-row">
         <label>Account</label>
-        <select value={acctId} onChange={e => setAcctId(e.target.value)}>
-          <option value="">Select account…</option>
-          {accounts.map(a => (
-            <option key={a.id} value={a.id}>
-              {a.game_id ? `🎮 ${a.label}` : (a.label || [a.user_name, a.broker].filter(Boolean).join(' · '))}
-            </option>
-          ))}
-        </select>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <select value={acctId} onChange={e => setAcctId(e.target.value)}>
+            <option value="">Select account…</option>
+            {accounts.map(a => (
+              <option key={a.id} value={a.id}>
+                {a.game_id ? `🎮 ${a.label}` : (a.label || [a.user_name, a.broker].filter(Boolean).join(' · '))}
+              </option>
+            ))}
+          </select>
+          {openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
+        </div>
       </div>
       {rec.legs.map((l, i) => {
         const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : ''
@@ -353,7 +356,7 @@ function PushForm({ rec, prices, onClose }) {
 
 // ─── Single recommendation item ───────────────────────────────────────────────
 
-function RecItem({ rec, prices }) {
+function RecItem({ rec, prices, openDrawer }) {
   const user    = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
   const toast   = useToast()
@@ -438,10 +441,10 @@ function RecItem({ rec, prices }) {
       <RecLegs rec={rec} />
 
       {/* P&L bars */}
-      {isOpen && rec.margin_required && (
+      {isOpen && rec.margin_final && (
         <div className="pnl-bar">
           <span className="pnl-bar-lbl">Margin</span>
-          <span style={{fontWeight:700}}>₹{Math.round(rec.margin_required).toLocaleString('en-IN')}</span>
+          <span style={{fontWeight:700}}>₹{Math.round(rec.margin_final).toLocaleString('en-IN')}</span>
         </div>
       )}
       {isOpen && (
@@ -450,8 +453,8 @@ function RecItem({ rec, prices }) {
           {unrealisedPnl != null
             ? <span style={{display:'flex',alignItems:'center',gap:4}}>
                 <span style={{fontWeight:700,color:unrealisedPnl>=0?'var(--green)':'var(--red)'}}>{fmtPnl(unrealisedPnl)}</span>
-                {rec.margin_required && <span style={{fontSize:11,fontWeight:600,color:unrealisedPnl>=0?'var(--green)':'var(--red)'}}>
-                  ({unrealisedPnl>=0?'+':''}{((unrealisedPnl/rec.margin_required)*100).toFixed(1)}%)
+                {rec.margin_final && <span style={{fontSize:11,fontWeight:600,color:unrealisedPnl>=0?'var(--green)':'var(--red)'}}>
+                  ({unrealisedPnl>=0?'+':''}{((unrealisedPnl/rec.margin_final)*100).toFixed(1)}%)
                 </span>}
               </span>
             : <span className="pnl-neu" style={{fontWeight:700}}>—</span>
@@ -539,7 +542,7 @@ function RecItem({ rec, prices }) {
           <div style={{display:'flex',gap:8,padding:'8px 14px',borderTop:'1px solid var(--border)',background:'#fafafa'}}>
             <button className="btn btn-success btn-sm" onClick={() => setPushOpen(v=>!v)}>+ Add to Account</button>
           </div>
-          {pushOpen && <PushForm rec={rec} prices={prices} onClose={() => setPushOpen(false)} />}
+          {pushOpen && <PushForm rec={rec} prices={prices} onClose={() => setPushOpen(false)} openDrawer={openDrawer} />}
         </>
       )}
     </div>
@@ -612,7 +615,7 @@ function RecsPanel({ isAdmin, openDrawer }) {
           {!isLoading && !filtered.length && (
             <div className="empty">No {segment !== 'all' ? segment + ' ' : ''}{status !== 'all' ? status + ' ' : ''}recommendations.</div>
           )}
-          {filtered.map(r => <RecItem key={r.id} rec={r} prices={prices} />)}
+          {filtered.map(r => <RecItem key={r.id} rec={r} prices={prices} openDrawer={openDrawer} />)}
         </div>
       </div>
     </div>
@@ -767,6 +770,12 @@ function TradeCard({ trade: t, isAdmin, prices }) {
         </tbody>
       </table>
 
+      {t.margin != null && (
+        <div className="pnl-bar">
+          <span className="pnl-bar-lbl">Margin</span>
+          <span style={{fontWeight:700}}>₹{Math.round(t.margin).toLocaleString('en-IN')}</span>
+        </div>
+      )}
       {(() => {
         let net = 0, allKnown = true
         const allLegs = [...(t.legs || []), ...(t.applied_adjustments || []).flatMap(a => a.legs || [])]
@@ -906,10 +915,103 @@ function HistoryCard({ trade: t }) {
 
 // ─── Positions / history panel (right column) ────────────────────────────────
 
-function TradesPanel({ isAdmin }) {
-  const [posTab, setPosTab]   = useState('open')
-  const [acctFilter, setAcctFilter] = useState('')
+function AccountSummaryBar({ accountId }) {
+  const { data } = useAccountPortfolio(accountId)
+  const pf = data?.portfolio
+  if (!pf || pf.capital == null) return null
+  const pnl        = pf.pnl ?? 0
+  const upnl       = pf.unrealized_pnl ?? 0
+  const usedCap    = pf.used_capital ?? 0
+  const pnlColor   = pnl >= 0 ? 'var(--green)' : 'var(--red)'
+  const upColor    = upnl >= 0 ? 'var(--green)' : 'var(--red)'
+  return (
+    <div className="acct-summary-bar">
+      <div className="acct-summary-stat">
+        <div className="acct-summary-val">{fmtRs(pf.capital)}</div>
+        <div className="acct-summary-lbl">Capital</div>
+      </div>
+      {usedCap > 0 && <>
+        <div className="acct-summary-sep" />
+        <div className="acct-summary-stat">
+          <div className="acct-summary-val" style={{color:'#f59e0b'}}>{fmtRs(usedCap)}</div>
+          <div className="acct-summary-lbl">Used (Margin)</div>
+        </div>
+      </>}
+      <div className="acct-summary-sep" />
+      <div className="acct-summary-stat">
+        <div className="acct-summary-val" style={{color:upColor}}>{upnl >= 0 ? '+' : ''}{fmtRs(upnl)}</div>
+        <div className="acct-summary-lbl">Unrealized</div>
+      </div>
+      <div className="acct-summary-sep" />
+      <div className="acct-summary-stat">
+        <div className="acct-summary-val" style={{color:pnlColor,fontWeight:700}}>{pnl >= 0 ? '+' : ''}{fmtRs(pnl)}</div>
+        <div className="acct-summary-lbl">Total P&amp;L</div>
+      </div>
+    </div>
+  )
+}
+
+function NewTradeForm({ accounts, onDone, openDrawer }) {
+  const [acctId, setAcctId] = useState('')
+  const [legs, setLegs]     = useState([newLeg()])
+  const [note, setNote]     = useState('')
+  const push  = useCreateAccountTrade()
+  const toast = useToast()
+
+  async function submit() {
+    if (!acctId) return toast('Select an account', 'err')
+    const collected = collectLegs(legs, toast)
+    if (!collected) return
+    const res = await push.mutateAsync({ account_id: parseInt(acctId), symbol: collected.symbol, legs: collected.legs, note })
+    if (res.ok) { toast('Trade added!', 'ok'); onDone() }
+    else toast(res.error || 'Failed', 'err')
+  }
+
+  return (
+    <div className="new-trade-ticket anim-pop">
+      <div className="form-row">
+        <label>Account</label>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <select value={acctId} onChange={e => setAcctId(e.target.value)}>
+            <option value="">Select account…</option>
+            {accounts.map(a => (
+              <option key={a.id} value={a.id}>
+                {a.game_id ? `🎮 ${a.label}` : (a.label || [a.user_name, a.broker].filter(Boolean).join(' · '))}
+              </option>
+            ))}
+          </select>
+          {openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
+        </div>
+      </div>
+      <div className="new-trade-divider" />
+      <LegBuilder legs={legs} onChange={setLegs} />
+      <div className="form-row" style={{marginTop:4}}>
+        <label>Note <span style={{fontWeight:400,textTransform:'none',letterSpacing:0,color:'#94a3b8'}}>(optional)</span></label>
+        <input placeholder="e.g. breakout entry, stoploss 24500…" value={note} onChange={e => setNote(e.target.value)} />
+      </div>
+      <div className="new-trade-footer">
+        <button className="btn btn-success" style={{flex:1,justifyContent:'center',fontWeight:600}}
+          onClick={submit} disabled={push.isPending}>
+          {push.isPending ? 'Adding…' : 'Add Trade'}
+        </button>
+        <button className="btn btn-ghost" onClick={onDone} style={{color:'var(--muted)'}}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+function TradesPanel({ isAdmin, openDrawer }) {
+  const [posTab, setPosTab]         = useState('open')
   const { data: accounts = [] }     = useAccounts()
+
+  // Game accounts only shown while the game is active; closed/resolved ones disappear.
+  // If game_status is missing (old server), keep the account visible — fail open, not closed.
+  const visibleAccounts = accounts.filter(a => !a.game_id || !a.game_status || a.game_status === 'active')
+
+  const [acctFilter, setAcctFilter] = useState('')
+  useEffect(() => {
+    if (visibleAccounts.length && !acctFilter) setAcctFilter(String(visibleAccounts[0].id))
+  }, [visibleAccounts.length])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const params   = acctFilter ? { account_id: acctFilter } : undefined
   const { data: trades = [], isLoading, refetch }  = useTrades(params)
@@ -923,25 +1025,57 @@ function TradesPanel({ isAdmin }) {
 
   const title = isAdmin ? 'All Positions' : 'My Positions'
 
+  function acctLabel(a) {
+    return a.game_id ? `🎮 ${a.label}` : (a.label || a.account_no || `Account ${a.id}`)
+  }
+
   return (
     <div>
       <div className="card">
         <div className="card-header" style={{gap:0}}>
           <div style={{display:'flex',gap:2}}>
             <button className={`pos-tab${posTab==='open'?' active':''}`} onClick={()=>setPosTab('open')}>{title}</button>
-            <button className={`pos-tab${posTab==='history'?' active':''}`} onClick={()=>setPosTab('history')}>Trade History</button>
+            <button className={`pos-tab${posTab==='history'?' active':''}`} onClick={()=>setPosTab('history')}>History</button>
+            {!isAdmin && (
+              <button className={`pos-tab pos-tab-new${posTab==='new'?' active':''}`} onClick={()=>setPosTab('new')}>+ New Trade</button>
+            )}
           </div>
-          <select value={acctFilter} onChange={e=>setAcctFilter(e.target.value)}
-                  style={{width:'auto',fontSize:12,padding:'4px 8px',marginLeft:'auto'}}>
-            <option value="">All Accounts</option>
-            {accounts.map(a => <option key={a.id} value={a.id}>{a.label||a.account_no||`Account ${a.id}`}</option>)}
-          </select>
-          <button className="btn btn-ghost btn-sm" onClick={()=>posTab==='open'?refetch():refetchHist()}>↻</button>
+
+          {posTab !== 'new' && (
+            <div className="trades-header-right">
+              {isAdmin ? (
+                <select value={acctFilter} onChange={e=>setAcctFilter(e.target.value)}
+                        style={{width:'auto',fontSize:12,padding:'4px 8px'}}>
+                  {visibleAccounts.map(a => <option key={a.id} value={a.id}>{acctLabel(a)}</option>)}
+                </select>
+              ) : (
+                <div className="acct-chips">
+                  {visibleAccounts.map(a => (
+                    <button key={a.id}
+                      className={`acct-chip${acctFilter===String(a.id)?' active':''}`}
+                      onClick={() => setAcctFilter(String(a.id))}>
+                      <span className="acct-chip-dot" />
+                      {acctLabel(a)}
+                    </button>
+                  ))}
+                  <button className="acct-chip acct-chip-add" onClick={() => openDrawer('accounts')}>
+                    + Add Account
+                  </button>
+                </div>
+              )}
+              <div className="trades-header-divider" />
+              <button className="btn btn-ghost btn-sm" onClick={()=>posTab==='open'?refetch():refetchHist()}>↻</button>
+            </div>
+          )}
         </div>
         <div className="card-body" style={{padding:10}}>
+          {posTab !== 'new' && acctFilter && <AccountSummaryBar accountId={parseInt(acctFilter)} />}
+          {posTab === 'new' && (
+            <NewTradeForm accounts={visibleAccounts} onDone={() => { setPosTab('open'); refetch() }} openDrawer={openDrawer} />
+          )}
           {posTab === 'open' && (
             isLoading ? <div className="empty">Loading…</div> :
-            !trades.length ? <div className="empty">No open account positions.</div> :
+            !trades.length ? <div className="empty">No open positions.</div> :
             trades.map(t => <TradeCard key={t.id} trade={t} isAdmin={isAdmin} prices={prices} />)
           )}
           {posTab === 'history' && (
@@ -982,15 +1116,22 @@ function NoSubscriptionGate({ onGoGames }) {
   const canUnlock = cheapest != null && balance >= cheapest
 
   return (
-    <div style={{minHeight:'60vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'32px 16px'}}>
-      <div style={{maxWidth:460,width:'100%'}}>
+    <div>
+      <div className="card">
+        <div className="card-header">
+          <h2>Recommended Positions</h2>
+          <span style={{marginLeft:'auto',fontSize:11,fontWeight:600,color:'#94a3b8',display:'flex',alignItems:'center',gap:4}}>
+            🔒 Subscription required
+          </span>
+        </div>
+        <div className="card-body" style={{padding:'20px 16px'}}>
 
         {/* Header */}
-        <div style={{textAlign:'center',marginBottom:28}}>
-          <div style={{fontSize:44,marginBottom:12}}>🔒</div>
-          <div style={{fontSize:20,fontWeight:700,color:'#0f172a',marginBottom:8}}>No active subscription</div>
-          <div style={{fontSize:14,color:'var(--muted)',lineHeight:1.6}}>
-            Play games to earn 💎 gems, then redeem them below to unlock live signals.
+        <div style={{textAlign:'center',marginBottom:20}}>
+          <div style={{fontSize:36,marginBottom:10}}>🔒</div>
+          <div style={{fontSize:15,fontWeight:700,color:'#0f172a',marginBottom:6}}>Unlock live signals</div>
+          <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.6}}>
+            Play games to earn 💎 gems, then redeem them below to unlock recommendations.
           </div>
         </div>
 
@@ -1056,6 +1197,8 @@ function NoSubscriptionGate({ onGoGames }) {
         >
           {canUnlock ? 'Play more games →' : '🎮 Go earn gems in Games →'}
         </button>
+
+        </div>
       </div>
     </div>
   )
@@ -1065,14 +1208,12 @@ export default function Dashboard({ openDrawer, subscribed, onGoGames }) {
   const user    = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
 
-  if (!isAdmin && !subscribed) {
-    return <NoSubscriptionGate onGoGames={onGoGames} />
-  }
-
   return (
     <div className="dash-layout">
-      <RecsPanel isAdmin={isAdmin} openDrawer={openDrawer} />
-      <TradesPanel isAdmin={isAdmin} />
+      {isAdmin || subscribed
+        ? <RecsPanel isAdmin={isAdmin} openDrawer={openDrawer} />
+        : <NoSubscriptionGate onGoGames={onGoGames} />}
+      <TradesPanel isAdmin={isAdmin} openDrawer={openDrawer} />
     </div>
   )
 }

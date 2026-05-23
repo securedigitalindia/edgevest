@@ -5,6 +5,8 @@
 /* Tabs (positions panel) */
 .pos-tab { padding:4px 12px; font-size:12px; font-weight:600; cursor:pointer; border:none; background:none; color:var(--muted); border-bottom:2px solid transparent; }
 .pos-tab.active { color:var(--blue); border-bottom-color:var(--blue); }
+.pos-tab-new { color:var(--green); margin-left:4px; }
+.pos-tab-new.active { color:var(--green); border-bottom-color:var(--green); }
 
 /* Trade / history table */
 .legs-table { width:100%; border-collapse:collapse; font-size:13px; }
@@ -61,3 +63,30 @@
 
 /* Pending adj banner */
 .pending-adj-banner { padding:8px 12px; border-top:2px solid #fbbf24; background:#fffbeb; font-size:12px; }
+
+/* Trades panel header right side */
+.trades-header-right { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.trades-header-divider { width:1px; height:18px; background:var(--border); flex-shrink:0; }
+
+/* Account chips (trader account switcher) */
+.acct-chips { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.acct-chip { display:flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:500; border:1.5px solid var(--border); border-radius:6px; background:#fff; color:var(--text); cursor:pointer; white-space:nowrap; transition:all .15s; line-height:1.4; }
+.acct-chip:hover  { border-color:var(--blue); color:var(--blue); background:#eff6ff; }
+.acct-chip.active { background:var(--blue); border-color:var(--blue); color:#fff; font-weight:600; }
+.acct-chip-dot    { width:7px; height:7px; border-radius:50%; background:currentColor; opacity:.7; flex-shrink:0; }
+.acct-chip-add { border-style:dashed; color:var(--muted); }
+.acct-chip-add:hover { border-color:var(--blue); color:var(--blue); background:#eff6ff; border-style:dashed; }
+.add-account-link { background:none; border:none; padding:0; font-size:12px; color:var(--blue); cursor:pointer; white-space:nowrap; text-decoration:underline; text-underline-offset:2px; flex-shrink:0; }
+.add-account-link:hover { color:var(--blue-dark,#1d4ed8); }
+
+/* Account summary bar (capital + P&L strip) */
+.acct-summary-bar  { display:flex; align-items:center; gap:0; background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:8px 14px; margin-bottom:10px; }
+.acct-summary-stat { flex:1; text-align:center; }
+.acct-summary-val  { font-size:13px; font-weight:700; color:var(--text); }
+.acct-summary-lbl  { font-size:10px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-top:1px; }
+.acct-summary-sep  { width:1px; height:28px; background:var(--border); flex-shrink:0; margin:0 4px; }
+
+/* New trade ticket (tab view) */
+.new-trade-ticket  { padding:4px 0 4px; }
+.new-trade-divider { height:1px; background:var(--border); margin:12px 0; }
+.new-trade-footer  { display:flex; align-items:center; gap:10px; padding-top:12px; border-top:1px solid var(--border); margin-top:4px; }

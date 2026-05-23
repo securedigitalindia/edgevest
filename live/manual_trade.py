@@ -384,6 +384,98 @@ def _send_exit_alert(
 
 
 # ---------------------------------------------------------------------------
+# Margin recalculation helper (used after adjustments and for backfill)
+# ---------------------------------------------------------------------------
+
+def recalculate_recommendation_margin(rec_id: int) -> float | None:
+    """
+    Re-compute SPAN margin for the current live legs of a recommended_trade and
+    persist back to margin_required / margin_final.  Returns final_margin or None.
+    """
+    from db.queries import get_current_legs
+    from db.init_db import get_connection
+
+    live_legs = get_current_legs(rec_id)
+    if not live_legs:
+        return None
+
+    margin_required = margin_final = None
+    try:
+        from live.upstox_client import get_margin
+        margin_input = [
+            {
+                "instrument_key":   l["instrument_key"],
+                "transaction_type": l["side"],
+                "quantity":         l["lots"] * (l["lot_size"] or 1),
+                "price":            l["price"],
+            }
+            for l in live_legs if l["instrument_key"] and l["lot_size"]
+        ]
+        if margin_input:
+            m               = get_margin(margin_input)
+            margin_required = m.get("required_margin")
+            margin_final    = m.get("final_margin")
+    except Exception as e:
+        print(f"  [recalculate_rec_margin rec_id={rec_id}]  {e}", flush=True)
+
+    if margin_required is not None:
+        conn = get_connection()
+        conn.execute(
+            "UPDATE recommended_trades SET margin_required=?, margin_final=? WHERE id=?",
+            (margin_required, margin_final, rec_id),
+        )
+        conn.commit()
+        conn.close()
+
+    return margin_final
+
+
+def recalculate_account_trade_margin(at_id: int) -> float | None:
+    """
+    Re-compute SPAN margin for the current live legs of an account trade and
+    persist it back to account_trades.margin.  Returns new margin or None on failure.
+    """
+    from db.queries import get_account_trade_legs
+    from db.init_db import get_connection
+
+    legs         = get_account_trade_legs(at_id)
+    exited_ikeys = {l["instrument_key"] for l in legs if l["action"] == "exit"}
+    live_legs    = [
+        l for l in legs
+        if l["action"] == "entry" and l["instrument_key"] not in exited_ikeys
+    ]
+
+    if not live_legs:
+        return None
+
+    margin = None
+    try:
+        from live.upstox_client import get_margin
+        margin_input = [
+            {
+                "instrument_key":   l["instrument_key"],
+                "transaction_type": l["side"],
+                "quantity":         l["lots"] * (l["lot_size"] or 1),
+                "price":            l["price"],
+            }
+            for l in live_legs if l["instrument_key"] and l["lot_size"]
+        ]
+        if margin_input:
+            m      = get_margin(margin_input)
+            margin = m.get("final_margin") or m.get("required_margin")
+    except Exception as e:
+        print(f"  [recalculate_margin at_id={at_id}]  {e}", flush=True)
+
+    if margin is not None:
+        conn = get_connection()
+        conn.execute("UPDATE account_trades SET margin = ? WHERE id = ?", (margin, at_id))
+        conn.commit()
+        conn.close()
+
+    return margin
+
+
+# ---------------------------------------------------------------------------
 # Push a recommendation to an account
 # ---------------------------------------------------------------------------
 
@@ -441,6 +533,42 @@ def push_to_account(
 
     resolved = _resolve_legs(symbol, legs, now_utc)
 
+    # Calculate margin via Upstox (best-effort; None on failure)
+    margin = None
+    try:
+        from live.upstox_client import get_margin
+        margin_input = [
+            {
+                "instrument_key":   l["instrument_key"],
+                "transaction_type": l["side"],
+                "quantity":         l["lots"] * l["lot_size"],
+                "price":            l["price"],
+            }
+            for l in resolved if l["instrument_key"] and l["lot_size"]
+        ]
+        if margin_input:
+            m      = get_margin(margin_input)
+            margin = m.get("final_margin") or m.get("required_margin")
+    except Exception as e:
+        print(f"  [push_to_account]  margin fetch failed: {e}", flush=True)
+
+    # Margin sufficiency check: capital − already-used ≥ new trade margin
+    if margin is not None:
+        from db.init_db import get_connection as _gc
+        _conn = _gc()
+        cap_row  = _conn.execute("SELECT capital FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        _conn.close()
+        capital = cap_row[0] if cap_row else None
+        if capital is not None:
+            used      = sum(t.get("margin") or 0 for t in get_open_account_trades(account_id=account_id))
+            remaining = capital - used
+            if margin > remaining:
+                raise ValueError(
+                    f"Insufficient margin — this trade needs ₹{margin:,.0f} but only "
+                    f"₹{remaining:,.0f} is available "
+                    f"(capital ₹{capital:,.0f} − used ₹{used:,.0f})"
+                )
+
     # Fetch account info for alert
     from db.queries import get_accounts
     account_info = next((a for a in get_accounts() if a["id"] == account_id), None)
@@ -453,6 +581,7 @@ def push_to_account(
         recommended_trade_id = recommended_trade_id,
         note                 = note,
         entry_time           = now_utc,
+        margin               = margin,
     )
 
     # Telegram alert

@@ -3,6 +3,7 @@ import {
   listRecs, createRec, deleteRec, exitRec, adjustRec, createAccountTrade,
   listTrades, listHistory, exitTrade, applyAdjTrade, deleteTrade,
   listBrokers, addBroker, listAccounts, addAccount, fetchPrices,
+  updateAccountCapital, getAccountPortfolio,
 } from '../api/trades'
 
 export function useRecs() {
@@ -115,5 +116,22 @@ export function useAddAccount() {
   return useMutation({
     mutationFn: addAccount,
     onSuccess:  () => qc.invalidateQueries({ queryKey: ['accounts'] }),
+  })
+}
+
+export function useUpdateAccountCapital(id) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: data => updateAccountCapital(id, data),
+    onSuccess:  () => { qc.invalidateQueries({ queryKey: ['accounts'] }); qc.invalidateQueries({ queryKey: ['acct-portfolio', id] }) },
+  })
+}
+
+export function useAccountPortfolio(id) {
+  return useQuery({
+    queryKey:        ['acct-portfolio', id],
+    queryFn:         () => getAccountPortfolio(id),
+    enabled:         !!id,
+    refetchInterval: 10000,
   })
 }
