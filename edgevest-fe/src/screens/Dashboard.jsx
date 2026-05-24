@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useRecs, useRecPrices, useCreateRec, useDeleteRec, useExitRec, useAdjustRec, useCreateAccountTrade,
          useTrades, useTradeHistory, useExitTrade, useApplyAdjTrade, useDeleteTrade,
          useAccounts, useAccountPortfolio } from '../hooks/useTrades'
@@ -479,7 +479,7 @@ function ExitRecForm({ rec, onClose }) {
 
 // ─── Single recommendation item ───────────────────────────────────────────────
 
-function RecItem({ rec, prices, openDrawer, onPushed }) {
+function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
   const user    = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
   const toast   = useToast()
@@ -529,7 +529,7 @@ function RecItem({ rec, prices, openDrawer, onPushed }) {
   }
 
   return (
-    <div className={`rec-item rec-item-${rec.status}`}>
+    <div id={`rec-${rec.id}`} className={`rec-item rec-item-${rec.status}${highlight ? ' rec-item-highlight' : ''}`}>
       {/* Header */}
       <div className="rec-header">
         <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
@@ -626,6 +626,25 @@ function RecsPanel({ isAdmin, openDrawer, onPushed }) {
   const [segment, setSegment] = useState('all')
   const { data: allRecs = [], isLoading, refetch } = useRecs()
   const { data: accounts = [] } = useAccounts()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const highlightId = searchParams.get('rec') ? parseInt(searchParams.get('rec')) : null
+
+  // When recs load and ?rec= is set, switch filter to show it then scroll to it
+  useEffect(() => {
+    if (!highlightId || !allRecs.length) return
+    const target = allRecs.find(r => r.id === highlightId)
+    if (!target) return
+    // Make sure the right status filter is active
+    if (target.status === 'open' && status !== 'open' && status !== 'all') setStatus('open')
+    if (target.status !== 'open' && status === 'open') setStatus('all')
+    // Scroll after a tick so the DOM has rendered
+    setTimeout(() => {
+      document.getElementById(`rec-${highlightId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+    // Clear the param after 3s so it doesn't linger
+    const t = setTimeout(() => setSearchParams(p => { p.delete('rec'); return p }), 3000)
+    return () => clearTimeout(t)
+  }, [highlightId, allRecs.length])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Client-side status filter (Flask returns all recs; ignores ?status= param)
   const recs = status === 'all'    ? allRecs :
@@ -683,7 +702,7 @@ function RecsPanel({ isAdmin, openDrawer, onPushed }) {
           {!isLoading && !filtered.length && (
             <div className="empty">No {segment !== 'all' ? segment + ' ' : ''}{status !== 'all' ? status + ' ' : ''}recommendations.</div>
           )}
-          {filtered.map(r => <RecItem key={r.id} rec={r} prices={prices} openDrawer={openDrawer} onPushed={onPushed} />)}
+          {filtered.map(r => <RecItem key={r.id} rec={r} prices={prices} openDrawer={openDrawer} onPushed={onPushed} highlight={r.id === highlightId} />)}
         </div>
       </div>
     </div>
