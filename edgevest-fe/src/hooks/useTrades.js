@@ -11,11 +11,13 @@ export function useRecs() {
 }
 
 export function useRecPrices(keys = []) {
+  const keyStr = [...keys].sort().join(',')
   return useQuery({
-    queryKey: ['rec-prices', keys],
+    queryKey: ['rec-prices', keyStr],
     queryFn:  () => fetchPrices(keys),
     enabled:  keys.length > 0,
     refetchInterval: 5000,
+    staleTime: 4000,
   })
 }
 

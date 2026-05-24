@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import usePriceStore from '../../store/priceStore'
+import usePrices from '../../hooks/usePrices'
 import './TickerStrip.css'
 
 function fmtRs(v) {
@@ -8,7 +8,7 @@ function fmtRs(v) {
 }
 
 export default function TickerStrip() {
-  const { spot, stale } = usePriceStore()
+  const { data: { spot, stale } = { spot: {}, stale: true } } = usePrices()
   const trackRef = useRef(null)
 
   useEffect(() => {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useGame, useSubmitEntry, useResolveGame, useActivateGame, useCloseGame,
          useDeleteGame, usePortfolio, useSubmitVirtualTrade } from '../../hooks/useGames'
 import useAuthStore from '../../store/authStore'
-import usePriceStore from '../../store/priceStore'
+import usePrices from '../../hooks/usePrices'
 import { useToast } from '../common/Toast'
 import './GameDetail.css'
 
@@ -75,7 +75,7 @@ export default function GameDetail({ id, onEdit }) {
 
 function PredictionGame({ game, isAdmin, user }) {
   const sym    = game.symbol || 'NIFTY50'
-  const spot   = usePriceStore(s => s.spot)
+  const { data: { spot } = { spot: {} } } = usePrices()
   const refLtp = spot[sym]?.ltp ?? null
   const step   = sym.includes('BANK') ? 100 : 50
   const [val, setVal] = useState('')
@@ -425,7 +425,7 @@ function ParticipantTeaser({ game }) {
 // ─── Participants panel ───────────────────────────────────────────────────────
 
 function ParticipantsPanel({ game, userId }) {
-  const spot   = usePriceStore(s => s.spot)
+  const { data: { spot } = { spot: {} } } = usePrices()
   const entries = game.entries || []
   if (!entries.length) return null
 

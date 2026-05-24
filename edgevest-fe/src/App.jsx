@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import useAuthStore from './store/authStore'
 import useMe from './hooks/useMe'
-import usePrices from './hooks/usePrices'
 import TickerStrip from './components/nav/TickerStrip'
 import MainNav from './components/nav/MainNav'
 import SettingsDrawer from './components/drawer/SettingsDrawer'
@@ -14,7 +13,6 @@ import './index.css'
 
 function AppShell() {
   useMe()
-  usePrices()
 
   const { user, ready } = useAuthStore()
   const [tab, setTab]             = useState('dashboard')
