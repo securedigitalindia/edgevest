@@ -60,13 +60,13 @@ export default function GameDetail({ id, onEdit }) {
         {game.game_type === 'mcq'              && <McqGame         game={game} isAdmin={isAdmin} user={user} />}
         {game.game_type === 'leaderboard'      && <LeaderboardGame game={game} isAdmin={isAdmin} />}
 
-        {!isAdmin && game.status === 'active' && !game.my_entry && <ParticipantTeaser game={game} />}
-        {!isAdmin && game.status === 'active' &&  game.my_entry && <ParticipantsPanel game={game} userId={user?.id} />}
+        {!isAdmin && ['active','closed'].includes(game.status) && !game.my_entry && <ParticipantTeaser game={game} />}
+        {!isAdmin && ['active','closed'].includes(game.status) &&  game.my_entry && <ParticipantsPanel game={game} userId={user?.id} />}
 
         {isAdmin && <AdminActions game={game} onEdit={onEdit} />}
       </div>
 
-      {(isAdmin || game.status === 'resolved') && <LeaderboardSection game={game} />}
+      {(isAdmin || ['closed','resolved'].includes(game.status)) && <LeaderboardSection game={game} />}
     </div>
   )
 }
@@ -324,7 +324,7 @@ function LeaderboardGame({ game, isAdmin }) {
     )
   }
 
-  if (game.status === 'active' && e) return <PortfolioView gid={game.id} />
+  if (['active','closed'].includes(game.status) && e) return <PortfolioView gid={game.id} />
 
   return <div className="game-closed-msg">Game is {game.status} — trading closed</div>
 }

@@ -272,8 +272,8 @@ export default function Games({ subscribed }) {
                 {entered && (
                   <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
                     <span className="entered-badge">✓ Entered</span>
-                    {entered.rank        && <span style={{fontSize:10,color:'#d97706',fontWeight:700}}>Rank #{entered.rank}</span>}
-                    {entered.credits_won && <span style={{fontSize:10,color:'#fbbf24',fontWeight:700}}>💎 {entered.credits_won} won</span>}
+                    {entered.rank > 0        && <span style={{fontSize:10,color:'#d97706',fontWeight:700}}>Rank #{entered.rank}</span>}
+                    {entered.credits_won > 0 && <span style={{fontSize:10,color:'#fbbf24',fontWeight:700}}>💎 {entered.credits_won} won</span>}
                   </div>
                 )}
               </div>

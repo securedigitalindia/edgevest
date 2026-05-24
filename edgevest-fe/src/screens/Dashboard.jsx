@@ -276,7 +276,8 @@ function RecLegs({ rec }) {
 // ─── Push to account form (client) ───────────────────────────────────────────
 
 function PushForm({ rec, prices, onClose, openDrawer }) {
-  const { data: accounts = [] } = useAccounts()
+  const { data: allAccounts = [] } = useAccounts()
+  const accounts = allAccounts.filter(a => !a.game_id)
   const [acctId, setAcctId]     = useState('')
   const [legData, setLegData]   = useState(rec.legs.map(l => {
     const ltp = prices && l.instrument_key ? prices[l.instrument_key] : null
@@ -311,7 +312,7 @@ function PushForm({ rec, prices, onClose, openDrawer }) {
             <option value="">Select account…</option>
             {accounts.map(a => (
               <option key={a.id} value={a.id}>
-                {a.game_id ? `🎮 ${a.label}` : (a.label || [a.user_name, a.broker].filter(Boolean).join(' · '))}
+                {a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`}
               </option>
             ))}
           </select>
@@ -976,7 +977,7 @@ function NewTradeForm({ accounts, onDone, openDrawer }) {
             <option value="">Select account…</option>
             {accounts.map(a => (
               <option key={a.id} value={a.id}>
-                {a.game_id ? `🎮 ${a.label}` : (a.label || [a.user_name, a.broker].filter(Boolean).join(' · '))}
+                {a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`}
               </option>
             ))}
           </select>
@@ -1004,14 +1005,13 @@ function TradesPanel({ isAdmin, openDrawer }) {
   const [posTab, setPosTab]         = useState('open')
   const { data: accounts = [] }     = useAccounts()
 
-  // Game accounts only shown while the game is active; closed/resolved ones disappear.
-  // If game_status is missing (old server), keep the account visible — fail open, not closed.
-  const visibleAccounts = accounts.filter(a => !a.game_id || !a.game_status || a.game_status === 'active')
+  // Only real broker accounts — game/virtual accounts are managed in the Games screen
+  const realAccounts = accounts.filter(a => !a.game_id)
 
   const [acctFilter, setAcctFilter] = useState('')
   useEffect(() => {
-    if (visibleAccounts.length && !acctFilter) setAcctFilter(String(visibleAccounts[0].id))
-  }, [visibleAccounts.length])  // eslint-disable-line react-hooks/exhaustive-deps
+    if (realAccounts.length && !acctFilter) setAcctFilter(String(realAccounts[0].id))
+  }, [realAccounts.length])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const params   = acctFilter ? { account_id: acctFilter } : undefined
   const { data: trades = [], isLoading, refetch }  = useTrades(params)
@@ -1026,7 +1026,8 @@ function TradesPanel({ isAdmin, openDrawer }) {
   const title = isAdmin ? 'All Positions' : 'My Positions'
 
   function acctLabel(a) {
-    return a.game_id ? `🎮 ${a.label}` : (a.label || a.account_no || `Account ${a.id}`)
+    const base = a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`
+    return a.user_name ? `${a.user_name} · ${base}` : base
   }
 
   return (
@@ -1044,23 +1045,20 @@ function TradesPanel({ isAdmin, openDrawer }) {
           {posTab !== 'new' && (
             <div className="trades-header-right">
               {isAdmin ? (
-                <select value={acctFilter} onChange={e=>setAcctFilter(e.target.value)}
-                        style={{width:'auto',fontSize:12,padding:'4px 8px'}}>
-                  {visibleAccounts.map(a => <option key={a.id} value={a.id}>{acctLabel(a)}</option>)}
-                </select>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <select value={acctFilter} onChange={e=>setAcctFilter(e.target.value)}
+                          style={{width:'auto',fontSize:12,padding:'4px 8px'}}>
+                    {realAccounts.map(a => <option key={a.id} value={a.id}>{acctLabel(a)}</option>)}
+                  </select>
+                  {openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
+                </div>
               ) : (
-                <div className="acct-chips">
-                  {visibleAccounts.map(a => (
-                    <button key={a.id}
-                      className={`acct-chip${acctFilter===String(a.id)?' active':''}`}
-                      onClick={() => setAcctFilter(String(a.id))}>
-                      <span className="acct-chip-dot" />
-                      {acctLabel(a)}
-                    </button>
-                  ))}
-                  <button className="acct-chip acct-chip-add" onClick={() => openDrawer('accounts')}>
-                    + Add Account
-                  </button>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <select value={acctFilter} onChange={e=>setAcctFilter(e.target.value)}
+                          style={{width:'auto',fontSize:12,padding:'4px 8px'}}>
+                    {realAccounts.map(a => <option key={a.id} value={a.id}>{acctLabel(a)}</option>)}
+                  </select>
+                  {openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
                 </div>
               )}
               <div className="trades-header-divider" />
@@ -1071,7 +1069,7 @@ function TradesPanel({ isAdmin, openDrawer }) {
         <div className="card-body" style={{padding:10}}>
           {posTab !== 'new' && acctFilter && <AccountSummaryBar accountId={parseInt(acctFilter)} />}
           {posTab === 'new' && (
-            <NewTradeForm accounts={visibleAccounts} onDone={() => { setPosTab('open'); refetch() }} openDrawer={openDrawer} />
+            <NewTradeForm accounts={realAccounts} onDone={() => { setPosTab('open'); refetch() }} openDrawer={openDrawer} />
           )}
           {posTab === 'open' && (
             isLoading ? <div className="empty">Loading…</div> :

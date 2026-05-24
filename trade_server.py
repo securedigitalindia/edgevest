@@ -799,7 +799,7 @@ def api_games_list():
         games = list_games()
     else:
         games = list_games()
-        games = [g for g in games if g["status"] in ("active", "resolved")]
+        games = [g for g in games if g["status"] in ("active", "closed", "resolved")]
     uid = user["id"]
     for g in games:
         g["participant_count"] = entry_count(g["id"])
@@ -863,6 +863,23 @@ def api_game_detail(gid):
                     row["predicted_price"] = x["entry_data"].get("predicted_price")
                 rows.append(row)
             game["entries"] = rows
+
+    # For closed leaderboard games, inject live P&L as score so the leaderboard
+    # is meaningful before resolve_game() is called
+    if game["game_type"] == "leaderboard" and game["status"] == "closed" and game.get("entries"):
+        from db.queries import get_game_portfolio
+        from db.init_db import get_connection as _gc2
+        _c = _gc2()
+        _prices = {r["instrument_key"]: r["ltp"]
+                   for r in _c.execute("SELECT instrument_key, ltp FROM price_cache").fetchall()}
+        _c.close()
+        for entry in game["entries"]:
+            pf = get_game_portfolio(gid, entry["user_id"], _prices)
+            entry["score"] = pf.get("pnl", 0)
+        game["entries"].sort(key=lambda x: -(x["score"] or 0))
+        for i, entry in enumerate(game["entries"], 1):
+            entry["rank"] = i
+
     return jsonify(game=game)
 
 
@@ -900,14 +917,55 @@ def api_game_activate(gid):
 @app.route("/api/games/<int:gid>/close", methods=["POST"])
 @require_role("super_admin", "admin")
 def api_game_close(gid):
-    from db.queries import get_game, set_game_status
+    from db.queries import get_game, set_game_status, get_open_account_trades
+    from db.init_db import get_connection as _gc
     game = get_game(gid)
     if not game:
         return jsonify(ok=False, error="Not found"), 404
     if game["status"] != "active":
         return jsonify(ok=False, error="Only active games can be closed"), 400
+
     set_game_status(gid, "closed")
-    return jsonify(ok=True)
+
+    # Deactivate game accounts and auto-exit all open trades at current LTP
+    conn = _gc()
+    game_account_ids = [
+        r[0] for r in conn.execute(
+            "SELECT id FROM accounts WHERE game_id = ?", (gid,)
+        ).fetchall()
+    ]
+    if game_account_ids:
+        conn.execute(
+            f"UPDATE accounts SET active=0 WHERE game_id=?", (gid,)
+        )
+        conn.commit()
+    conn.close()
+
+    # Load price cache once for all trades
+    pc_conn = _gc()
+    prices_map = {r[0]: r[1] for r in pc_conn.execute(
+        "SELECT instrument_key, ltp FROM price_cache"
+    ).fetchall()}
+    pc_conn.close()
+
+    from db.queries import get_account_trade_legs
+    from live.manual_trade import close_account_trade
+
+    exited, failed = [], []
+    for acct_id in game_account_ids:
+        open_trades = get_open_account_trades(account_id=acct_id)
+        for trade in open_trades:
+            at_id = trade["id"]
+            try:
+                entry_legs = [l for l in get_account_trade_legs(at_id) if l["action"] == "entry"]
+                prices = [prices_map.get(l["instrument_key"], l["price"] or 0) for l in entry_legs]
+                close_account_trade(at_id, prices, note="Game closed — auto-exited at LTP")
+                exited.append(at_id)
+            except Exception as e:
+                print(f"  [game_close]  auto-exit at_id={at_id} failed: {e}", flush=True)
+                failed.append({"trade_id": at_id, "error": str(e)})
+
+    return jsonify(ok=True, exited=exited, failed=failed)
 
 
 @app.route("/api/games/<int:gid>/resolve", methods=["POST"])
