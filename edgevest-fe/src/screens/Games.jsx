@@ -203,13 +203,13 @@ function GameForm({ existing, onDone }) {
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
-export default function Games({ subscribed }) {
+export default function Games({ subscribed, initialGameId }) {
   const user     = useAuthStore(s => s.user)
   const isAdmin  = user?.role === 'super_admin' || user?.role === 'admin'
   const isClient = user?.role === 'client'
   const filters  = isAdmin ? ADMIN_FILTERS : CLIENT_FILTERS
   const [filter, setFilter]     = useState(isAdmin ? 'all' : 'active')
-  const [selId,  setSelId]      = useState(null)
+  const [selId,  setSelId]      = useState(initialGameId ?? null)
   const [editing, setEditing]   = useState(null)  // null | {} (create) | {id,...} (edit)
 
   const { data: games = [], isLoading } = useGames()

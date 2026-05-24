@@ -387,7 +387,7 @@ function PortfolioView({ gid }) {
               return (
                 <tr key={i}>
                   <td style={{fontWeight:600}}>{p.symbol}</td>
-                  <td><span className={p.side==='BUY'?'side-buy':'side-sell'}>{p.side}</span></td>
+                  <td><span className={`leg-pill ${p.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{p.side}</span></td>
                   <td style={{fontSize:11,color:'#64748b'}}>{leg} · {p.lots}L ({qty})</td>
                   <td>{fmtRs(p.entry_price, 2)}</td>
                   <td>{p.ltp != null ? fmtRs(p.ltp, 2) : '—'}</td>

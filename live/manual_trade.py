@@ -571,9 +571,16 @@ def push_to_account(
 
     # Fetch account info for alert
     from db.queries import get_accounts
+    from db.init_db import get_connection as _gc2
     account_info = next((a for a in get_accounts() if a["id"] == account_id), None)
     account_label = (account_info or {}).get("label") or \
                     (account_info or {}).get("trader") or f"Account {account_id}"
+
+    # Check if this is a game (virtual) account — skip Telegram for virtual trades
+    _conn2 = _gc2()
+    _game_row = _conn2.execute("SELECT game_id FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    _conn2.close()
+    is_game_account = bool(_game_row and _game_row[0])
 
     at_id = create_account_trade(
         account_id           = account_id,
@@ -584,26 +591,30 @@ def push_to_account(
         margin               = margin,
     )
 
-    # Telegram alert
-    n_pos    = reduce(gcd, [l["lots"] for l in resolved if l["lots"] > 0]) or 1
-    now_ist  = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b %Y  %H:%M IST")
-    rec_tag  = f"  ·  rec#{recommended_trade_id}" if recommended_trade_id else ""
-    lines    = [
-        f'📥 <b>{_h(symbol)}</b>  ·  {_h(account_label)}{rec_tag}',
-        _DIV,
-    ]
-    for l in resolved:
-        strike_str = f"{int(l['strike']):,} " if l.get("strike") else ""
-        base_lots  = l["lots"] // n_pos
-        icon       = "🔴" if l["side"] == "SELL" else "🟢"
-        lines.append(
-            f"  {icon}  {l['side']:<4}  {strike_str}{l['instrument_type']}"
-            f"  {base_lots}L  @₹{l['price']:,.2f}"
-        )
-    pos_tag = f"  ×{n_pos} pos" if n_pos > 1 else ""
-    lines += ["", _DIV, f"{pos_tag}  {note}" if note else pos_tag,
-              f"Added at  {now_ist}"]
-    send_telegram("\n".join(l for l in lines))
+    # Telegram alert (skip for game/virtual accounts)
+    if not is_game_account:
+        try:
+            n_pos    = reduce(gcd, [l["lots"] for l in resolved if l["lots"] > 0]) or 1
+            now_ist  = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b %Y  %H:%M IST")
+            rec_tag  = f"  ·  rec#{recommended_trade_id}" if recommended_trade_id else ""
+            lines    = [
+                f'📥 <b>{_h(symbol)}</b>  ·  {_h(account_label)}{rec_tag}',
+                _DIV,
+            ]
+            for l in resolved:
+                strike_str = f"{int(l['strike']):,} " if l.get("strike") else ""
+                base_lots  = l["lots"] // n_pos
+                icon       = "🔴" if l["side"] == "SELL" else "🟢"
+                lines.append(
+                    f"  {icon}  {l['side']:<4}  {strike_str}{l['instrument_type']}"
+                    f"  {base_lots}L  @₹{l['price']:,.2f}"
+                )
+            pos_tag = f"  ×{n_pos} pos" if n_pos > 1 else ""
+            lines += ["", _DIV, f"{pos_tag}  {note}" if note else pos_tag,
+                      f"Added at  {now_ist}"]
+            send_telegram("\n".join(l for l in lines))
+        except Exception as e:
+            print(f"  [push_to_account]  Telegram alert failed (trade saved ok): {e}", flush=True)
 
     print(f"  [push_to_account]  account_trade id={at_id}  {symbol}  "
           f"account={account_label}  at {now_ist}", flush=True)

@@ -31,7 +31,7 @@ export default function MainNav({ activeTab, onTabChange, onOpenDrawer }) {
       <nav className="main-nav">
         <div className="nav-brand">
           <span className="nav-brand-icon">📊</span>
-          <span className="nav-brand-name">Drishti</span>
+          <span className="nav-brand-name">EdgeVest</span>
         </div>
         <div className="nav-tabs">
           <button className={`main-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={()=>onTabChange('dashboard')}>Dashboard</button>

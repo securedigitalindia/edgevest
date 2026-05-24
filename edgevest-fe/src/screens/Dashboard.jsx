@@ -3,7 +3,7 @@ import { useRecs, useRecPrices, useCreateRec, useDeleteRec, useExitRec, useAdjus
          useTrades, useTradeHistory, useExitTrade, useApplyAdjTrade, useDeleteTrade,
          useAccounts, useAccountPortfolio } from '../hooks/useTrades'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getCredits, getPlans, subscribeWithCredits } from '../api/games'
+import { getCredits, getPlans, subscribeWithCredits, listGames, submitEntry, getPortfolio } from '../api/games'
 import useAuthStore from '../store/authStore'
 import { searchInstruments } from '../api/trades'
 import { useToast } from '../components/common/Toast'
@@ -197,93 +197,131 @@ function CreateRecForm() {
   )
 }
 
-// ─── Rec leg display (open legs and exit-paired legs) ─────────────────────────
+// ─── Shared: P&L bar ─────────────────────────────────────────────────────────
 
-function LegGroupSection({ label, legs, rec, exitLegs, exitOffset, bg, isExited }) {
-  const renderOpenLeg = (l, i) => (
-    <div key={i} className="rec-leg-row">
-      <span className={l.side === 'BUY' ? 'side-buy' : 'side-sell'} style={{fontWeight:700,minWidth:38}}>{l.side}</span>
-      <div className="rec-leg-name">
-        <div className="rec-leg-sym">
-          {l.symbol || rec.symbol}
-          {!!l.auto_adjust && <span title="auto-roll" style={{color:'#6366f1',fontSize:10,marginLeft:3}}>↻</span>}
-        </div>
-        <div className="rec-leg-contract">
-          {l.strike ? Number(l.strike).toLocaleString('en-IN') + ' ' : ''}{l.instrument_type}{l.expiry_str ? ' · ' + l.expiry_str : ''}
-        </div>
-      </div>
-      <span className="rec-leg-meta">{fmtQty(l.lots, l.lot_size, l.instrument_type)} @{fmtRs(l.price, 2)}</span>
-    </div>
-  )
-
-  const renderExitPair = (entry, exitLeg, i) => {
-    const sc  = entry.side === 'BUY' ? 'side-buy' : 'side-sell'
-    const xsc = exitLeg?.side === 'BUY' ? 'side-buy' : 'side-sell'
-    const ep  = fmtRs(entry.price, 2)
-    const xp  = exitLeg?.price != null ? fmtRs(exitLeg.price, 2) : '—'
-    const qty = (entry.lots || 0) * (entry.lot_size || 1)
-    const legPnl = (entry.price != null && exitLeg?.price != null)
-      ? (entry.side === 'SELL' ? (entry.price - exitLeg.price) * qty : (exitLeg.price - entry.price) * qty)
-      : null
-    const sym      = entry.symbol || rec.symbol
-    const contract = `${entry.strike ? Number(entry.strike).toLocaleString('en-IN') + ' ' : ''}${entry.instrument_type}${entry.expiry_str ? ' · ' + entry.expiry_str : ''}`
-    return (
-      <div key={i} className="exit-block" style={{background:bg}}>
-        <div style={{fontSize:13,fontWeight:700,color:'#1e293b'}}>{sym}</div>
-        <div style={{fontSize:11,color:'var(--muted)',marginBottom:3}}>{contract}</div>
-        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-          <span className={sc} style={{fontWeight:700}}>{entry.side}</span>
-          {exitLeg && <><span style={{color:'var(--muted)'}}>→</span><span className={xsc} style={{fontWeight:700}}>{exitLeg.side}</span></>}
-          <span style={{fontSize:12,color:'var(--muted)'}}>{ep}{exitLeg ? ` → ${xp}` : ''}</span>
-          <span style={{fontSize:12,color:'var(--muted)'}}>{fmtQty(entry.lots, entry.lot_size, entry.instrument_type)}</span>
-          {legPnl != null && <span style={{fontSize:11,fontWeight:600,color:legPnl>=0?'var(--green)':'var(--red)'}}>{fmtPnl(legPnl)}</span>}
-        </div>
-      </div>
-    )
-  }
-
+function PnlBar({ label, value, base }) {
+  const color = value != null ? (value >= 0 ? 'var(--green)' : 'var(--red)') : null
   return (
-    <div style={{background:bg,borderRadius:6,padding:'4px 8px 2px',marginBottom:4}}>
-      <div className="leg-grp-hdr">{label}</div>
-      {isExited
-        ? legs.map((l, i) => renderExitPair(l, exitLegs?.[exitOffset + i], i))
-        : legs.map((l, i) => renderOpenLeg(l, i))
+    <div className="pnl-bar">
+      <span className="pnl-bar-lbl">{label}</span>
+      {value != null
+        ? <span style={{display:'flex',alignItems:'center',gap:4}}>
+            <span style={{fontWeight:700,color}}>{fmtPnl(value)}</span>
+            {base > 0 && <span style={{fontSize:11,fontWeight:600,color}}>({value>=0?'+':''}{((value/base)*100).toFixed(1)}%)</span>}
+          </span>
+        : <span className="pnl-neu" style={{fontWeight:700}}>—</span>
       }
     </div>
   )
 }
 
-function RecLegs({ rec }) {
-  const isExited = rec.status === 'exited'
+// ─── Leg display ─────────────────────────────────────────────────────────────
+
+function fmtContract(l) {
+  return [l.strike ? Number(l.strike).toLocaleString('en-IN') : null, l.instrument_type, l.expiry_str]
+    .filter(Boolean).join(' ')
+}
+
+function OpenLeg({ leg: l, symbol, prices }) {
+  const ltp    = prices && l.instrument_key ? prices[l.instrument_key] : null
+  const qty    = (l.lots || 0) * (l.lot_size || 1)
+  const legPnl = ltp != null && l.price != null
+    ? (l.side === 'SELL' ? (l.price - ltp) * qty : (ltp - l.price) * qty)
+    : null
+  return (
+    <div className="rec-leg-row">
+      <span className={`leg-pill ${l.side === 'BUY' ? 'leg-pill-buy' : 'leg-pill-sell'}`}>{l.side}</span>
+      <div className="rec-leg-name">
+        <div className="rec-leg-sym">
+          {l.symbol || symbol}
+          {!!l.auto_adjust && <span title="auto-roll" style={{color:'#6366f1',fontSize:10,marginLeft:4}}>↻</span>}
+        </div>
+        {fmtContract(l) && <div className="rec-leg-contract">{fmtContract(l)}</div>}
+      </div>
+      <div style={{textAlign:'right',flexShrink:0}}>
+        <div className="rec-leg-meta">{fmtQty(l.lots, l.lot_size, l.instrument_type)} · {fmtRs(l.price, 2)}{ltp != null ? ` → ${fmtRs(ltp, 2)}` : ''}</div>
+        {legPnl != null && <div style={{fontSize:12,fontWeight:700,color:legPnl>=0?'var(--green)':'var(--red)'}}>{fmtPnl(legPnl)}</div>}
+      </div>
+    </div>
+  )
+}
+
+function ExitedLeg({ entry: e, exitLeg: x, symbol }) {
+  const qty    = (e.lots || 0) * (e.lot_size || 1)
+  const legPnl = e.price != null && x?.price != null
+    ? (e.side === 'SELL' ? (e.price - x.price) * qty : (x.price - e.price) * qty)
+    : null
+  return (
+    <div className="rec-leg-row">
+      <span className={`leg-pill ${e.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{e.side}</span>
+      <div className="rec-leg-name">
+        <div className="rec-leg-sym">{e.symbol || symbol}</div>
+        {fmtContract(e) && <div className="rec-leg-contract">{fmtContract(e)}</div>}
+      </div>
+      <div style={{textAlign:'right',flexShrink:0}}>
+        <div className="rec-leg-meta">{fmtQty(e.lots,e.lot_size,e.instrument_type)} · {fmtRs(e.price,2)} → {x ? fmtRs(x.price,2) : '—'}</div>
+        {legPnl != null && <div style={{fontSize:12,fontWeight:700,color:legPnl>=0?'var(--green)':'var(--red)'}}>{fmtPnl(legPnl)}</div>}
+      </div>
+    </div>
+  )
+}
+
+function LegGroup({ title, note, legs, symbol, type = 'entry', exitLegs, exitOffset = 0, prices }) {
+  return (
+    <div className={`leg-group leg-group-${type}`}>
+      {(title || note) && (
+        <div className="leg-grp-hdr">
+          {title}
+          {note && <span className="leg-grp-note">{note}</span>}
+        </div>
+      )}
+      {legs.map((l, i) =>
+        exitLegs
+          ? <ExitedLeg key={i} entry={l} exitLeg={exitLegs[exitOffset + i]} symbol={symbol} />
+          : <OpenLeg   key={i} leg={l} symbol={symbol} prices={prices} />
+      )}
+    </div>
+  )
+}
+
+function RecLegs({ rec, prices }) {
+  const exitLegs = rec.status === 'exited' ? rec.exit_legs : null
+  const adjs     = rec.adjustments || []
+
   return (
     <div className="rec-legs">
-      <LegGroupSection label="Entry" legs={rec.legs} rec={rec}
-        exitLegs={rec.exit_legs} exitOffset={0} bg="#f8fafc" isExited={isExited} />
-      {(rec.adjustments || []).map((a, ai) => {
-        const bg     = ADJ_COLORS[ai % ADJ_COLORS.length]
-        const offset = isExited ? rec.legs.length + (rec.adjustments || []).slice(0, ai).reduce((s, a2) => s + (a2.legs?.length || 0), 0) : 0
+      <LegGroup type="entry" title="Entry"
+        legs={rec.legs} symbol={rec.symbol} exitLegs={exitLegs} prices={prices} />
+
+      {adjs.map((a, ai) => {
+        const offset = exitLegs
+          ? rec.legs.length + adjs.slice(0, ai).reduce((s, a2) => s + (a2.legs?.length || 0), 0)
+          : 0
         return (
-          <LegGroupSection key={a.id || ai}
-            label={`Adjustment ${ai + 1}${a.note ? ' · ' + a.note : ''}`}
-            legs={a.legs || []} rec={rec}
-            exitLegs={rec.exit_legs} exitOffset={offset} bg={bg} isExited={isExited} />
+          <div key={a.id || ai}>
+            <div className="adj-connector">↓ Adjustment {ai + 1}</div>
+            <LegGroup type="adj" note={a.note}
+              legs={a.legs || []} symbol={rec.symbol} exitLegs={exitLegs} exitOffset={offset} prices={prices} />
+          </div>
         )
       })}
+
     </div>
   )
 }
 
 // ─── Push to account form (client) ───────────────────────────────────────────
 
-function PushForm({ rec, prices, onClose, openDrawer }) {
+function PushForm({ rec, prices, onClose, openDrawer, onPushed }) {
   const { data: allAccounts = [] } = useAccounts()
-  const accounts = allAccounts.filter(a => !a.game_id)
-  const [acctId, setAcctId]     = useState('')
-  const [legData, setLegData]   = useState(rec.legs.map(l => {
+  const realAccounts = allAccounts.filter(a => !a.game_id)
+  const gameAccounts = allAccounts.filter(a => a.game_id && a.game_status === 'active')
+  const [acctId, setAcctId] = useState('')
+  const [legData, setLegData] = useState(rec.legs.map(l => {
     const ltp = prices && l.instrument_key ? prices[l.instrument_key] : null
     return { lots: String(l.lots), price: String(ltp ?? l.price ?? '') }
   }))
-  const [note, setNote]         = useState('')
+  const [note, setNote] = useState('')
   const push  = useCreateAccountTrade()
   const toast = useToast()
 
@@ -298,7 +336,7 @@ function PushForm({ rec, prices, onClose, openDrawer }) {
       return leg
     })
     const res = await push.mutateAsync({ recommended_trade_id: rec.id, account_id: parseInt(acctId), symbol: rec.symbol, legs, note })
-    if (res.ok) { toast('Added to account — Telegram alert sent ✓', 'ok'); onClose() }
+    if (res.ok) { toast('Added to account ✓', 'ok'); onPushed?.(parseInt(acctId)); onClose() }
     else toast(res.error || 'Failed', 'err')
   }
 
@@ -310,39 +348,45 @@ function PushForm({ rec, prices, onClose, openDrawer }) {
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <select value={acctId} onChange={e => setAcctId(e.target.value)}>
             <option value="">Select account…</option>
-            {accounts.map(a => (
-              <option key={a.id} value={a.id}>
-                {a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`}
-              </option>
-            ))}
+            {realAccounts.length > 0 && (
+              <optgroup label="Broker Accounts">
+                {realAccounts.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {gameAccounts.length > 0 && (
+              <optgroup label="Game Accounts">
+                {gameAccounts.map(a => <option key={a.id} value={a.id}>{a.label || `Game #${a.game_id}`}</option>)}
+              </optgroup>
+            )}
           </select>
           {openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
         </div>
       </div>
-      {rec.legs.map((l, i) => {
-        const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : ''
-        return (
-          <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 70px 100px',gap:8,alignItems:'end',marginBottom:8}}>
-            <div style={{display:'flex',gap:8}}>
-              <span className={l.side === 'BUY' ? 'side-buy' : 'side-sell'} style={{fontWeight:700,fontSize:12}}>{l.side}</span>
-              <div>
-                <div style={{fontSize:13,fontWeight:700}}>{l.symbol || rec.symbol}</div>
-                <div style={{fontSize:11,color:'var(--muted)'}}>{strike}{l.instrument_type}{l.expiry_str ? ` · ${l.expiry_str}` : ''}</div>
-              </div>
-            </div>
+      {rec.legs.map((l, i) => (
+        <div key={i} className="form-leg-row">
+          <div className="form-leg-info">
+            <span className={`leg-pill ${l.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{l.side}</span>
             <div>
-              <label>Lots</label>
-              <input type="number" value={legData[i].lots}
-                     onChange={e => setLegData(ld => ld.map((d, j) => j === i ? { ...d, lots: e.target.value } : d))} />
-            </div>
-            <div>
-              <label>Price</label>
-              <input type="number" step="0.05" value={legData[i].price}
-                     onChange={e => setLegData(ld => ld.map((d, j) => j === i ? { ...d, price: e.target.value } : d))} />
+              <div className="rec-leg-sym">{l.symbol || rec.symbol}</div>
+              {fmtContract(l) && <div className="rec-leg-contract">{fmtContract(l)}</div>}
             </div>
           </div>
-        )
-      })}
+          <div>
+            <label>Lots</label>
+            <input type="number" value={legData[i].lots}
+                   onChange={e => setLegData(ld => ld.map((d, j) => j === i ? { ...d, lots: e.target.value } : d))} />
+          </div>
+          <div>
+            <label>Price</label>
+            <input type="number" step="0.05" value={legData[i].price}
+                   onChange={e => setLegData(ld => ld.map((d, j) => j === i ? { ...d, price: e.target.value } : d))} />
+          </div>
+        </div>
+      ))}
       <div className="form-row" style={{marginTop:6}}>
         <label>Note</label>
         <input placeholder="Optional" value={note} onChange={e => setNote(e.target.value)} />
@@ -355,9 +399,86 @@ function PushForm({ rec, prices, onClose, openDrawer }) {
   )
 }
 
+// ─── Admin inline forms ───────────────────────────────────────────────────────
+
+function AdjustForm({ rec, onClose }) {
+  const [legs, setLegs] = useState([newLeg()])
+  const [note, setNote] = useState('')
+  const doAdj = useAdjustRec(rec.id)
+  const toast = useToast()
+
+  async function submit() {
+    const data = collectLegs(legs, toast)
+    if (!data) return
+    const res = await doAdj.mutateAsync({ note, legs: data.legs })
+    if (res.ok) { toast('Adjustment applied — Telegram alert sent ✓', 'ok'); onClose() }
+    else toast(res.error || 'Failed', 'err')
+  }
+
+  return (
+    <div className="inline-action action-adj">
+      <h4>Adjust Trade</h4>
+      <div style={{fontSize:11,color:'var(--muted)',marginBottom:8}}>Add legs as you'd execute them — SELL to reduce, BUY to add.</div>
+      <LegBuilder legs={legs} onChange={setLegs} />
+      <div className="form-row" style={{marginTop:10}}>
+        <label>Note (optional)</label>
+        <input placeholder="e.g. Rolling May → Jun" value={note} onChange={e => setNote(e.target.value)} />
+      </div>
+      <div style={{display:'flex',gap:8,marginTop:10}}>
+        <button className="btn btn-primary btn-sm" onClick={submit} disabled={doAdj.isPending}>Apply Adjustment</button>
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+function ExitRecForm({ rec, onClose }) {
+  const legs = rec.current_legs || rec.legs || []
+  const [exitPx, setExitPx] = useState(legs.map(() => ''))
+  const doExit = useExitRec(rec.id)
+  const toast  = useToast()
+
+  async function submit() {
+    const prices = exitPx.slice(0, legs.length).map(parseFloat)
+    if (prices.some(p => !p || p <= 0)) { toast('Enter valid exit price for each leg', 'err'); return }
+    const res = await doExit.mutateAsync({ prices })
+    if (res.ok) { toast('Exit signal sent ✓', 'ok'); onClose() }
+    else toast(res.error || 'Failed', 'err')
+  }
+
+  return (
+    <div className="inline-action action-exit">
+      <h4>Exit Trade</h4>
+      {legs.map((l, i) => {
+        const exitSide = l.side === 'BUY' ? 'SELL' : 'BUY'
+        return (
+          <div key={i} className="form-leg-row form-leg-row-exit">
+            <div className="form-leg-info">
+              <span className={`leg-pill ${exitSide==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{exitSide}</span>
+              <div>
+                <div className="rec-leg-sym">{l.symbol || rec.symbol}</div>
+                <div className="rec-leg-contract">{fmtContract(l)} · {fmtQty(l.lots,l.lot_size,l.instrument_type)} @{fmtRs(l.price,2)}</div>
+              </div>
+            </div>
+            <div>
+              <label>Price</label>
+              <input type="number" step="0.05" placeholder="0.00"
+                     value={exitPx[i]||''} onChange={e => setExitPx(ps => ps.map((p,j) => j===i ? e.target.value : p))} />
+            </div>
+          </div>
+        )
+      })}
+      <div style={{display:'flex',gap:8}}>
+        <button className="btn btn-danger btn-sm" onClick={submit} disabled={doExit.isPending}>Confirm Exit</button>
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Single recommendation item ───────────────────────────────────────────────
 
-function RecItem({ rec, prices, openDrawer }) {
+function RecItem({ rec, prices, openDrawer, onPushed }) {
   const user    = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
   const toast   = useToast()
@@ -365,19 +486,16 @@ function RecItem({ rec, prices, openDrawer }) {
   const [adjOpen,  setAdjOpen]  = useState(false)
   const [exitOpen, setExitOpen] = useState(false)
   const [pushOpen, setPushOpen] = useState(false)
-  const [adjLegs,  setAdjLegs]  = useState([newLeg()])
-  const [adjNote,  setAdjNote]  = useState('')
-  const [exitPx,   setExitPx]   = useState((rec.current_legs || rec.legs || []).map(() => ''))
-
-  const doAdj  = useAdjustRec(rec.id)
-  const doExit = useExitRec(rec.id)
   const doDel  = useDeleteRec()
   const isOpen = rec.status === 'open'
 
+  // Realized P&L for exited recs — flatten original + adjustment legs to match exit_legs index
   let totalPnl = null
   if (rec.status === 'exited' && rec.exit_legs?.length) {
+    const adjs = rec.adjustments || []
+    const allEntryLegs = [...rec.legs, ...adjs.flatMap(a => a.legs || [])]
     let total = 0, has = false
-    rec.legs.forEach((e, i) => {
+    allEntryLegs.forEach((e, i) => {
       const x = rec.exit_legs[i]
       if (e.price != null && x?.price != null) {
         const qty = (e.lots || 0) * (e.lot_size || 1)
@@ -388,7 +506,7 @@ function RecItem({ rec, prices, openDrawer }) {
     if (has) totalPnl = total
   }
 
-  // Compute unrealized P&L from live prices for open recs
+  // Unrealized P&L from live prices
   let unrealisedPnl = null
   if (isOpen && prices) {
     const allLegs = [...(rec.legs || []), ...(rec.adjustments || []).flatMap(a => a.legs || [])]
@@ -402,24 +520,7 @@ function RecItem({ rec, prices, openDrawer }) {
     if (allKnown) unrealisedPnl = net
   }
 
-  async function submitAdj() {
-    const data = collectLegs(adjLegs, toast)
-    if (!data) return
-    const res = await doAdj.mutateAsync({ note: adjNote, legs: data.legs })
-    if (res.ok) { toast('Adjustment applied — Telegram alert sent ✓', 'ok'); setAdjOpen(false); setAdjLegs([newLeg()]); setAdjNote('') }
-    else toast(res.error || 'Failed', 'err')
-  }
-
-  async function submitExit() {
-    const legs   = rec.current_legs || rec.legs || []
-    const prices = exitPx.slice(0, legs.length).map(parseFloat)
-    if (prices.some(p => !p || p <= 0)) { toast('Enter valid exit price for each leg', 'err'); return }
-    const res = await doExit.mutateAsync({ prices })
-    if (res.ok) { toast('Exit signal sent ✓', 'ok'); setExitOpen(false) }
-    else toast(res.error || 'Failed', 'err')
-  }
-
-  async function submitDel() {
+  async function handleDelete() {
     if (!confirm('Delete this recommendation?')) return
     const res = await doDel.mutateAsync(rec.id)
     if (res.ok) toast('Recommendation deleted', 'ok')
@@ -427,124 +528,89 @@ function RecItem({ rec, prices, openDrawer }) {
   }
 
   return (
-    <div className="rec-item">
+    <div className={`rec-item rec-item-${rec.status}`}>
+      {/* Header */}
       <div className="rec-header">
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
           <span className="rec-symbol">{rec.symbol}</span>
-          <span className={`badge badge-${rec.status === 'open' ? 'open' : 'exited'}`}>{rec.status === 'open' ? 'Open' : rec.status}</span>
-          {rec.adj_count > 0 && <span style={{fontSize:11,padding:'2px 7px',borderRadius:20,background:'#fef9c3',color:'#854d0e',fontWeight:600}}>{rec.adj_count} adj</span>}
+          <span className={`badge badge-${rec.status === 'open' ? 'open' : 'exited'}`}>{rec.status === 'open' ? 'Live' : rec.status}</span>
+          {rec.segment && <span className="rec-seg-tag">{rec.segment}</span>}
+          {rec.adj_count > 0 && <span className="adj-badge">{rec.adj_count} adj</span>}
         </div>
-        <div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>
-          Open: {rec.entry_ist}{rec.exit_ist ? <> &nbsp;·&nbsp; Exited: {rec.exit_ist}</> : null}
+        {rec.note && <div className="rec-note">{rec.note}</div>}
+        <div className="rec-ts">
+          {rec.entry_ist}{rec.exit_ist ? ` · Closed ${rec.exit_ist}` : ''}
         </div>
       </div>
 
-      <RecLegs rec={rec} />
+      {/* Legs */}
+      <RecLegs rec={rec} prices={isOpen ? prices : null} />
 
-      {/* P&L bars */}
-      {isOpen && rec.margin_final && (
-        <div className="pnl-bar">
-          <span className="pnl-bar-lbl">Margin</span>
-          <span style={{fontWeight:700}}>₹{Math.round(rec.margin_final).toLocaleString('en-IN')}</span>
-        </div>
-      )}
-      {isOpen && (
-        <div className="pnl-bar">
-          <span className="pnl-bar-lbl">Unrealised P&amp;L</span>
-          {unrealisedPnl != null
-            ? <span style={{display:'flex',alignItems:'center',gap:4}}>
-                <span style={{fontWeight:700,color:unrealisedPnl>=0?'var(--green)':'var(--red)'}}>{fmtPnl(unrealisedPnl)}</span>
-                {rec.margin_final && <span style={{fontSize:11,fontWeight:600,color:unrealisedPnl>=0?'var(--green)':'var(--red)'}}>
-                  ({unrealisedPnl>=0?'+':''}{((unrealisedPnl/rec.margin_final)*100).toFixed(1)}%)
-                </span>}
-              </span>
-            : <span className="pnl-neu" style={{fontWeight:700}}>—</span>
-          }
+      {/* Stats strip */}
+      {isOpen && (rec.margin_final || unrealisedPnl != null) && (
+        <div className="rec-stats-strip">
+          {rec.margin_final && (
+            <div className="rec-stat">
+              <div className="rec-stat-lbl">Margin</div>
+              <div className="rec-stat-val">₹{Math.round(rec.margin_final).toLocaleString('en-IN')}</div>
+            </div>
+          )}
+          <div className="rec-stat">
+            <div className="rec-stat-lbl">Unrealised P&amp;L</div>
+            <div className="rec-stat-val" style={{color: unrealisedPnl != null ? (unrealisedPnl >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--muted)'}}>
+              {unrealisedPnl != null ? fmtPnl(unrealisedPnl) : '—'}
+            </div>
+          </div>
         </div>
       )}
       {!isOpen && totalPnl != null && (
-        <div className="pnl-bar">
-          <span className="pnl-bar-lbl">Realized P&amp;L</span>
-          <span style={{display:'flex',alignItems:'center',gap:4}}>
-            <span style={{fontWeight:700,color:totalPnl>=0?'var(--green)':'var(--red)'}}>{fmtPnl(totalPnl)}</span>
-            {rec.margin_required && <span style={{fontSize:11,fontWeight:600,color:totalPnl>=0?'var(--green)':'var(--red)'}}>
-              ({totalPnl>=0?'+':''}{((totalPnl/rec.margin_required)*100).toFixed(1)}%)
-            </span>}
-          </span>
+        <div className="rec-stats-strip">
+          <div className="rec-stat">
+            <div className="rec-stat-lbl">Realized P&amp;L</div>
+            <div className="rec-stat-val" style={{color: totalPnl >= 0 ? 'var(--green)' : 'var(--red)'}}>
+              {fmtPnl(totalPnl)}
+              {rec.margin_required > 0 && (
+                <span style={{fontSize:11,marginLeft:5,fontWeight:600}}>
+                  ({totalPnl>=0?'+':''}{((totalPnl/rec.margin_required)*100).toFixed(1)}%)
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
       {/* Admin actions */}
       {isAdmin && isOpen && <>
-        <div style={{display:'flex',gap:8,padding:'8px 14px',borderTop:'1px solid var(--border)',background:'#fafafa',flexWrap:'wrap'}}>
+        <div className="rec-action-bar">
           <button className="btn btn-primary btn-sm" onClick={() => { setAdjOpen(v=>!v); setExitOpen(false) }}>Adjust</button>
           <button className="btn btn-danger btn-sm"  onClick={() => { setExitOpen(v=>!v); setAdjOpen(false) }}>Exit</button>
-          <button className="btn btn-ghost btn-sm"   style={{color:'var(--red)',borderColor:'#fca5a5'}} onClick={submitDel}>Delete</button>
+          <button className="btn btn-ghost btn-sm"   style={{color:'var(--red)',borderColor:'#fca5a5'}} onClick={handleDelete}>Delete</button>
         </div>
-
-        {adjOpen && (
-          <div className="inline-action action-adj">
-            <h4>Adjust Trade</h4>
-            <div style={{fontSize:11,color:'var(--muted)',marginBottom:8}}>Add legs as you'd execute them — SELL to reduce, BUY to add.</div>
-            <LegBuilder legs={adjLegs} onChange={setAdjLegs} />
-            <div className="form-row" style={{marginTop:10}}>
-              <label>Note (optional)</label>
-              <input placeholder="e.g. Rolling May → Jun" value={adjNote} onChange={e=>setAdjNote(e.target.value)} />
-            </div>
-            <div style={{display:'flex',gap:8,marginTop:10}}>
-              <button className="btn btn-primary btn-sm" onClick={submitAdj} disabled={doAdj.isPending}>Apply Adjustment</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setAdjOpen(false)}>Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {exitOpen && (
-          <div className="inline-action action-exit">
-            <h4>Exit Trade</h4>
-            {(rec.current_legs || rec.legs || []).map((l, i) => {
-              const exitSide = l.side === 'BUY' ? 'SELL' : 'BUY'
-              const strike   = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : ''
-              return (
-                <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 130px',gap:10,alignItems:'center',marginBottom:8}}>
-                  <div style={{display:'flex',gap:8}}>
-                    <span className={exitSide==='BUY'?'side-buy':'side-sell'} style={{fontWeight:700}}>{exitSide}</span>
-                    <div>
-                      <div style={{fontSize:13,fontWeight:700,color:'#1e293b'}}>{l.symbol || rec.symbol}</div>
-                      <div style={{fontSize:11,color:'var(--muted)'}}>{strike}{l.instrument_type}{l.expiry_str?` · ${l.expiry_str}`:''} · {fmtQty(l.lots,l.lot_size,l.instrument_type)} @{fmtRs(l.price,2)}</div>
-                    </div>
-                  </div>
-                  <div>
-                    <label>Price</label>
-                    <input type="number" step="0.05" placeholder="0.00"
-                           value={exitPx[i]||''} onChange={e=>setExitPx(ps=>ps.map((p,j)=>j===i?e.target.value:p))} />
-                  </div>
-                </div>
-              )
-            })}
-            <div style={{display:'flex',gap:8}}>
-              <button className="btn btn-danger btn-sm" onClick={submitExit} disabled={doExit.isPending}>Confirm Exit</button>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setExitOpen(false)}>Cancel</button>
-            </div>
-          </div>
-        )}
+        {adjOpen  && <AdjustForm  rec={rec} onClose={() => setAdjOpen(false)} />}
+        {exitOpen && <ExitRecForm rec={rec} onClose={() => setExitOpen(false)} />}
       </>}
 
-      {/* Client: push / adj-locked notice */}
+      {/* Client actions */}
       {!isAdmin && isOpen && (
-        rec.adj_count > 0 ? (
-          <div style={{margin:'10px 14px 12px',padding:'10px 14px',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:8,display:'flex',alignItems:'flex-start',gap:10}}>
-            <span style={{fontSize:18}}>ℹ️</span>
-            <div>
-              <div style={{fontSize:12,fontWeight:700,color:'#1d4ed8',marginBottom:2}}>New entries not available</div>
-              <div style={{fontSize:12,color:'#1e40af',lineHeight:1.5}}>This trade has been adjusted. Please contact your advisor to join the current position.</div>
+        rec.adj_count > 0
+          ? <div style={{borderTop:'1px solid var(--border)',padding:'10px 14px'}}>
+              <div className="rec-adj-notice" style={{margin:0}}>
+                <span style={{fontSize:18}}>ℹ️</span>
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,color:'#1d4ed8',marginBottom:2}}>New entries not available</div>
+                  <div style={{fontSize:12,color:'#1e40af',lineHeight:1.5}}>This trade has been adjusted. Contact your advisor to join the current position.</div>
+                </div>
+              </div>
             </div>
-          </div>
-        ) : <>
-          <div style={{display:'flex',gap:8,padding:'8px 14px',borderTop:'1px solid var(--border)',background:'#fafafa'}}>
-            <button className="btn btn-success btn-sm" onClick={() => setPushOpen(v=>!v)}>+ Add to Account</button>
-          </div>
-          {pushOpen && <PushForm rec={rec} prices={prices} onClose={() => setPushOpen(false)} openDrawer={openDrawer} />}
-        </>
+          : <>
+              <div style={{padding:'10px 14px',borderTop:'1px solid var(--border)'}}>
+                <button className="btn btn-success" style={{width:'100%',justifyContent:'center',fontWeight:700,fontSize:13,padding:'9px'}}
+                        onClick={() => setPushOpen(v=>!v)}>
+                  {pushOpen ? 'Cancel' : '+ Add to My Account'}
+                </button>
+              </div>
+              {pushOpen && <PushForm rec={rec} prices={prices} onClose={() => setPushOpen(false)} openDrawer={openDrawer} onPushed={onPushed} />}
+            </>
       )}
     </div>
   )
@@ -554,7 +620,7 @@ function RecItem({ rec, prices, openDrawer }) {
 
 const SEGMENTS = ['all', 'F&O', 'Equity', 'ETF', 'Commodities']
 
-function RecsPanel({ isAdmin, openDrawer }) {
+function RecsPanel({ isAdmin, openDrawer, onPushed }) {
   const [status,  setStatus]  = useState('open')
   const [segment, setSegment] = useState('all')
   const { data: allRecs = [], isLoading, refetch } = useRecs()
@@ -616,7 +682,7 @@ function RecsPanel({ isAdmin, openDrawer }) {
           {!isLoading && !filtered.length && (
             <div className="empty">No {segment !== 'all' ? segment + ' ' : ''}{status !== 'all' ? status + ' ' : ''}recommendations.</div>
           )}
-          {filtered.map(r => <RecItem key={r.id} rec={r} prices={prices} openDrawer={openDrawer} />)}
+          {filtered.map(r => <RecItem key={r.id} rec={r} prices={prices} openDrawer={openDrawer} onPushed={onPushed} />)}
         </div>
       </div>
     </div>
@@ -662,11 +728,13 @@ function PendingAdjSection({ trade }) {
             {(a.legs||[]).map((l,i) => {
               const st = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : ''
               return (
-                <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 120px',gap:8,alignItems:'center',marginBottom:6}}>
-                  <div>
-                    <span className={l.side==='BUY'?'side-buy':'side-sell'} style={{fontWeight:700}}>{l.side}</span>
-                    &nbsp;{st}{l.instrument_type} · {fmtQty(l.lots,l.lot_size,l.instrument_type)}
-                    <div style={{fontSize:10,color:'var(--muted)'}}>Rec @ {fmtRs(l.price,2)}</div>
+                <div key={i} className="form-leg-row form-leg-row-exit">
+                  <div className="form-leg-info">
+                    <span className={`leg-pill ${l.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{l.side}</span>
+                    <div>
+                      <div className="rec-leg-sym">{st}{l.instrument_type} · {fmtQty(l.lots,l.lot_size,l.instrument_type)}</div>
+                      <div className="rec-leg-contract">Rec @ {fmtRs(l.price,2)}</div>
+                    </div>
                   </div>
                   <div>
                     <label>Your price</label>
@@ -714,7 +782,6 @@ function TradeCard({ trade: t, isAdmin, prices }) {
   }
 
   const mkLegRows = (legs, bg) => legs.map((l, i) => {
-    const sc         = l.side === 'BUY' ? 'side-buy' : 'side-sell'
     const strike     = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : ''
     const exp        = l.expiry_str ? ` ${l.expiry_str}` : ''
     const instrument = l.instrument_type === 'EQ' ? t.symbol : `${strike}${l.instrument_type}${exp}`
@@ -726,7 +793,7 @@ function TradeCard({ trade: t, isAdmin, prices }) {
     const bgStyle = bg ? {background:bg} : {}
     return (
       <tr key={i} style={bgStyle}>
-        <td className={sc}>{l.side}</td>
+        <td><span className={`leg-pill ${l.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{l.side}</span></td>
         <td>{instrument}</td>
         <td>{fmtQty(l.lots, l.lot_size, l.instrument_type)}</td>
         <td>{fmtRs(l.price, 2)}</td>
@@ -739,7 +806,7 @@ function TradeCard({ trade: t, isAdmin, prices }) {
   })
 
   return (
-    <div style={{border:'1px solid var(--border)',borderRadius:8,marginBottom:12,overflow:'hidden',background:'#fff'}}>
+    <div className="trade-card">
       <div style={{padding:'9px 14px',background:'#f8fafc',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <span style={{fontWeight:700,fontSize:14}}>{t.symbol}</span>
         <span className="badge badge-open">Open</span>
@@ -808,13 +875,16 @@ function TradeCard({ trade: t, isAdmin, prices }) {
           <div className="inline-action action-exit">
             <h4>Exit Trade</h4>
             {(t.current_legs||t.legs||[]).map((l,i) => {
-              const strike = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : ''
+              const strike   = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : ''
+              const exitSide = l.side === 'BUY' ? 'SELL' : 'BUY'
               return (
-                <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 130px',gap:10,alignItems:'center',marginBottom:8}}>
-                  <div>
-                    <span className={l.side==='BUY'?'side-buy':'side-sell'} style={{fontWeight:700}}>{l.side}</span>
-                    &nbsp;{strike}{l.instrument_type} · {fmtQty(l.lots,l.lot_size,l.instrument_type)}
-                    <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>entry {fmtRs(l.price,2)}</div>
+                <div key={i} className="form-leg-row form-leg-row-exit">
+                  <div className="form-leg-info">
+                    <span className={`leg-pill ${exitSide==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{exitSide}</span>
+                    <div>
+                      <div className="rec-leg-sym">{strike}{l.instrument_type} · {fmtQty(l.lots,l.lot_size,l.instrument_type)}</div>
+                      <div className="rec-leg-contract">entry {fmtRs(l.price,2)}</div>
+                    </div>
                   </div>
                   <div>
                     <label>Price</label>
@@ -853,7 +923,6 @@ function HistoryCard({ trade: t }) {
   })
 
   const mkRow = (entry, exitLeg, bg) => {
-    const sc         = entry.side === 'BUY' ? 'side-buy' : 'side-sell'
     const strike     = entry.strike ? `${Number(entry.strike).toLocaleString('en-IN')} ` : ''
     const instrument = entry.instrument_type === 'EQ' ? t.symbol : `${strike}${entry.instrument_type}`
     const legPnl = (entry.price != null && exitLeg?.price != null)
@@ -861,7 +930,7 @@ function HistoryCard({ trade: t }) {
       : null
     return (
       <tr key={`${entry.id}`} style={bg?{background:bg}:{}}>
-        <td className={sc}>{entry.side}</td>
+        <td><span className={`leg-pill ${entry.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{entry.side}</span></td>
         <td>{instrument}</td>
         <td>{fmtQty(entry.lots, entry.lot_size, entry.instrument_type)}</td>
         <td>{fmtRs(entry.price, 2)}</td>
@@ -878,7 +947,7 @@ function HistoryCard({ trade: t }) {
   )
 
   return (
-    <div style={{border:'1px solid var(--border)',borderRadius:8,marginBottom:12,overflow:'hidden',background:'#fff'}}>
+    <div className="trade-card trade-card-closed">
       <div style={{padding:'9px 14px',background:'#f8fafc',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <span style={{fontWeight:700,fontSize:14}}>{t.symbol}</span>
         <span className="badge badge-exited">Closed</span>
@@ -952,7 +1021,7 @@ function AccountSummaryBar({ accountId }) {
   )
 }
 
-function NewTradeForm({ accounts, onDone, openDrawer }) {
+function NewTradeForm({ accounts, gameAccounts, onDone, openDrawer }) {
   const [acctId, setAcctId] = useState('')
   const [legs, setLegs]     = useState([newLeg()])
   const [note, setNote]     = useState('')
@@ -964,7 +1033,7 @@ function NewTradeForm({ accounts, onDone, openDrawer }) {
     const collected = collectLegs(legs, toast)
     if (!collected) return
     const res = await push.mutateAsync({ account_id: parseInt(acctId), symbol: collected.symbol, legs: collected.legs, note })
-    if (res.ok) { toast('Trade added!', 'ok'); onDone() }
+    if (res.ok) { toast('Trade added!', 'ok'); onDone(parseInt(acctId)) }
     else toast(res.error || 'Failed', 'err')
   }
 
@@ -975,11 +1044,20 @@ function NewTradeForm({ accounts, onDone, openDrawer }) {
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <select value={acctId} onChange={e => setAcctId(e.target.value)}>
             <option value="">Select account…</option>
-            {accounts.map(a => (
-              <option key={a.id} value={a.id}>
-                {a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`}
-              </option>
-            ))}
+            {accounts.length > 0 && (
+              <optgroup label="Broker Accounts">
+                {accounts.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {(gameAccounts||[]).length > 0 && (
+              <optgroup label="Game Accounts">
+                {(gameAccounts||[]).map(a => <option key={a.id} value={a.id}>{a.label || `Game #${a.game_id}`}</option>)}
+              </optgroup>
+            )}
           </select>
           {openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
         </div>
@@ -1001,17 +1079,38 @@ function NewTradeForm({ accounts, onDone, openDrawer }) {
   )
 }
 
-function TradesPanel({ isAdmin, openDrawer }) {
+function TradesPanel({ isAdmin, openDrawer, switchToAcct, onSwitchDone }) {
   const [posTab, setPosTab]         = useState('open')
   const { data: accounts = [] }     = useAccounts()
 
-  // Only real broker accounts — game/virtual accounts are managed in the Games screen
   const realAccounts = accounts.filter(a => !a.game_id)
+  const gameAccounts = accounts.filter(a => a.game_id && a.game_status === 'active')
 
-  const [acctFilter, setAcctFilter] = useState('')
+  const [acctFilter, setAcctFilter] = useState(() => localStorage.getItem('ev_acct') || '')
+  function setAcct(id) {
+    setAcctFilter(id)
+    if (id) localStorage.setItem('ev_acct', id)
+    else localStorage.removeItem('ev_acct')
+  }
+
   useEffect(() => {
-    if (realAccounts.length && !acctFilter) setAcctFilter(String(realAccounts[0].id))
-  }, [realAccounts.length])  // eslint-disable-line react-hooks/exhaustive-deps
+    if (!accounts.length) return  // wait for accounts to load before validating
+    const allValid = [...realAccounts, ...gameAccounts].map(a => String(a.id))
+    if (!acctFilter || !allValid.includes(acctFilter)) {
+      setAcct(realAccounts.length ? String(realAccounts[0].id) : '')
+    }
+  }, [accounts])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-switch to newly-pushed account (e.g. game account after push)
+  useEffect(() => {
+    if (!switchToAcct) return
+    const allIds = [...realAccounts, ...gameAccounts].map(a => a.id)
+    if (allIds.includes(switchToAcct)) {
+      setAcct(String(switchToAcct))
+      setPosTab('open')
+    }
+    onSwitchDone?.()
+  }, [switchToAcct])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const params   = acctFilter ? { account_id: acctFilter } : undefined
   const { data: trades = [], isLoading, refetch }  = useTrades(params)
@@ -1044,22 +1143,26 @@ function TradesPanel({ isAdmin, openDrawer }) {
 
           {posTab !== 'new' && (
             <div className="trades-header-right">
-              {isAdmin ? (
+              {(realAccounts.length > 0 || gameAccounts.length > 0) ? (
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <select value={acctFilter} onChange={e=>setAcctFilter(e.target.value)}
+                  <select value={acctFilter} onChange={e=>setAcct(e.target.value)}
                           style={{width:'auto',fontSize:12,padding:'4px 8px'}}>
-                    {realAccounts.map(a => <option key={a.id} value={a.id}>{acctLabel(a)}</option>)}
+                    {realAccounts.length > 0 && (
+                      <optgroup label="Broker Accounts">
+                        {realAccounts.map(a => <option key={a.id} value={a.id}>{acctLabel(a)}</option>)}
+                      </optgroup>
+                    )}
+                    {gameAccounts.length > 0 && (
+                      <optgroup label="Game Accounts">
+                        {gameAccounts.map(a => <option key={a.id} value={a.id}>{a.label || `Game #${a.game_id}`}</option>)}
+                      </optgroup>
+                    )}
                   </select>
-                  {openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
+                  {!isAdmin && openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
                 </div>
               ) : (
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <select value={acctFilter} onChange={e=>setAcctFilter(e.target.value)}
-                          style={{width:'auto',fontSize:12,padding:'4px 8px'}}>
-                    {realAccounts.map(a => <option key={a.id} value={a.id}>{acctLabel(a)}</option>)}
-                  </select>
-                  {openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
-                </div>
+                !isAdmin && openDrawer &&
+                  <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add account</button>
               )}
               <div className="trades-header-divider" />
               <button className="btn btn-ghost btn-sm" onClick={()=>posTab==='open'?refetch():refetchHist()}>↻</button>
@@ -1069,7 +1172,7 @@ function TradesPanel({ isAdmin, openDrawer }) {
         <div className="card-body" style={{padding:10}}>
           {posTab !== 'new' && acctFilter && <AccountSummaryBar accountId={parseInt(acctFilter)} />}
           {posTab === 'new' && (
-            <NewTradeForm accounts={realAccounts} onDone={() => { setPosTab('open'); refetch() }} openDrawer={openDrawer} />
+            <NewTradeForm accounts={realAccounts} gameAccounts={gameAccounts} onDone={id => { if (id) setAcct(String(id)); setPosTab('open'); refetch() }} openDrawer={openDrawer} />
           )}
           {posTab === 'open' && (
             isLoading ? <div className="empty">Loading…</div> :
@@ -1202,16 +1305,176 @@ function NoSubscriptionGate({ onGoGames }) {
   )
 }
 
+const TYPE_ICON   = { price_prediction:'🔮', mcq:'📝', leaderboard:'📈' }
+const TYPE_LABEL  = { price_prediction:'Prediction', mcq:'Quiz', leaderboard:'Trading Challenge' }
+const TYPE_COLOR  = { price_prediction:'#6366f1', mcq:'#8b5cf6', leaderboard:'#22c55e' }
+
+function fmtIstShort(ts) {
+  if (!ts) return ''
+  const d = new Date(ts.replace('Z','') + (ts.endsWith('Z') ? '' : 'Z'))
+  return d.toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true })
+}
+
+function GamePortfolioStrip({ gid }) {
+  const { data } = useQuery({ queryKey: ['portfolio', gid], queryFn: () => getPortfolio(gid), refetchInterval: 10000 })
+  const pf = data?.portfolio
+  if (!pf) return null
+
+  const unrealized = pf.unrealized_pnl ?? 0
+  const total      = pf.pnl ?? 0
+  const positions  = (pf.positions || []).length
+  const pnlColor   = total >= 0 ? '#16a34a' : '#dc2626'
+
+  return (
+    <div className="gsc-portfolio-wrap">
+      {pf.label && (
+        <div className="gsc-pf-acct-name">{pf.label}</div>
+      )}
+    <div className="gsc-portfolio">
+      <div className="gsc-pf-stat">
+        <div className="gsc-pf-lbl">Capital</div>
+        <div className="gsc-pf-val">₹{Number(pf.capital||0).toLocaleString('en-IN')}</div>
+      </div>
+      <div className="gsc-pf-sep" />
+      <div className="gsc-pf-stat">
+        <div className="gsc-pf-lbl">Unrealised</div>
+        <div className="gsc-pf-val" style={{color: unrealized >= 0 ? '#16a34a' : '#dc2626'}}>
+          {unrealized >= 0 ? '+' : ''}{fmtRs(unrealized)}
+        </div>
+      </div>
+      <div className="gsc-pf-sep" />
+      <div className="gsc-pf-stat">
+        <div className="gsc-pf-lbl">Total P&amp;L</div>
+        <div className="gsc-pf-val" style={{color: pnlColor, fontWeight:700}}>
+          {total >= 0 ? '+' : ''}{fmtRs(total)}
+        </div>
+      </div>
+      <div className="gsc-pf-sep" />
+      <div className="gsc-pf-stat">
+        <div className="gsc-pf-lbl">Positions</div>
+        <div className="gsc-pf-val">{positions}</div>
+      </div>
+    </div>
+    </div>
+  )
+}
+
+function GameStripCard({ g, onGoGames }) {
+  const qc    = useQueryClient()
+  const toast = useToast()
+  const [joining, setJoining] = useState(false)
+
+  const isLive  = g.status === 'active'
+  const joined  = !!g.my_entry
+  const canJoin = isLive && !joined && g.game_type === 'leaderboard'
+  const canPlay = isLive && !joined && g.game_type !== 'leaderboard'
+  const accent  = TYPE_COLOR[g.game_type] || '#6366f1'
+
+  async function handleJoin(e) {
+    e.stopPropagation()
+    setJoining(true)
+    try {
+      const res = await submitEntry(g.id, {})
+      if (res.ok) { toast('Joined! Virtual account ready.', 'ok'); qc.invalidateQueries({queryKey:['games']}) }
+      else toast(res.error || 'Failed to join', 'err')
+    } finally { setJoining(false) }
+  }
+
+  return (
+    <div className="gsc" style={{'--gsc-accent': accent}} onClick={() => onGoGames?.(g.id)}>
+      {/* Header row */}
+      <div className="gsc-header">
+        <span className="gsc-icon">{TYPE_ICON[g.game_type]}</span>
+        <span className="gsc-type">{TYPE_LABEL[g.game_type]}</span>
+        <span className={`gsc-status ${isLive ? 'gsc-live' : 'gsc-soon'}`}>{isLive ? '● Live' : '◌ Soon'}</span>
+        <span className="gsc-pool">💎 {g.reward_pool}</span>
+      </div>
+
+      {/* Title */}
+      <div className="gsc-title">{g.title}</div>
+
+      {/* Meta */}
+      <div className="gsc-meta">
+        <span>{isLive ? `Ends ${fmtIstShort(g.end_time)}` : `Starts ${fmtIstShort(g.start_time)}`}</span>
+        <span className="gsc-dot">·</span>
+        <span>👥 {g.participant_count}</span>
+        <span className="gsc-dot">·</span>
+        <span>🏆 Top {g.winner_count}</span>
+      </div>
+
+      {/* Portfolio strip for joined leaderboard */}
+      {joined && g.game_type === 'leaderboard' && isLive && (
+        <GamePortfolioStrip gid={g.id} />
+      )}
+
+      {/* Divider + actions */}
+      <div className="gsc-footer" onClick={e => e.stopPropagation()}>
+        <div className="gsc-entry-status">
+          {joined && (
+            <span className="gsc-joined">
+              ✓ Joined{g.my_entry?.rank > 0 ? <strong> · Rank #{g.my_entry.rank}</strong> : ''}
+            </span>
+          )}
+          {joined && g.my_entry?.credits_won > 0 && (
+            <span className="gsc-won">💎 {g.my_entry.credits_won} won</span>
+          )}
+        </div>
+        <div className="gsc-actions">
+          {canJoin && (
+            <button className="gsc-btn gsc-btn-primary" onClick={handleJoin} disabled={joining}>
+              {joining ? 'Joining…' : 'Join →'}
+            </button>
+          )}
+          {canPlay && (
+            <button className="gsc-btn gsc-btn-primary" onClick={() => onGoGames?.(g.id)}>
+              Play →
+            </button>
+          )}
+          <button className="gsc-btn gsc-btn-ghost" onClick={() => onGoGames?.(g.id)}>
+            View
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GamesStrip({ onGoGames }) {
+  const { data: games = [] } = useQuery({ queryKey: ['games'], queryFn: listGames, refetchInterval: 60000 })
+
+  const liveGames     = games.filter(g => g.status === 'active')
+  const upcomingGames = games.filter(g => g.status === 'draft' && g.start_time && new Date(g.start_time) > new Date())
+  const shown = [...liveGames, ...upcomingGames].slice(0, 5)
+
+  if (!shown.length) return null
+
+  return (
+    <div className="card" style={{marginTop:12}}>
+      <div className="card-header">
+        <span style={{fontWeight:700,fontSize:13}}>🎮 Games</span>
+        <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={() => onGoGames?.()}>All →</button>
+      </div>
+      <div style={{padding:'6px 10px 12px',display:'flex',flexDirection:'column',gap:8}}>
+        {shown.map(g => <GameStripCard key={g.id} g={g} onGoGames={onGoGames} />)}
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard({ openDrawer, subscribed, onGoGames }) {
   const user    = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
+  const [switchToAcct, setSwitchToAcct] = useState(null)
 
   return (
     <div className="dash-layout">
       {isAdmin || subscribed
-        ? <RecsPanel isAdmin={isAdmin} openDrawer={openDrawer} />
+        ? <RecsPanel isAdmin={isAdmin} openDrawer={openDrawer} onPushed={id => setSwitchToAcct(id)} />
         : <NoSubscriptionGate onGoGames={onGoGames} />}
-      <TradesPanel isAdmin={isAdmin} openDrawer={openDrawer} />
+      <div>
+        <TradesPanel isAdmin={isAdmin} openDrawer={openDrawer} switchToAcct={switchToAcct} onSwitchDone={() => setSwitchToAcct(null)} />
+        <GamesStrip onGoGames={onGoGames} />
+      </div>
     </div>
   )
 }

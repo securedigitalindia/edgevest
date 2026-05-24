@@ -1,3 +1,7 @@
+.leg-pill      { display:inline-flex; align-items:center; justify-content:center; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; min-width:40px; }
+.leg-pill-buy  { background:#dcfce7; color:#15803d; }
+.leg-pill-sell { background:#fee2e2; color:#dc2626; }
+
 .status-chip { font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; }
 .chip-draft    { background:#f1f5f9; color:#64748b; }
 .chip-active   { background:#dcfce7; color:#15803d; }

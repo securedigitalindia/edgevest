@@ -72,7 +72,7 @@ export default function Landing() {
 
       {/* Footer */}
       <footer style={{textAlign:'center',padding:24,fontSize:12,color:'#94a3b8'}}>
-        &copy; 2026 Drishti &nbsp;&middot;&nbsp; Advisory-first market intelligence &nbsp;&middot;&nbsp; NSE / BSE
+        &copy; 2026 EdgeVest &nbsp;&middot;&nbsp; Advisory-first market intelligence &nbsp;&middot;&nbsp; NSE / BSE
       </footer>
     </div>
   )

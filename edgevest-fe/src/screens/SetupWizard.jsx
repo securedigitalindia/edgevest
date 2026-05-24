@@ -118,7 +118,7 @@ export default function SetupWizard({ user }) {
         {step === 1 && (
           <div key={1} className={`wiz-step wiz-step-${dir}`}>
             <div className="wiz-step-lbl">Step 1 of {totalSteps}</div>
-            <h2>Welcome to Drishti</h2>
+            <h2>Welcome to EdgeVest</h2>
             <p className="wiz-desc">Your profile helps us tailor signals and advisory content to how you trade. This takes about 30 seconds.</p>
 
             <div className="wiz-identity">

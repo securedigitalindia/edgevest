@@ -17,8 +17,9 @@ function AppShell() {
   usePrices()
 
   const { user, ready } = useAuthStore()
-  const [tab, setTab]       = useState('dashboard')
-  const [drawer, setDrawer] = useState(false)
+  const [tab, setTab]             = useState('dashboard')
+  const [targetGameId, setTargetGameId] = useState(null)
+  const [drawer, setDrawer]       = useState(false)
   const [drawerTab, setDrawerTab] = useState(null)
 
   function openDrawer(initialTab) {
@@ -41,11 +42,11 @@ function AppShell() {
   return (
     <>
       <TickerStrip />
-      <MainNav activeTab={tab} onTabChange={setTab} onOpenDrawer={openDrawer} subscribed={subscribed} />
+      <MainNav activeTab={tab} onTabChange={t => { if (t === 'games') setTargetGameId(null); setTab(t) }} onOpenDrawer={openDrawer} subscribed={subscribed} />
       <SettingsDrawer open={drawer} onClose={() => setDrawer(false)} initialTab={drawerTab} />
 
-      {tab === 'dashboard' && <Dashboard openDrawer={openDrawer} subscribed={subscribed} onGoGames={() => setTab('games')} />}
-      {tab === 'games'     && <Games subscribed={subscribed} />}
+      {tab === 'dashboard' && <Dashboard openDrawer={openDrawer} subscribed={subscribed} onGoGames={(id) => { setTargetGameId(id ?? null); setTab('games') }} />}
+      {tab === 'games'     && <Games subscribed={subscribed} initialGameId={targetGameId} />}
     </>
   )
 }

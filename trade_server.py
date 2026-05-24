@@ -585,11 +585,13 @@ def api_account_trades():
 
     if user["role"] == "client":
         from db.queries import get_accounts_for_user
-        own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
-        if account_id and account_id in own_ids:
+        all_own   = get_accounts_for_user(user["id"])
+        all_ids   = {a["id"] for a in all_own}
+        real_ids  = {a["id"] for a in all_own if not a["game_id"]}
+        if account_id and account_id in all_ids:
             trades = get_open_account_trades(account_id=account_id)
         else:
-            trades = [t for t in get_open_account_trades() if t["account_id"] in own_ids]
+            trades = [t for t in get_open_account_trades() if t["account_id"] in real_ids]
     else:
         trades = get_open_account_trades(account_id=account_id)
 
@@ -758,11 +760,13 @@ def api_account_trades_history():
 
     if user["role"] == "client":
         from db.queries import get_accounts_for_user
-        own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
-        if account_id and account_id in own_ids:
+        all_own   = get_accounts_for_user(user["id"])
+        all_ids   = {a["id"] for a in all_own}
+        real_ids  = {a["id"] for a in all_own if not a["game_id"]}
+        if account_id and account_id in all_ids:
             trades = get_closed_account_trades(account_id=account_id)
         else:
-            trades = get_closed_account_trades(user_id=user["id"])
+            trades = [t for t in get_closed_account_trades(user_id=user["id"]) if t["account_id"] in real_ids]
     else:
         trades = get_closed_account_trades(account_id=account_id)
 
@@ -982,6 +986,14 @@ def api_game_resolve(gid):
         winners = resolve_game(gid, result_value=d.get("result_value"))
     except ValueError as e:
         return jsonify(ok=False, error=str(e)), 400
+
+    # Ensure game accounts are deactivated (safety net if close step missed it)
+    from db.init_db import get_connection as _gc
+    _conn = _gc()
+    _conn.execute("UPDATE accounts SET active=0 WHERE game_id=?", (gid,))
+    _conn.commit()
+    _conn.close()
+
     return jsonify(ok=True, winners=winners)
 
 
