@@ -1,15 +1,19 @@
 import { useState, useRef, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../../store/authStore'
 import { useQuery } from '@tanstack/react-query'
 import { getCredits } from '../../api/games'
 import './MainNav.css'
 
-export default function MainNav({ activeTab, onTabChange, onOpenDrawer }) {
-  const user     = useAuthStore(s => s.user)
+export default function MainNav({ onOpenDrawer, subscribed }) {
+  const user      = useAuthStore(s => s.user)
+  const location  = useLocation()
+  const navigate  = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef  = useRef(null)
-  const isClient = user?.role === 'client'
-  const isAdmin  = user?.role === 'super_admin' || user?.role === 'admin'
+  const menuRef   = useRef(null)
+  const isClient  = user?.role === 'client'
+  const isAdmin   = user?.role === 'super_admin' || user?.role === 'admin'
+  const activeTab = location.pathname.startsWith('/games') ? 'games' : 'dashboard'
 
   const { data: credits } = useQuery({
     queryKey: ['credits'],
@@ -34,12 +38,12 @@ export default function MainNav({ activeTab, onTabChange, onOpenDrawer }) {
           <span className="nav-brand-name">EdgeVest</span>
         </div>
         <div className="nav-tabs">
-          <button className={`main-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={()=>onTabChange('dashboard')}>Dashboard</button>
-          <button className={`main-nav-tab${activeTab==='games'?' active':''}`} onClick={()=>onTabChange('games')}>Games</button>
+          <button className={`main-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard')}>Dashboard</button>
+          <button className={`main-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games')}>Games</button>
         </div>
         <div className="nav-right">
           {isClient && (
-            <div className="nav-credits-pill" onClick={()=>onTabChange('games')} title="Your credits">
+            <div className="nav-credits-pill" onClick={() => navigate('/games')} title="Your credits">
               💎 <span>{credits?.balance ?? '—'}</span>
             </div>
           )}
@@ -70,15 +74,15 @@ export default function MainNav({ activeTab, onTabChange, onOpenDrawer }) {
 
       {/* Bottom tab bar — mobile only */}
       <div className="bottom-nav">
-        <button className={`bottom-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={()=>onTabChange('dashboard')}>
+        <button className={`bottom-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard')}>
           <span className="bottom-nav-tab-icon">📊</span>
           Dashboard
         </button>
-        <button className={`bottom-nav-tab${activeTab==='games'?' active':''}`} onClick={()=>onTabChange('games')}>
+        <button className={`bottom-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games')}>
           <span className="bottom-nav-tab-icon">🎮</span>
           Games
         </button>
-        <button className="bottom-nav-tab" onClick={()=>onOpenDrawer()}>
+        <button className="bottom-nav-tab" onClick={() => onOpenDrawer()}>
           <span className="bottom-nav-tab-icon">⚙️</span>
           Settings
         </button>

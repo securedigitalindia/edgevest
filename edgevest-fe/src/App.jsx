@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import useAuthStore from './store/authStore'
 import useMe from './hooks/useMe'
 import TickerStrip from './components/nav/TickerStrip'
@@ -15,8 +16,6 @@ function AppShell() {
   useMe()
 
   const { user, ready } = useAuthStore()
-  const [tab, setTab]             = useState('dashboard')
-  const [targetGameId, setTargetGameId] = useState(null)
   const [drawer, setDrawer]       = useState(false)
   const [drawerTab, setDrawerTab] = useState(null)
 
@@ -28,11 +27,11 @@ function AppShell() {
   if (!ready) return <div className="empty" style={{marginTop:80}}>Loading…</div>
 
   if (!user) {
-    return <Landing />
+    return <Routes><Route path="*" element={<Landing />} /></Routes>
   }
 
   if (!user.setup_done) {
-    return <SetupWizard user={user} />
+    return <Routes><Route path="*" element={<SetupWizard user={user} />} /></Routes>
   }
 
   const subscribed = user.subscription_valid !== false
@@ -40,11 +39,15 @@ function AppShell() {
   return (
     <>
       <TickerStrip />
-      <MainNav activeTab={tab} onTabChange={t => { if (t === 'games') setTargetGameId(null); setTab(t) }} onOpenDrawer={openDrawer} subscribed={subscribed} />
+      <MainNav onOpenDrawer={openDrawer} subscribed={subscribed} />
       <SettingsDrawer open={drawer} onClose={() => setDrawer(false)} initialTab={drawerTab} />
-
-      {tab === 'dashboard' && <Dashboard openDrawer={openDrawer} subscribed={subscribed} onGoGames={(id) => { setTargetGameId(id ?? null); setTab('games') }} />}
-      {tab === 'games'     && <Games subscribed={subscribed} initialGameId={targetGameId} />}
+      <Routes>
+        <Route path="/"          element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<Dashboard openDrawer={openDrawer} subscribed={subscribed} />} />
+        <Route path="/games"     element={<Games subscribed={subscribed} />} />
+        <Route path="/games/:id" element={<Games subscribed={subscribed} />} />
+        <Route path="*"          element={<Navigate to="/dashboard" replace />} />
+      </Routes>
     </>
   )
 }

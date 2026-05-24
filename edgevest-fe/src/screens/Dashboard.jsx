@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useRecs, useRecPrices, useCreateRec, useDeleteRec, useExitRec, useAdjustRec, useCreateAccountTrade,
          useTrades, useTradeHistory, useExitTrade, useApplyAdjTrade, useDeleteTrade,
          useAccounts, useAccountPortfolio } from '../hooks/useTrades'
@@ -1192,7 +1193,8 @@ function TradesPanel({ isAdmin, openDrawer, switchToAcct, onSwitchDone }) {
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
-function NoSubscriptionGate({ onGoGames }) {
+function NoSubscriptionGate() {
+  const navigate = useNavigate()
   const toast = useToast()
   const qc    = useQueryClient()
   const { data: credits } = useQuery({ queryKey: ['credits'], queryFn: getCredits, refetchInterval: 15000 })
@@ -1294,7 +1296,7 @@ function NoSubscriptionGate({ onGoGames }) {
         <button
           className="btn btn-ghost"
           style={{width:'100%',justifyContent:'center',marginTop:8,fontSize:13}}
-          onClick={onGoGames}
+          onClick={() => navigate('/games')}
         >
           {canUnlock ? 'Play more games →' : '🎮 Go earn gems in Games →'}
         </button>
@@ -1359,7 +1361,8 @@ function GamePortfolioStrip({ gid }) {
   )
 }
 
-function GameStripCard({ g, onGoGames }) {
+function GameStripCard({ g }) {
+  const navigate = useNavigate()
   const qc    = useQueryClient()
   const toast = useToast()
   const [joining, setJoining] = useState(false)
@@ -1381,7 +1384,7 @@ function GameStripCard({ g, onGoGames }) {
   }
 
   return (
-    <div className="gsc" style={{'--gsc-accent': accent}} onClick={() => onGoGames?.(g.id)}>
+    <div className="gsc" style={{'--gsc-accent': accent}} onClick={() => navigate(`/games/${g.id}`)}>
       {/* Header row */}
       <div className="gsc-header">
         <span className="gsc-icon">{TYPE_ICON[g.game_type]}</span>
@@ -1426,11 +1429,11 @@ function GameStripCard({ g, onGoGames }) {
             </button>
           )}
           {canPlay && (
-            <button className="gsc-btn gsc-btn-primary" onClick={() => onGoGames?.(g.id)}>
+            <button className="gsc-btn gsc-btn-primary" onClick={() => navigate(`/games/${g.id}`)}>
               Play →
             </button>
           )}
-          <button className="gsc-btn gsc-btn-ghost" onClick={() => onGoGames?.(g.id)}>
+          <button className="gsc-btn gsc-btn-ghost" onClick={() => navigate(`/games/${g.id}`)}>
             View
           </button>
         </div>
@@ -1439,7 +1442,8 @@ function GameStripCard({ g, onGoGames }) {
   )
 }
 
-function GamesStrip({ onGoGames }) {
+function GamesStrip() {
+  const navigate = useNavigate()
   const { data: games = [] } = useQuery({ queryKey: ['games'], queryFn: listGames, refetchInterval: 60000 })
 
   const liveGames     = games.filter(g => g.status === 'active')
@@ -1452,16 +1456,16 @@ function GamesStrip({ onGoGames }) {
     <div className="card" style={{marginTop:12}}>
       <div className="card-header">
         <span style={{fontWeight:700,fontSize:13}}>🎮 Games</span>
-        <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={() => onGoGames?.()}>All →</button>
+        <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={() => navigate('/games')}>All →</button>
       </div>
       <div style={{padding:'6px 10px 12px',display:'flex',flexDirection:'column',gap:8}}>
-        {shown.map(g => <GameStripCard key={g.id} g={g} onGoGames={onGoGames} />)}
+        {shown.map(g => <GameStripCard key={g.id} g={g} />)}
       </div>
     </div>
   )
 }
 
-export default function Dashboard({ openDrawer, subscribed, onGoGames }) {
+export default function Dashboard({ openDrawer, subscribed }) {
   const user    = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
   const [switchToAcct, setSwitchToAcct] = useState(null)
@@ -1470,10 +1474,10 @@ export default function Dashboard({ openDrawer, subscribed, onGoGames }) {
     <div className="dash-layout">
       {isAdmin || subscribed
         ? <RecsPanel isAdmin={isAdmin} openDrawer={openDrawer} onPushed={id => setSwitchToAcct(id)} />
-        : <NoSubscriptionGate onGoGames={onGoGames} />}
+        : <NoSubscriptionGate />}
       <div>
         <TradesPanel isAdmin={isAdmin} openDrawer={openDrawer} switchToAcct={switchToAcct} onSwitchDone={() => setSwitchToAcct(null)} />
-        <GamesStrip onGoGames={onGoGames} />
+        <GamesStrip />
       </div>
     </div>
   )

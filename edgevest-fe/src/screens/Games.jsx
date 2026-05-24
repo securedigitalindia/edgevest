@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useGames, useCreateGame, useUpdateGame } from '../hooks/useGames'
 import { useQuery } from '@tanstack/react-query'
 import { getCredits } from '../api/games'
@@ -203,14 +204,20 @@ function GameForm({ existing, onDone }) {
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
-export default function Games({ subscribed, initialGameId }) {
+export default function Games({ subscribed }) {
+  const { id: paramId }  = useParams()
+  const navigate         = useNavigate()
   const user     = useAuthStore(s => s.user)
   const isAdmin  = user?.role === 'super_admin' || user?.role === 'admin'
   const isClient = user?.role === 'client'
   const filters  = isAdmin ? ADMIN_FILTERS : CLIENT_FILTERS
   const [filter, setFilter]     = useState(isAdmin ? 'all' : 'active')
-  const [selId,  setSelId]      = useState(initialGameId ?? null)
+  const [selId,  setSelId]      = useState(paramId ? parseInt(paramId) : null)
   const [editing, setEditing]   = useState(null)  // null | {} (create) | {id,...} (edit)
+
+  useEffect(() => {
+    setSelId(paramId ? parseInt(paramId) : null)
+  }, [paramId])
 
   const { data: games = [], isLoading } = useGames()
   const { data: credits } = useQuery({
@@ -221,7 +228,13 @@ export default function Games({ subscribed, initialGameId }) {
 
   function handleFormDone(newId) {
     setEditing(null)
-    if (newId) setSelId(newId)
+    if (newId) navigate(`/games/${newId}`)
+  }
+
+  function selectGame(id) {
+    setEditing(null)
+    if (id) navigate(`/games/${id}`)
+    else navigate('/games')
   }
 
   const hasDetail = selId !== null || editing !== null
@@ -237,7 +250,7 @@ export default function Games({ subscribed, initialGameId }) {
               <span style={{fontSize:12,color:'#fbbf24',fontWeight:700}}>💎 {credits?.balance ?? '—'}</span>
             )}
             {isAdmin && (
-              <button className="btn btn-primary btn-sm" onClick={() => { setEditing({}); setSelId(null) }}>+ Create</button>
+              <button className="btn btn-primary btn-sm" onClick={() => { setEditing({}); navigate('/games') }}>+ Create</button>
             )}
           </div>
         </div>
@@ -257,7 +270,7 @@ export default function Games({ subscribed, initialGameId }) {
             const entered = g.my_entry
             return (
               <div key={g.id} className={`game-card${selId===g.id?' active':''}`}
-                onClick={() => { setSelId(g.id); setEditing(null) }}>
+                onClick={() => selectGame(g.id)}>
                 <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
                   <span className={`game-type-badge ${TYPE_CLASS[g.game_type]||''}`}>{TYPE_LABEL[g.game_type]||g.game_type}</span>
                   <span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:STATUS_DOT[g.status]||'#94a3b8',flexShrink:0}} />
@@ -284,7 +297,7 @@ export default function Games({ subscribed, initialGameId }) {
 
       {/* Main panel */}
       <div className="games-main">
-        <button className="games-back-btn" onClick={() => { setSelId(null); setEditing(null) }}>← Back to games</button>
+        <button className="games-back-btn" onClick={() => selectGame(null)}>← Back to games</button>
         {editing !== null
           ? <GameForm existing={editing?.id ? editing : null} onDone={handleFormDone} />
           : selId
