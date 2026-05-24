@@ -31,8 +31,12 @@
 .rec-item:hover   { box-shadow:0 4px 14px rgba(0,0,0,.1); }
 .rec-item-open    { border-left-color:#22c55e; }
 .rec-item-exited  { border-left-color:#94a3b8; }
-@keyframes rec-highlight { 0%,100%{box-shadow:0 2px 8px rgba(0,0,0,.06)} 30%{box-shadow:0 0 0 3px #3b82f6,0 4px 16px rgba(59,130,246,.25)} }
-.rec-item-highlight { animation:rec-highlight 2.5s ease-in-out; }
+@keyframes rec-highlight {
+  0%   { background:#dbeafe; box-shadow:0 0 0 3px rgba(59,130,246,.35), 0 4px 20px rgba(59,130,246,.18); }
+  45%  { background:#eff6ff; box-shadow:0 0 0 2px rgba(59,130,246,.15), 0 4px 14px rgba(59,130,246,.08); }
+  100% { background:#fff;    box-shadow:0 2px 8px rgba(0,0,0,.06); }
+}
+.rec-item-highlight { animation:rec-highlight 2.8s ease-out forwards; }
 
 /* Trade / history cards */
 .trade-card        { border:1px solid var(--border); border-left:4px solid #22c55e; border-radius:8px; margin-bottom:12px; overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.06); transition:box-shadow .15s; }
