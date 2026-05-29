@@ -31,6 +31,17 @@
 .rec-item:hover   { box-shadow:0 4px 14px rgba(0,0,0,.1); }
 .rec-item-open    { border-left-color:#22c55e; }
 .rec-item-exited  { border-left-color:#94a3b8; }
+
+/* Collapse toggle chevron */
+.rec-collapse-btn { display:inline-flex; align-items:center; justify-content:center; margin-left:auto; color:var(--muted); transition:transform .22s ease; flex-shrink:0; }
+.rec-collapse-btn.collapsed { transform:rotate(-90deg); }
+
+/* Collapsible body */
+.rec-body           { overflow:hidden; max-height:1200px; opacity:1; transition:max-height .28s ease, opacity .2s ease; will-change:max-height; }
+.rec-body-collapsed { max-height:0; opacity:0; pointer-events:none; }
+
+/* Prevent browser scroll-anchor jumps when cards expand/collapse */
+.rec-item { overflow-anchor:none; }
 @keyframes rec-highlight {
   0%   { background:#dbeafe; box-shadow:0 0 0 3px rgba(59,130,246,.35), 0 4px 20px rgba(59,130,246,.18); }
   45%  { background:#eff6ff; box-shadow:0 0 0 2px rgba(59,130,246,.15), 0 4px 14px rgba(59,130,246,.08); }

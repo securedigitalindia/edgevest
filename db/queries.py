@@ -1129,7 +1129,7 @@ def get_closed_account_trades(account_id: int | None = None, user_id: int | None
         # Compute realized P&L
         pnl = 0.0
         for e, x in itertools.zip_longest(d["entry_legs"], d["exit_legs"], fillvalue={}):
-            if e["price"] is not None and x["price"] is not None:
+            if e.get("price") is not None and x.get("price") is not None:
                 qty  = e["lots"] * (e["lot_size"] or 1)
                 pnl += (e["price"] - x["price"]) * qty if e["side"] == "SELL" \
                        else (x["price"] - e["price"]) * qty
@@ -1364,6 +1364,50 @@ def get_pending_adjustments_for_account_trade(account_trade_id: int) -> list[dic
 
     conn.close()
     return pending
+
+
+def get_pending_exit_for_account_trade(account_trade_id: int) -> dict | None:
+    """
+    Return the exit adjustment if the linked recommendation has been exited
+    but this account trade is still open (status='open').
+    Returns None if no exit is pending.
+    """
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT at.recommended_trade_id, rt.status, rt.exit_time"
+        " FROM account_trades at"
+        " LEFT JOIN recommended_trades rt ON rt.id = at.recommended_trade_id"
+        " WHERE at.id = ? AND at.status = 'open'",
+        (account_trade_id,),
+    ).fetchone()
+
+    if not row or not row[0] or row[1] != "exited":
+        conn.close()
+        return None
+
+    rec_id    = row[0]
+    exit_time = row[2]
+
+    exit_adj = conn.execute(
+        "SELECT id, trade_id, adj_type, note, ts FROM trade_adjustments"
+        " WHERE trade_id = ? AND adj_type = 'exit' ORDER BY id DESC LIMIT 1",
+        (rec_id,),
+    ).fetchone()
+
+    if not exit_adj:
+        conn.close()
+        return {"exit_time": exit_time, "legs": []}
+
+    adj = dict(zip(_ADJ_COLS, exit_adj))
+    leg_rows = conn.execute(
+        f"SELECT {_LEG_SELECT} FROM trade_legs"
+        f" WHERE trade_id = ? AND adjustment_id = ? ORDER BY id",
+        (rec_id, adj["id"]),
+    ).fetchall()
+    adj["legs"] = [dict(zip(_LEG_COLS, r)) for r in leg_rows]
+
+    conn.close()
+    return adj
 
 
 def close_recommended_trade(

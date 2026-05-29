@@ -154,7 +154,7 @@ function LegBuilder({ legs, onChange }) {
           </div>
         ))}
       </div>
-      <button style={{width:'100%',padding:7,border:'1.5px dashed #cbd5e1',borderRadius:6,background:'none',color:'var(--muted)',cursor:'pointer',fontSize:13}}
+      <button style={{width:'100%',padding:8,border:'1.5px dashed #cbd5e1',borderRadius:6,background:'none',color:'var(--muted)',cursor:'pointer',fontSize:13,marginTop:2}}
               onClick={add}>+ Add Leg</button>
     </div>
   )
@@ -169,6 +169,7 @@ function CreateRecForm() {
   const toast  = useToast()
 
   async function submit() {
+    if (!note.trim()) { toast('Title is required', 'err'); return }
     const data = collectLegs(legs, toast)
     if (!data) return
     const res = await create.mutateAsync({ ...data, note })
@@ -184,12 +185,12 @@ function CreateRecForm() {
     <div className="card">
       <div className="card-header"><h2>New Recommendation</h2></div>
       <div className="card-body">
-        <LegBuilder legs={legs} onChange={setLegs} />
-        <div className="form-row" style={{marginTop:12}}>
-          <label>Note (optional)</label>
-          <input placeholder="e.g. Bull put spread" value={note} onChange={e => setNote(e.target.value)} />
+        <div className="form-row" style={{marginBottom:12}}>
+          <label>Title <span style={{color:'var(--red)'}}>*</span></label>
+          <input placeholder="e.g. Bull put spread on Nifty" value={note} onChange={e => setNote(e.target.value)} />
         </div>
-        <button className="btn btn-primary" style={{width:'100%',justifyContent:'center',marginTop:4}}
+        <LegBuilder legs={legs} onChange={setLegs} />
+        <button className="btn btn-primary" style={{width:'100%',justifyContent:'center',marginTop:16}}
                 onClick={submit} disabled={create.isPending}>
           Create &amp; Send Alert
         </button>
@@ -484,6 +485,7 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
   const toast   = useToast()
 
+  const [collapsed, setCollapsed] = useState(true)
   const [adjOpen,  setAdjOpen]  = useState(false)
   const [exitOpen, setExitOpen] = useState(false)
   const [pushOpen, setPushOpen] = useState(false)
@@ -530,19 +532,36 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
 
   return (
     <div id={`rec-${rec.id}`} className={`rec-item rec-item-${rec.status}${highlight ? ' rec-item-highlight' : ''}`}>
-      {/* Header */}
-      <div className="rec-header">
-        <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
-          <span className="rec-symbol">{rec.symbol}</span>
-          <span className={`badge badge-${rec.status === 'open' ? 'open' : 'exited'}`}>{rec.status === 'open' ? 'Live' : rec.status}</span>
-          {rec.segment && <span className="rec-seg-tag">{rec.segment}</span>}
-          {rec.adj_count > 0 && <span className="adj-badge">{rec.adj_count} adj</span>}
+      {/* Header — always fully visible */}
+      <div className="rec-header" style={{cursor:'pointer'}} onClick={() => setCollapsed(v => !v)}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+          <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',flex:1,minWidth:0}}>
+            <span className="rec-symbol" style={{fontSize:15}}>{rec.note || rec.symbol}</span>
+            <span className={`badge badge-${rec.status === 'open' ? 'open' : 'exited'}`}>{rec.status === 'open' ? 'Live' : rec.status}</span>
+            {rec.segment && <span className="rec-seg-tag">{rec.segment}</span>}
+            {rec.adj_count > 0 && <span className="adj-badge">{rec.adj_count} adj</span>}
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+            {collapsed && !isOpen && totalPnl != null && (
+              <span style={{fontSize:12,fontWeight:700,color:totalPnl>=0?'var(--green)':'var(--red)'}}>
+                {fmtPnl(totalPnl)}
+              </span>
+            )}
+            {collapsed && isOpen && unrealisedPnl != null && (
+              <span style={{fontSize:12,fontWeight:700,color:unrealisedPnl>=0?'var(--green)':'var(--red)'}}>
+                {fmtPnl(unrealisedPnl)}
+              </span>
+            )}
+            <span className={`rec-collapse-btn${collapsed ? ' collapsed' : ''}`}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </span>
+          </div>
         </div>
-        {rec.note && <div className="rec-note">{rec.note}</div>}
-        <div className="rec-ts">
-          {rec.entry_ist}{rec.exit_ist ? ` · Closed ${rec.exit_ist}` : ''}
-        </div>
+        <div className="rec-ts">{rec.entry_ist}{rec.exit_ist ? ` · Closed ${rec.exit_ist}` : ''}</div>
       </div>
+
+      {/* Collapsible body */}
+      <div className={`rec-body${collapsed ? ' rec-body-collapsed' : ''}`}>
 
       {/* Legs */}
       <RecLegs rec={rec} prices={isOpen ? prices : null} />
@@ -582,7 +601,7 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
 
       {/* Admin actions */}
       {isAdmin && isOpen && <>
-        <div className="rec-action-bar">
+        <div className="rec-action-bar" onClick={e => e.stopPropagation()}>
           <button className="btn btn-primary btn-sm" onClick={() => { setAdjOpen(v=>!v); setExitOpen(false) }}>Adjust</button>
           <button className="btn btn-danger btn-sm"  onClick={() => { setExitOpen(v=>!v); setAdjOpen(false) }}>Exit</button>
           <button className="btn btn-ghost btn-sm"   style={{color:'var(--red)',borderColor:'#fca5a5'}} onClick={handleDelete}>Delete</button>
@@ -604,7 +623,7 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
               </div>
             </div>
           : <>
-              <div style={{padding:'10px 14px',borderTop:'1px solid var(--border)'}}>
+              <div style={{padding:'10px 14px',borderTop:'1px solid var(--border)'}} onClick={e => e.stopPropagation()}>
                 <button className="btn btn-success" style={{width:'100%',justifyContent:'center',fontWeight:700,fontSize:13,padding:'9px'}}
                         onClick={() => setPushOpen(v=>!v)}>
                   {pushOpen ? 'Cancel' : '+ Add to My Account'}
@@ -613,6 +632,8 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
               {pushOpen && <PushForm rec={rec} prices={prices} onClose={() => setPushOpen(false)} openDrawer={openDrawer} onPushed={onPushed} />}
             </>
       )}
+
+      </div>
     </div>
   )
 }
@@ -833,6 +854,9 @@ function TradeCard({ trade: t, isAdmin, prices }) {
         {t.pending_adj_count > 0 && (
           <span style={{fontSize:11,padding:'2px 7px',borderRadius:20,background:'#fef3c7',color:'#92400e',fontWeight:600}}>⚠ {t.pending_adj_count} adj pending</span>
         )}
+        {t.pending_exit && (
+          <span style={{fontSize:11,padding:'2px 7px',borderRadius:20,background:'#fee2e2',color:'#b91c1c',fontWeight:600}}>🔔 exit pending</span>
+        )}
         <span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#f1f5f9',color:'var(--muted)',border:'1px solid var(--border)'}}>{t.account_label}</span>
         <span style={{fontSize:11,color:'var(--muted)',marginLeft:'auto'}}>{t.entry_ist}</span>
       </div>
@@ -885,6 +909,23 @@ function TradeCard({ trade: t, isAdmin, prices }) {
       })()}
 
       {(t.pending_adjustments||[]).length > 0 && <PendingAdjSection trade={t} />}
+
+      {t.pending_exit && (
+        <div style={{padding:'10px 14px',borderTop:'2px solid #ef4444',background:'#fff1f2',display:'flex',alignItems:'flex-start',gap:10}}>
+          <span style={{fontSize:16,lineHeight:1,flexShrink:0}}>🔔</span>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:700,fontSize:12,color:'#b91c1c',textTransform:'uppercase',letterSpacing:.4,marginBottom:2}}>
+              Recommendation Exited
+            </div>
+            <div style={{fontSize:12,color:'#7f1d1d'}}>
+              The recommendation for this trade has been closed. Please exit your position.
+            </div>
+          </div>
+          <button className="btn btn-danger btn-sm" style={{flexShrink:0}} onClick={() => setExitOpen(true)}>
+            Exit Now
+          </button>
+        </div>
+      )}
 
       {!isAdmin && <>
         <div style={{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:8}}>

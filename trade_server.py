@@ -5,8 +5,6 @@ Run:  python trade_server.py
 """
 import sys
 import os
-import threading
-import webbrowser
 from functools import wraps
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -595,7 +593,7 @@ def api_account_trades():
     else:
         trades = get_open_account_trades(account_id=account_id)
 
-    from db.queries import get_pending_adjustments_for_account_trade
+    from db.queries import get_pending_adjustments_for_account_trade, get_pending_exit_for_account_trade
     out = []
     for t in trades:
         all_at_legs  = get_account_trade_legs(t["id"])
@@ -605,6 +603,7 @@ def api_account_trades():
         original_legs = get_original_account_entry_legs(t["id"])
         applied_adjs  = get_applied_account_adjustments(t["id"])
         pending_adjs  = get_pending_adjustments_for_account_trade(t["id"])
+        pending_exit  = get_pending_exit_for_account_trade(t["id"])
         out.append({
             "id":                  t["id"],
             "symbol":              t["symbol"] or "—",
@@ -620,6 +619,7 @@ def api_account_trades():
             "applied_adjustments": applied_adjs,
             "pending_adj_count":   len(pending_adjs),
             "pending_adjustments": pending_adjs,
+            "pending_exit":        pending_exit,
             "margin":              t.get("margin"),
         })
     return jsonify(trades=out)
@@ -1228,5 +1228,4 @@ if __name__ == "__main__":
 
     _preload()
 
-    threading.Timer(1.2, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
     app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False, threaded=True)

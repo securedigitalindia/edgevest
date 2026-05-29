@@ -77,7 +77,10 @@ export function useExitTrade(id) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: data => exitTrade(id, data),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['trades'] }),
+    onSuccess:  () => {
+      qc.invalidateQueries({ queryKey: ['trades'] })
+      qc.invalidateQueries({ queryKey: ['trade-history'] })
+    },
   })
 }
 
@@ -93,7 +96,10 @@ export function useDeleteTrade() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: deleteTrade,
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['trades'] }),
+    onSuccess:  () => {
+      qc.invalidateQueries({ queryKey: ['trades'] })
+      qc.invalidateQueries({ queryKey: ['trade-history'] })
+    },
   })
 }
 

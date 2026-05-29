@@ -325,10 +325,28 @@ def run_live(force: bool = False):
 
     print(f"\n[{_ist_now().strftime('%H:%M IST')}]  Market closed (15:30 IST). Polling stopped.")
 
+    # Keep price cache live until 16:00 IST — NSE call-auction settles after 15:30
+    # and Upstox continues to serve updated LTPs during the closing session.
+    # Triggers and tick store are off; only price_cache is updated.
+    if not force and _ist_minutes() < 16 * 60:
+        print(f"[{_ist_now().strftime('%H:%M IST')}]  Post-close cache update — polling every 30s until 16:00 IST...",
+              flush=True)
+        while _ist_minutes() < 16 * 60:
+            try:
+                _trade_ikeys = get_open_trade_ikeys()
+            except Exception:
+                _trade_ikeys = []
+            _post_ikeys = list(set(ikeys + _spot_ikeys + _trade_ikeys))
+            try:
+                prices = get_ltp(_post_ikeys)
+                update_price_cache(prices)
+            except Exception as e:
+                print(f"  [post-close cache update]  {e}", flush=True)
+            time.sleep(30)
+
     # EOD tasks at 16:00 — yfinance data is reliable by then
     # Skipped on --force (testing) since market didn't actually close
     if not force:
-        _wait_until(16, 0)
         _run_eod_tasks(daily_alerts)
 
 
