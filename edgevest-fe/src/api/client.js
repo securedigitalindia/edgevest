@@ -1,7 +1,10 @@
 import axios from 'axios'
 
+export const API_BASE  = import.meta.env.VITE_API_URL || '/api'
+export const AUTH_BASE = API_BASE.replace(/\/api$/, '')
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: API_BASE,
   withCredentials: true,
 })
 

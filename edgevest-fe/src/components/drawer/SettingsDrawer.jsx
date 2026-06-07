@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { AUTH_BASE } from '../../api/client'
 import { useQuery } from '@tanstack/react-query'
 import useAuthStore from '../../store/authStore'
 import api from '../../api/client'
@@ -174,7 +175,7 @@ function ProfileTab({ user, mobile, setMobile, onSave }) {
       </>}
 
       <div style={{marginTop:20,paddingTop:16,borderTop:'1px solid #f1f5f9'}}>
-        <a href="/logout" style={{fontSize:13,color:'var(--red)',fontWeight:600}}>Sign out</a>
+        <a href={`${AUTH_BASE}/logout`} style={{fontSize:13,color:'var(--red)',fontWeight:600}}>Sign out</a>
       </div>
     </div>
   )

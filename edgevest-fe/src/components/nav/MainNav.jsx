@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { AUTH_BASE } from '../../api/client'
 import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../../store/authStore'
 import { useQuery } from '@tanstack/react-query'
@@ -64,7 +65,7 @@ export default function MainNav({ onOpenDrawer, subscribed }) {
                 {isClient && <div className="prof-menu-credits">💎 {credits?.balance ?? '—'} credits</div>}
                 <div className="prof-menu-item" style={{cursor:'pointer'}} onClick={() => { setMenuOpen(false); onOpenDrawer('profile') }}>Profile</div>
                 <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
-                <a href="/logout" className="prof-menu-item">Sign out</a>
+                <a href={`${AUTH_BASE}/logout`} className="prof-menu-item">Sign out</a>
               </div>
             )}
           </div>
