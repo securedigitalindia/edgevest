@@ -13,16 +13,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from flask import (Flask, request, jsonify,
-                   session, redirect, url_for, abort, g, send_from_directory)
+                   session, redirect, url_for, abort, g)
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
 
-_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "edgevest-fe", "dist")
-
-app = Flask(__name__, static_folder=_DIST, static_url_path="/assets")
+app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
 
-# CORS — allow Vite dev server in dev, nothing extra in prod (same-origin)
+# CORS — frontend is on a separate origin (S3/CloudFront or Vite dev server)
 _CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 if _CORS_ORIGINS:
     CORS(app, origins=_CORS_ORIGINS, supports_credentials=True)
@@ -1153,14 +1151,6 @@ def api_spot():
 # ─────────────────────────────────────────────────────────
 # edgevest-fe — serve React build for all non-API routes
 # ─────────────────────────────────────────────────────────
-
-@app.route("/", defaults={"path": ""})
-@app.route("/<path:path>")
-def serve_react(path):
-    full = os.path.join(_DIST, path)
-    if path and os.path.exists(full):
-        return send_from_directory(_DIST, path)
-    return send_from_directory(_DIST, "index.html")
 
 
 @app.route("/api/subscribe", methods=["POST"])
