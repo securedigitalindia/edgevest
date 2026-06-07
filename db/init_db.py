@@ -614,6 +614,27 @@ def init_db():
         cur.execute("ALTER TABLE price_cache ADD COLUMN prev_close REAL")
     print("  ✓  Table ready: price_cache")
 
+    # ── Schema migrations for older DBs ───────────────────────
+    _acct_cols = {r[1] for r in cur.execute("SELECT * FROM pragma_table_info('accounts')")}
+    if "game_id" not in _acct_cols:
+        cur.execute("ALTER TABLE accounts ADD COLUMN game_id INTEGER REFERENCES games(id)")
+    if "capital" not in _acct_cols:
+        cur.execute("ALTER TABLE accounts ADD COLUMN capital REAL NOT NULL DEFAULT 0")
+
+    _at_cols = {r[1] for r in cur.execute("SELECT * FROM pragma_table_info('account_trades')")}
+    if "margin" not in _at_cols:
+        cur.execute("ALTER TABLE account_trades ADD COLUMN margin REAL")
+
+    _sp_cols = {r[1] for r in cur.execute("SELECT * FROM pragma_table_info('subscription_plans')")}
+    if "gem_cost" not in _sp_cols:
+        cur.execute("ALTER TABLE subscription_plans ADD COLUMN gem_cost INTEGER NOT NULL DEFAULT 0")
+
+    _atl_cols = {r[1] for r in cur.execute("SELECT * FROM pragma_table_info('account_trade_legs')")}
+    if "margin" not in _atl_cols:
+        cur.execute("ALTER TABLE account_trade_legs ADD COLUMN margin REAL")
+
+    print("  ✓  Schema migrations applied")
+
     # ── Games system ──────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS games (
