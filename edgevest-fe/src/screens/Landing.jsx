@@ -16,7 +16,7 @@ export default function Landing() {
       {/* Nav */}
       <nav style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 40px',height:56,borderBottom:'1px solid #f1f5f9'}}>
         <div style={{fontSize:17,fontWeight:800,letterSpacing:'-.3px',color:'#0f172a'}}>
-          Dri<span style={{color:'#3b82f6'}}>sh</span>ti
+          Edge<span style={{color:'#3b82f6'}}>Vest</span>
         </div>
         <a href={`${AUTH_BASE}/auth/google`} style={{display:'inline-flex',alignItems:'center',gap:8,background:'#0f172a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer',textDecoration:'none'}}>
           {GOOGLE_SVG}
