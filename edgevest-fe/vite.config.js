@@ -9,9 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icons/*.png'],
       manifest: {
-        name: 'Drishti — Trade Manager',
-        short_name: 'Drishti',
-        description: 'Live NSE market signal agent',
+        name: 'EdgeVest',
+        short_name: 'EdgeVest',
+        description: 'Advisory-first market intelligence',
         theme_color: '#0f172a',
         background_color: '#0f172a',
         display: 'standalone',
