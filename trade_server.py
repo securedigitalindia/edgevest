@@ -21,7 +21,23 @@ _DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "edgevest-fe", 
 
 app = Flask(__name__, static_folder=_DIST, static_url_path="/assets")
 app.secret_key = os.environ["SECRET_KEY"]
-CORS(app, origins=["http://localhost:5173"], supports_credentials=True)
+
+# CORS — allow Vite dev server in dev, nothing extra in prod (same-origin)
+_CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+if _CORS_ORIGINS:
+    CORS(app, origins=_CORS_ORIGINS, supports_credentials=True)
+
+# Trust the X-Forwarded-Proto header from nginx so url_for() generates https:// URLs
+# and OAuth redirect URIs are correct in prod
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+# Secure session cookies — enforced in prod (HTTPS), relaxed in dev
+_PROD = os.environ.get("FLASK_ENV", "production") != "development"
+app.config["SESSION_COOKIE_SECURE"]   = _PROD
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30  # 30 days
 
 
 @app.teardown_appcontext
@@ -29,7 +45,8 @@ def _close_db(exc):
     db = getattr(g, '_db', None)
     if db is not None:
         db.close()
-PORT = 5555
+
+PORT = int(os.environ.get("PORT", 5555))
 # In dev, set FRONTEND_URL=http://localhost:5173 so post-auth redirects go to Vite
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "")
 

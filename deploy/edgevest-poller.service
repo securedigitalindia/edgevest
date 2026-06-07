@@ -1,0 +1,16 @@
+[Unit]
+Description=Edgevest Live Poller
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/edgevest
+EnvironmentFile=/home/ubuntu/edgevest/.env
+ExecStart=/home/ubuntu/edgevest/venv/bin/python main.py live
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
