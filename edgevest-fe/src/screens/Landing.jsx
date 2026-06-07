@@ -1,3 +1,5 @@
+const AUTH_URL = (import.meta.env.VITE_API_URL || '/api').replace('/api', '')
+
 const GOOGLE_SVG = (
   <svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" style={{width:18,height:18,flexShrink:0}}>
     <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615Z" fill="#4285F4"/>
@@ -16,7 +18,7 @@ export default function Landing() {
         <div style={{fontSize:17,fontWeight:800,letterSpacing:'-.3px',color:'#0f172a'}}>
           Dri<span style={{color:'#3b82f6'}}>sh</span>ti
         </div>
-        <a href="/auth/google" style={{display:'inline-flex',alignItems:'center',gap:8,background:'#0f172a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer',textDecoration:'none'}}>
+        <a href={`${AUTH_URL}/auth/google`} style={{display:'inline-flex',alignItems:'center',gap:8,background:'#0f172a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer',textDecoration:'none'}}>
           {GOOGLE_SVG}
           Sign in with Google
         </a>
@@ -36,7 +38,7 @@ export default function Landing() {
           portfolio tools — all in one clean interface.
         </p>
         <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>
-          <a href="/auth/google" style={{display:'inline-flex',alignItems:'center',gap:10,background:'#fff',color:'#0f172a',border:'1.5px solid #e2e8f0',borderRadius:10,padding:'12px 24px',fontSize:14,fontWeight:600,cursor:'pointer',textDecoration:'none',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+          <a href={`${AUTH_URL}/auth/google`} style={{display:'inline-flex',alignItems:'center',gap:10,background:'#fff',color:'#0f172a',border:'1.5px solid #e2e8f0',borderRadius:10,padding:'12px 24px',fontSize:14,fontWeight:600,cursor:'pointer',textDecoration:'none',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
             {GOOGLE_SVG}
             Continue with Google
           </a>
