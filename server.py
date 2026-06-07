@@ -176,10 +176,7 @@ def login():
 
 @app.route("/auth/google")
 def auth_google():
-    if FRONTEND_URL:
-        redirect_uri = FRONTEND_URL + "/auth/callback"
-    else:
-        redirect_uri = url_for("auth_callback", _external=True)
+    redirect_uri = url_for("auth_callback", _external=True)
     return google.authorize_redirect(redirect_uri)
 
 @app.route("/auth/callback")
