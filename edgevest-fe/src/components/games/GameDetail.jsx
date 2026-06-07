@@ -436,7 +436,7 @@ function ParticipantsPanel({ game, userId }) {
   const overflow= total - 20
   const isPred  = game.game_type === 'price_prediction'
   const refLtp  = isPred ? (spot[game.symbol || 'NIFTY50']?.ltp ?? null) : null
-  const note    = isPred ? '📈 predictions visible after entry · final score after close' : '🔒 answers hidden until results'
+  const note    = isPred ? '📈 predictions visible after entry · final score after close' : '⏳ prizes distributed after resolution'
 
   const getPredPrice = e => e.predicted_price ?? e.entry_data?.predicted_price ?? null
   const bulls = isPred && refLtp ? entries.filter(e => { const p = getPredPrice(e); return p != null && parseFloat(p) >= refLtp }).length : 0
