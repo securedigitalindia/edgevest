@@ -78,7 +78,8 @@ function PredictionGame({ game, isAdmin, user }) {
   const { data: { spot } = { spot: {} } } = usePrices()
   const refLtp = spot[sym]?.ltp ?? null
   const step   = sym.includes('BANK') ? 100 : 50
-  const [val, setVal] = useState('')
+  const [val,     setVal]     = useState('')
+  const [locked,  setLocked]  = useState(false)
   const submit = useSubmitEntry(game.id)
   const toast  = useToast()
 
@@ -96,6 +97,7 @@ function PredictionGame({ game, isAdmin, user }) {
 
   const entry = game.my_entry
   const pp    = entry?.entry_data?.predicted_price
+  if (locked && !pp) return <div style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:10,padding:16,marginBottom:4,fontSize:13,color:'#1d4ed8',fontWeight:600}}>Prediction locked! Updating…</div>
 
   if (pp != null) {
     const actual = game.status === 'resolved' && game.result_value ? parseFloat(game.result_value) : null
@@ -145,8 +147,8 @@ function PredictionGame({ game, isAdmin, user }) {
   async function lock() {
     const price = parseFloat(val)
     if (!price) return toast('Enter a price', 'err')
-    const res = await submit.mutateAsync({ predicted_price: price })
-    if (res.ok) toast('Prediction locked! 🎯', 'ok')
+    const res = await submit.mutateAsync({ entry_data: { predicted_price: price } })
+    if (res.ok) { setLocked(true); toast('Prediction locked! 🎯', 'ok') }
     else toast(res.error || 'Error', 'err')
   }
 
@@ -199,7 +201,7 @@ function McqGame({ game, isAdmin }) {
   async function doSubmit() {
     const answered = Object.keys(activeSel).length
     if (!answered) return toast('Answer at least one question', 'err')
-    const res = await submit.mutateAsync({ answers: activeSel })
+    const res = await submit.mutateAsync({ entry_data: { answers: activeSel } })
     if (res.ok) toast('Answers submitted!', 'ok')
     else toast(res.error || 'Error', 'err')
   }
