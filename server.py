@@ -177,6 +177,8 @@ def login():
 
 @app.route("/auth/google")
 def auth_google():
+    session.clear()
+    session.permanent = True
     redirect_uri = url_for("auth_callback", _external=True)
     return google.authorize_redirect(redirect_uri, prompt="consent")
 
