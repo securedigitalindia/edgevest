@@ -25,7 +25,7 @@ def compute_supertrend(
     if df.empty or len(df) < period + 5:
         raise ValueError(
             f"Not enough {timeframe} candles for {symbol}. "
-            "Run: python main.py bootstrap"
+            "Run: python poller.py bootstrap"
         )
 
     st = ta.supertrend(df["high"], df["low"], df["close"],
@@ -53,7 +53,7 @@ def compute_ema(symbol: str, timeframe: str, period: int) -> tuple[float, object
     if df.empty or len(df) < period + 5:
         raise ValueError(
             f"Not enough {timeframe} candles for {symbol} to compute EMA{period}. "
-            "Run: python main.py bootstrap"
+            "Run: python poller.py bootstrap"
         )
 
     ema = ta.ema(df["close"], length=period)
@@ -70,7 +70,7 @@ def compute_rsi(symbol: str, timeframe: str, period: int) -> tuple[float, object
     if df.empty or len(df) < period + 5:
         raise ValueError(
             f"Not enough {timeframe} candles for {symbol} to compute RSI{period}. "
-            "Run: python main.py bootstrap"
+            "Run: python poller.py bootstrap"
         )
 
     rsi = ta.rsi(df["close"], length=period)

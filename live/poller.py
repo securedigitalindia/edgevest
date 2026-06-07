@@ -2,8 +2,8 @@
 Drishti — Live Poller
 =====================
 Run:
-    python main.py live
-    python main.py live --force    # skip market-hours + holiday check (for testing)
+    python poller.py live
+    python poller.py live --force    # skip market-hours + holiday check (for testing)
 
 Daily lifecycle:
   Startup   : holiday check → expiry cache refresh → build triggers

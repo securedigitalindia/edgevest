@@ -1,14 +1,14 @@
 # Drishti — main entry point
 # ============================================================
 #  Usage:
-#    python main.py bootstrap          — first-time DB seed
-#    python main.py sync               — end-of-day data sync
-#    python main.py verify             — check DB health
-#    python main.py live               — start live market poller
-#    python main.py live --force       — run poller outside market hours
-#    python main.py bootstrap RELIANCE — bootstrap one symbol
-#    python main.py analysis           — run & send daily NIFTY analysis now
-#    python main.py analysis --print   — print to terminal without sending
+#    python poller.py bootstrap          — first-time DB seed
+#    python poller.py sync               — end-of-day data sync
+#    python poller.py verify             — check DB health
+#    python poller.py live               — start live market poller
+#    python poller.py live --force       — run poller outside market hours
+#    python poller.py bootstrap RELIANCE — bootstrap one symbol
+#    python poller.py analysis           — run & send daily NIFTY analysis now
+#    python poller.py analysis --print   — print to terminal without sending
 # ============================================================
 
 import sys

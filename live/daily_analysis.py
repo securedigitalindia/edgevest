@@ -308,7 +308,7 @@ def build_analysis() -> dict:
     # ── 1D candles ──────────────────────────────────────
     df1d = get_candles(NIFTY_SYMBOL, "1d", limit=300)
     if df1d.empty or len(df1d) < 50:
-        raise ValueError("Not enough 1d candles for NIFTY50. Run: python main.py bootstrap")
+        raise ValueError("Not enough 1d candles for NIFTY50. Run: python poller.py bootstrap")
 
     close_1d = float(df1d["close"].iloc[-1])
     prev_open = float(df1d["open"].iloc[-1])

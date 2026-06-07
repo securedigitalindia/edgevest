@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Drishti — Trade Manager Web UI
-Run:  python trade_server.py
+Run:  python server.py
 """
 import sys
 import os
