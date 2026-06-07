@@ -157,7 +157,7 @@ function PredictionGame({ game, isAdmin, user }) {
       <div className="pred-ref">
         <div className="pred-ref-sym">{sym} · live</div>
         <div className="pred-ref-ltp">{refFmt}</div>
-        <div className="pred-ref-lbl">Where will it close today?</div>
+        <div className="pred-ref-lbl">Where will it close on {fmtIst(game.end_time).split(',')[0]}?</div>
       </div>
       <div className="pred-divider" />
       <div className="pred-nudge-row">
