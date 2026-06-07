@@ -34,7 +34,8 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 _PROD = os.environ.get("FLASK_ENV", "production") != "development"
 app.config["SESSION_COOKIE_SECURE"]   = _PROD
 app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SAMESITE"] = "None" if _PROD else "Lax"
+app.config["SESSION_COOKIE_DOMAIN"]   = ".edgevest.in" if _PROD else None
 app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30  # 30 days
 
 
@@ -177,7 +178,7 @@ def login():
 @app.route("/auth/google")
 def auth_google():
     redirect_uri = url_for("auth_callback", _external=True)
-    return google.authorize_redirect(redirect_uri)
+    return google.authorize_redirect(redirect_uri, prompt="consent")
 
 @app.route("/auth/callback")
 def auth_callback():
