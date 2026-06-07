@@ -436,8 +436,9 @@ function ParticipantsPanel({ game, userId }) {
   const refLtp  = isPred ? (spot[game.symbol || 'NIFTY50']?.ltp ?? null) : null
   const note    = isPred ? '📈 predictions visible · final score after close' : '🔒 answers hidden until results'
 
-  const bulls = isPred && refLtp ? entries.filter(e => e.predicted_price != null && parseFloat(e.predicted_price) >= refLtp).length : 0
-  const bears = isPred && refLtp ? entries.filter(e => e.predicted_price != null && parseFloat(e.predicted_price) <  refLtp).length : 0
+  const getPredPrice = e => e.predicted_price ?? e.entry_data?.predicted_price ?? null
+  const bulls = isPred && refLtp ? entries.filter(e => { const p = getPredPrice(e); return p != null && parseFloat(p) >= refLtp }).length : 0
+  const bears = isPred && refLtp ? entries.filter(e => { const p = getPredPrice(e); return p != null && parseFloat(p) <  refLtp }).length : 0
   const bullPct = total ? Math.round((bulls / total) * 100) : 0
 
   return (
@@ -463,7 +464,7 @@ function ParticipantsPanel({ game, userId }) {
 
       {shown.map((e, i) => {
         const isMe = e.user_id === userId
-        const pp   = isPred && e.predicted_price != null ? parseFloat(e.predicted_price) : null
+        const pp   = isPred ? (v => v != null ? parseFloat(v) : null)(getPredPrice(e)) : null
         const up   = pp != null && refLtp != null ? pp >= refLtp : null
         const pct  = pp != null && refLtp ? ` (${up?'+':''}${((pp - refLtp)/refLtp*100).toFixed(1)}%)` : ''
         const col  = up === null ? '#64748b' : (up ? '#16a34a' : '#dc2626')
