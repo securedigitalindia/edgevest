@@ -752,16 +752,31 @@ def get_all_plans() -> list[dict]:
         conn.close()
 
 
-def create_plan(name: str, description: str, price: int, duration_days: int) -> int:
+def create_plan(name: str, description: str, price: int, duration_days: int, gem_cost: int = 0) -> int:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = get_connection()
     try:
         cur = conn.execute("""
-            INSERT INTO subscription_plans (name, description, price, duration_days, active, created_at)
-            VALUES (?, ?, ?, ?, 1, ?)
-        """, (name.strip(), description.strip(), price, duration_days, now))
+            INSERT INTO subscription_plans (name, description, price, gem_cost, duration_days, active, created_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+        """, (name.strip(), description.strip(), price, gem_cost, duration_days, now))
         conn.commit()
         return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def update_plan(plan_id: int, **kwargs) -> None:
+    allowed = {"name", "description", "price", "gem_cost", "duration_days"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed}
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    conn = get_connection()
+    try:
+        conn.execute(f"UPDATE subscription_plans SET {set_clause} WHERE id = ?",
+                     list(fields.values()) + [plan_id])
+        conn.commit()
     finally:
         conn.close()
 

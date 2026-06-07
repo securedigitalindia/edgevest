@@ -5,7 +5,7 @@ import useAuthStore from '../../store/authStore'
 import api from '../../api/client'
 import { useToast } from '../common/Toast'
 import { useBrokers, useAddBroker, useAccounts, useAddAccount, useUpdateAccountCapital } from '../../hooks/useTrades'
-import { useUsers, useSaveUserProfile, useProfile, useSaveProfile, usePlans, useCreatePlan, useTogglePlan, useSubs } from '../../hooks/useSettings'
+import { useUsers, useSaveUserProfile, useProfile, useSaveProfile, usePlans, useCreatePlan, useUpdatePlan, useTogglePlan, useSubs } from '../../hooks/useSettings'
 import { getCredits } from '../../api/games'
 import './SettingsDrawer.css'
 
@@ -529,17 +529,26 @@ function UsersTab({ isSuperAdmin }) {
 function PlansTab() {
   const { data: plans = [], isLoading } = usePlans()
   const createPlan = useCreatePlan()
+  const updatePlan = useUpdatePlan()
   const togglePlan = useTogglePlan()
   const toast      = useToast()
   const [name,     setName]     = useState('')
   const [price,    setPrice]    = useState('0')
+  const [gemCost,  setGemCost]  = useState('0')
   const [duration, setDuration] = useState('30')
   const [desc,     setDesc]     = useState('')
+  const [editGem,  setEditGem]  = useState({})  // { [planId]: gemCostStr }
 
   async function create() {
     if (!name.trim()) { toast('Enter plan name', 'err'); return }
-    const res = await createPlan.mutateAsync({ name: name.trim(), description: desc, price: parseInt(price||0), duration_days: parseInt(duration||30) })
-    if (res.ok) { toast('Plan created ✓', 'ok'); setName(''); setPrice('0'); setDuration('30'); setDesc('') }
+    const res = await createPlan.mutateAsync({ name: name.trim(), description: desc, price: parseInt(price||0), gem_cost: parseInt(gemCost||0), duration_days: parseInt(duration||30) })
+    if (res.ok) { toast('Plan created ✓', 'ok'); setName(''); setPrice('0'); setGemCost('0'); setDuration('30'); setDesc('') }
+    else toast(res.error || 'Failed', 'err')
+  }
+
+  async function saveGemCost(id) {
+    const res = await updatePlan.mutateAsync({ id, gem_cost: parseInt(editGem[id] || 0) })
+    if (res.ok) { toast('Gem cost updated ✓', 'ok'); setEditGem(prev => { const n = {...prev}; delete n[id]; return n }) }
     else toast(res.error || 'Failed', 'err')
   }
 
@@ -562,7 +571,24 @@ function PlansTab() {
                 {p.price === 0 && <span style={{fontSize:10,background:'#dcfce7',color:'#166534',padding:'1px 6px',borderRadius:10,fontWeight:700}}>Free</span>}
                 {!p.active && <span style={{fontSize:10,background:'#f1f5f9',color:'#94a3b8',padding:'1px 6px',borderRadius:10,fontWeight:700}}>Inactive</span>}
               </div>
-              <div style={{fontSize:11,color:'var(--muted)'}}>₹{p.price} · {p.duration_days} days{p.description?` · ${p.description}`:''}</div>
+              <div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>₹{p.price} · {p.duration_days} days{p.description?` · ${p.description}`:''}</div>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={{fontSize:11,color:'var(--muted)'}}>💎 Gems:</span>
+                {p.id in editGem ? (
+                  <>
+                    <input type="number" min="0" value={editGem[p.id]}
+                           onChange={e => setEditGem(prev => ({...prev, [p.id]: e.target.value}))}
+                           style={{width:60,fontSize:11,padding:'2px 4px',border:'1px solid var(--border)',borderRadius:4}} />
+                    <button className="btn btn-primary btn-sm" style={{fontSize:10,padding:'2px 8px'}} onClick={() => saveGemCost(p.id)}>Save</button>
+                    <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 6px'}} onClick={() => setEditGem(prev => { const n={...prev}; delete n[p.id]; return n })}>✕</button>
+                  </>
+                ) : (
+                  <span style={{fontSize:11,cursor:'pointer',color: p.gem_cost > 0 ? 'var(--text)' : 'var(--muted)'}}
+                        onClick={() => setEditGem(prev => ({...prev, [p.id]: String(p.gem_cost || 0)}))}>
+                    {p.gem_cost > 0 ? p.gem_cost : <span style={{textDecoration:'underline dotted'}}>Set</span>}
+                  </span>
+                )}
+              </div>
             </div>
             <button className={`btn btn-sm ${p.active ? 'btn-ghost' : 'btn-success'}`}
                     style={p.active?{color:'var(--red)',borderColor:'#fca5a5',fontSize:11}:{fontSize:11}}
@@ -584,10 +610,14 @@ function PlansTab() {
             <input type="number" min="0" value={price} onChange={e=>setPrice(e.target.value)} />
           </div>
           <div className="form-row">
+            <label>Gem cost 💎</label>
+            <input type="number" min="0" value={gemCost} onChange={e=>setGemCost(e.target.value)} />
+          </div>
+          <div className="form-row">
             <label>Duration (days)</label>
             <input type="number" min="1" value={duration} onChange={e=>setDuration(e.target.value)} />
           </div>
-          <div className="form-row">
+          <div className="form-row" style={{gridColumn:'1/-1'}}>
             <label>Description</label>
             <input placeholder="Short description" value={desc} onChange={e=>setDesc(e.target.value)} />
           </div>

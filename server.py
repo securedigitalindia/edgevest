@@ -288,11 +288,24 @@ def api_plans_create():
     desc     = data.get("description", "").strip()
     price    = int(data.get("price", 0))
     duration = int(data.get("duration_days", 30))
+    gem_cost = int(data.get("gem_cost", 0))
     if not name:
         return jsonify(ok=False, error="name required"), 400
     from db.queries import create_plan
-    pid = create_plan(name, desc, price, duration)
+    pid = create_plan(name, desc, price, duration, gem_cost)
     return jsonify(ok=True, id=pid)
+
+@app.route("/api/plans/<int:plan_id>", methods=["PUT"])
+@require_role("super_admin", "admin")
+def api_plans_update(plan_id):
+    data = request.json or {}
+    from db.queries import update_plan
+    kwargs = {}
+    for field in ("name", "description", "price", "gem_cost", "duration_days"):
+        if field in data:
+            kwargs[field] = int(data[field]) if field in ("price", "gem_cost", "duration_days") else data[field]
+    update_plan(plan_id, **kwargs)
+    return jsonify(ok=True)
 
 @app.route("/api/plans/<int:plan_id>/toggle", methods=["POST"])
 @require_role("super_admin", "admin")

@@ -7,5 +7,6 @@ export const getProfile       = ()                  => api.get('/profile').then(
 export const saveProfile      = data                => api.post('/profile', data).then(r => r.data)
 export const listPlans      = ()            => api.get('/plans').then(r => r.data.plans)
 export const createPlan     = data          => api.post('/plans', data).then(r => r.data)
+export const updatePlan     = (id, data)    => api.put(`/plans/${id}`, data).then(r => r.data)
 export const togglePlan     = (id, active)  => api.post(`/plans/${id}/toggle`, { active }).then(r => r.data)
 export const listSubs       = ()            => api.get('/subscriptions').then(r => r.data.subscriptions)

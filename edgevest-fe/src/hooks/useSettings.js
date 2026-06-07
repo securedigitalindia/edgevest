@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { listUsers, saveUserProfile, changeUserRole, getProfile, saveProfile, listPlans, createPlan, togglePlan, listSubs } from '../api/settings'
+import { listUsers, saveUserProfile, changeUserRole, getProfile, saveProfile, listPlans, createPlan, updatePlan, togglePlan, listSubs } from '../api/settings'
 
 export function useProfile() {
   return useQuery({ queryKey: ['profile'], queryFn: getProfile })
@@ -41,6 +41,14 @@ export function useCreatePlan() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: createPlan,
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ['plans'] }),
+  })
+}
+
+export function useUpdatePlan() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }) => updatePlan(id, data),
     onSuccess:  () => qc.invalidateQueries({ queryKey: ['plans'] }),
   })
 }
