@@ -184,7 +184,11 @@ def auth_google():
 
 @app.route("/auth/callback")
 def auth_callback():
-    token    = google.authorize_access_token()
+    try:
+        token = google.authorize_access_token()
+    except Exception:
+        # State mismatch or expired — send back to login to try again
+        return redirect(url_for("auth_google"))
     userinfo = token.get("userinfo") or google.userinfo()
     from db.queries import upsert_user
     user = upsert_user(
