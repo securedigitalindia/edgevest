@@ -6,6 +6,7 @@ export const createGame      = data      => api.post('/games', data).then(r => r
 export const updateGame      = (id, data)=> api.put(`/games/${id}`, data).then(r => r.data)
 export const activateGame    = id        => api.post(`/games/${id}/activate`).then(r => r.data)
 export const closeGame       = id        => api.post(`/games/${id}/close`).then(r => r.data)
+export const reopenGame      = id        => api.post(`/games/${id}/reopen`).then(r => r.data)
 export const resolveGame     = (id, data)=> api.post(`/games/${id}/resolve`, data).then(r => r.data)
 export const deleteGame      = id        => api.post(`/games/${id}/delete`).then(r => r.data)
 export const submitEntry     = (id, data)=> api.post(`/games/${id}/enter`, data).then(r => r.data)

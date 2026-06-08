@@ -88,3 +88,22 @@
 
 /* Admin actions */
 .game-action-bar { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; padding-top:14px; border-top:1px solid #e2e8f0; align-items:center; }
+
+/* Leaderboard & portfolio tables: no cell wrapping — table scrolls horizontally when too wide */
+.leaderboard-table th,
+.leaderboard-table td { white-space:nowrap; }
+
+/* Participant name: single line with ellipsis when name is long */
+.p-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+@media (max-width:600px) {
+  /* Allow leaderboard card to scroll horizontally */
+  .game-detail-card { overflow-x:auto; }
+
+  /* Participants panel header: truncate the note text so title is always visible */
+  .participants-panel-hdr { flex-wrap:wrap; gap:3px; }
+  .participants-panel-note { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:9px; }
+
+  /* Meta bar: tighter on small screens */
+  .game-meta-bar { gap:8px; font-size:11px; padding:8px 10px; }
+}

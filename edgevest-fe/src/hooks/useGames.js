@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { listGames, getGame, submitEntry, resolveGame, createGame, updateGame,
-         deleteGame, activateGame, closeGame, getPortfolio, submitVirtualTrade } from '../api/games'
+         deleteGame, activateGame, closeGame, reopenGame, getPortfolio, submitVirtualTrade } from '../api/games'
 
 export function useGames() {
   return useQuery({ queryKey: ['games'], queryFn: listGames, refetchInterval: 30000 })
@@ -50,6 +50,14 @@ export function useCloseGame(gid) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: () => closeGame(gid),
+    onSuccess:  () => { qc.invalidateQueries({ queryKey: ['game', gid] }); qc.invalidateQueries({ queryKey: ['games'] }) },
+  })
+}
+
+export function useReopenGame(gid) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => reopenGame(gid),
     onSuccess:  () => { qc.invalidateQueries({ queryKey: ['game', gid] }); qc.invalidateQueries({ queryKey: ['games'] }) },
   })
 }

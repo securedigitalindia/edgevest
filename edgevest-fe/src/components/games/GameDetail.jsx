@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useGame, useSubmitEntry, useResolveGame, useActivateGame, useCloseGame,
-         useDeleteGame, usePortfolio, useSubmitVirtualTrade } from '../../hooks/useGames'
+         useReopenGame, useDeleteGame, usePortfolio, useSubmitVirtualTrade } from '../../hooks/useGames'
 import useAuthStore from '../../store/authStore'
 import usePrices from '../../hooks/usePrices'
 import { useToast } from '../common/Toast'
@@ -538,6 +538,7 @@ function AdminActions({ game, onEdit }) {
   const toast    = useToast()
   const activate = useActivateGame(game.id)
   const close    = useCloseGame(game.id)
+  const reopen   = useReopenGame(game.id)
   const resolve  = useResolveGame(game.id)
   const del      = useDeleteGame()
   const [resolvePrice, setResolvePrice] = useState('')
@@ -578,6 +579,9 @@ function AdminActions({ game, onEdit }) {
         <button className="btn btn-danger btn-sm" onClick={doClose} disabled={close.isPending}>⏹ Close Game</button>
       )}
       {game.status === 'closed' && <>
+        <button className="btn btn-ghost btn-sm" style={{color:'var(--amber,#d97706)'}}
+          onClick={async () => { const r = await reopen.mutateAsync(); if (r.ok) toast('Game reopened!','ok'); else toast(r.error||'Error','err') }}
+          disabled={reopen.isPending}>↩ Reopen</button>
         {game.game_type === 'price_prediction' && (
           <input type="number" placeholder="Actual close price" value={resolvePrice}
             onChange={e=>setResolvePrice(e.target.value)} style={{width:170,display:'inline-block'}} />

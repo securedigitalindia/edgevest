@@ -182,3 +182,34 @@
 .new-trade-ticket  { padding:4px 0 4px; }
 .new-trade-divider { height:1px; background:var(--border); margin:12px 0; }
 .new-trade-footer  { display:flex; align-items:center; gap:10px; padding-top:12px; border-top:1px solid var(--border); margin-top:4px; }
+
+/* Scrollable legs table — prevents 6-col table from clipping inside trade-card on mobile */
+.legs-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.legs-table      { min-width:420px; }
+
+@media (max-width:640px) {
+  /* Card header: let tabs + account selector wrap to a second row */
+  .card-header { flex-wrap:wrap; }
+
+  /* Account selector row moves to full-width second line */
+  .trades-header-right {
+    flex-basis: 100%;
+    justify-content: flex-end;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+    margin-top: 2px;
+  }
+  /* Cap the account select width so it doesn't dominate the row */
+  .trades-header-right select { max-width: 150px; }
+
+  /* Slightly tighter tab labels */
+  .pos-tab { padding:4px 8px; font-size:11px; }
+
+  /* Account summary: 2×2 instead of 1×4 */
+  .acct-summary-bar  { flex-wrap:wrap; row-gap:6px; padding:8px 10px; }
+  .acct-summary-sep  { display:none; }
+  .acct-summary-stat { flex:1 1 calc(50% - 4px); }
+
+  /* Form leg rows: slightly tighter columns */
+  .form-leg-row { grid-template-columns:1fr 64px 88px; gap:6px; }
+}

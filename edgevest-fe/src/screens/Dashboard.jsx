@@ -485,7 +485,7 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
   const toast   = useToast()
 
-  const [collapsed, setCollapsed] = useState(true)
+  const [collapsed, setCollapsed] = useState(!highlight)
   const [adjOpen,  setAdjOpen]  = useState(false)
   const [exitOpen, setExitOpen] = useState(false)
   const [pushOpen, setPushOpen] = useState(false)
@@ -861,6 +861,7 @@ function TradeCard({ trade: t, isAdmin, prices }) {
         <span style={{fontSize:11,color:'var(--muted)',marginLeft:'auto'}}>{t.entry_ist}</span>
       </div>
 
+      <div className="legs-table-wrap">
       <table className="legs-table">
         <thead><tr><th>Side</th><th>Instrument</th><th>Qty</th><th>Entry</th><th>LTP</th><th>P&amp;L</th></tr></thead>
         <tbody>
@@ -881,6 +882,7 @@ function TradeCard({ trade: t, isAdmin, prices }) {
           })}
         </tbody>
       </table>
+      </div>
 
       {t.margin != null && (
         <div className="pnl-bar">
@@ -1017,6 +1019,7 @@ function HistoryCard({ trade: t }) {
           <span>In: {t.entry_ist}</span><span>Out: {t.exit_ist}</span>
         </span>
       </div>
+      <div className="legs-table-wrap">
       <table className="legs-table">
         <thead><tr><th>Side</th><th>Instrument</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&amp;L</th></tr></thead>
         <tbody>
@@ -1036,6 +1039,7 @@ function HistoryCard({ trade: t }) {
           })}
         </tbody>
       </table>
+      </div>
       <div className="pnl-bar">
         <span className="pnl-bar-lbl">Realized P&amp;L</span>
         <span className={pnlCls} style={{fontWeight:700}}>{fmtPnl(pnl)}</span>
