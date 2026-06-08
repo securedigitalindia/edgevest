@@ -176,10 +176,7 @@
 /* Form leg rows (push / exit forms) */
 .form-leg-row      { display:grid; grid-template-columns:1fr 70px 100px; gap:8px; align-items:end; margin-bottom:8px; }
 .form-leg-row-exit { grid-template-columns:1fr 130px; }
-.form-leg-row > * { min-width:0; }
-.form-leg-info     { display:flex; gap:8px; align-items:flex-start; min-width:0; overflow:hidden; }
-.form-leg-info > div { min-width:0; overflow:hidden; }
-.rec-leg-sym, .rec-leg-contract { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.form-leg-info     { display:flex; gap:8px; align-items:flex-start; }
 
 /* New trade ticket (tab view) */
 .new-trade-ticket  { padding:4px 0 4px; }
