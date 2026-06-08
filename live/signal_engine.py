@@ -8,8 +8,13 @@ live tick. This ensures gap-down/gap-up scenarios fire an alert immediately
 on the first poll tick rather than being silently missed.
 """
 
+import gc
 import pandas_ta as ta
 from db.queries import get_candles
+
+# Supertrend needs ~3× period rows for a stable value; 150 is well above any
+# configured period (7–14) and avoids loading a full year of daily candles.
+_ST_CANDLE_LIMIT = 150
 
 
 def compute_supertrend(
@@ -20,7 +25,7 @@ def compute_supertrend(
     direction: 1 = bullish (close above ST line), -1 = bearish.
     last_close: close price of the last completed candle.
     """
-    df = get_candles(symbol, timeframe, limit=300)
+    df = get_candles(symbol, timeframe, limit=_ST_CANDLE_LIMIT)
 
     if df.empty or len(df) < period + 5:
         raise ValueError(
@@ -35,12 +40,15 @@ def compute_supertrend(
                    if c.startswith("SUPERT_") and not any(x in c for x in ("_d", "_s", "_l")))
     std_col = next(c for c in st.columns if c.startswith("SUPERTd_"))
 
-    return (
+    result = (
         float(st[st_col].iloc[-1]),
         int(st[std_col].iloc[-1]),
         df["ts"].iloc[-1],
         float(df["close"].iloc[-1]),
     )
+    del df, st
+    gc.collect()
+    return result
 
 
 def compute_ema(symbol: str, timeframe: str, period: int) -> tuple[float, object, float]:
@@ -57,7 +65,10 @@ def compute_ema(symbol: str, timeframe: str, period: int) -> tuple[float, object
         )
 
     ema = ta.ema(df["close"], length=period)
-    return float(ema.iloc[-1]), df["ts"].iloc[-1], float(df["close"].iloc[-1])
+    result = float(ema.iloc[-1]), df["ts"].iloc[-1], float(df["close"].iloc[-1])
+    del df, ema
+    gc.collect()
+    return result
 
 
 def compute_rsi(symbol: str, timeframe: str, period: int) -> tuple[float, object]:
@@ -74,4 +85,7 @@ def compute_rsi(symbol: str, timeframe: str, period: int) -> tuple[float, object
         )
 
     rsi = ta.rsi(df["close"], length=period)
-    return float(rsi.iloc[-1]), df["ts"].iloc[-1]
+    result = float(rsi.iloc[-1]), df["ts"].iloc[-1]
+    del df, rsi
+    gc.collect()
+    return result

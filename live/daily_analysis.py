@@ -81,15 +81,11 @@ def _swing_levels(df: pd.DataFrame, lookback: int = 20) -> dict:
 
 def _fetch_vix() -> float | None:
     try:
-        df = yf.download(VIX_YF_TICKER, period="5d", interval="1d",
-                         progress=False, auto_adjust=True)
+        df = yf.Ticker(VIX_YF_TICKER).history(period="5d", interval="1d", auto_adjust=True)
         if df.empty:
             return None
-        close = df["Close"]
-        # yfinance may return MultiIndex columns — flatten to Series
-        if hasattr(close, "columns"):
-            close = close.iloc[:, 0]
-        return round(float(close.dropna().iloc[-1]), 2)
+        close = df["Close"].dropna()
+        return round(float(close.iloc[-1]), 2)
     except Exception as e:
         print(f"  [daily_analysis]  VIX fetch failed: {e}", flush=True)
         return None

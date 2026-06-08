@@ -15,6 +15,7 @@ import argparse
 import sys
 import os
 import time
+import gc
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -257,6 +258,7 @@ def run_live(force: bool = False):
 
     error_streak = 0
     daily_alerts: list[dict] = []   # accumulates every signal fired today
+    _poll_count  = 0                # periodic GC counter
 
     while force or is_market_open():
         # Candle close: build from ticks → refresh triggers for that timeframe
@@ -320,6 +322,10 @@ def run_live(force: bool = False):
                 for signal in sigs:
                     send_alert(signal)
                     daily_alerts.append(signal)
+
+        _poll_count += 1
+        if _poll_count % 120 == 0:   # every ~10 min (120 × 5s)
+            gc.collect()
 
         time.sleep(POLL_INTERVAL_SECONDS)
 

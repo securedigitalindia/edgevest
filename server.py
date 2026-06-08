@@ -1004,6 +1004,19 @@ def api_game_close(gid):
     return jsonify(ok=True, exited=exited, failed=failed)
 
 
+@app.route("/api/games/<int:gid>/reopen", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_game_reopen(gid):
+    from db.queries import get_game, set_game_status
+    game = get_game(gid)
+    if not game:
+        return jsonify(ok=False, error="Not found"), 404
+    if game["status"] != "closed":
+        return jsonify(ok=False, error="Only closed games can be reopened"), 400
+    set_game_status(gid, "active")
+    return jsonify(ok=True)
+
+
 @app.route("/api/games/<int:gid>/resolve", methods=["POST"])
 @require_role("super_admin", "admin")
 def api_game_resolve(gid):

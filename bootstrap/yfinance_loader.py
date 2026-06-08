@@ -25,13 +25,13 @@ def fetch_historical(ticker: str, interval: str, period: str) -> pd.DataFrame:
     with columns: ts, open, high, low, close, volume
     """
     try:
-        raw = yf.download(
-            ticker,
+        # Use Ticker.history() instead of yf.download() — avoids the internal
+        # ThreadPool that download() creates, which leaks semaphore objects and
+        # contributes to OOM on long-running poller processes.
+        raw = yf.Ticker(ticker).history(
             period=period,
             interval=interval,
-            auto_adjust=True,       # adjusts for splits/dividends
-            progress=False,
-            threads=False,
+            auto_adjust=True,
         )
     except Exception as e:
         print(f"    ✗  yfinance error: {e}")
