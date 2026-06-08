@@ -176,7 +176,12 @@
 /* Form leg rows (push / exit forms) */
 .form-leg-row      { display:grid; grid-template-columns:1fr 70px 100px; gap:8px; align-items:end; margin-bottom:8px; }
 .form-leg-row-exit { grid-template-columns:1fr 130px; }
-.form-leg-info     { display:flex; gap:8px; align-items:flex-start; }
+/* min-width:0 lets grid cells shrink below content size — prevents push form overflow */
+.form-leg-row > * { min-width:0; }
+.form-leg-info     { display:flex; gap:8px; align-items:flex-start; min-width:0; }
+.form-leg-info > div { min-width:0; }
+.rec-leg-sym      { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rec-leg-contract { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 /* New trade ticket (tab view) */
 .new-trade-ticket  { padding:4px 0 4px; }
@@ -212,4 +217,9 @@
 
   /* Form leg rows: slightly tighter columns */
   .form-leg-row { grid-template-columns:1fr 64px 88px; gap:6px; }
+
+  /* Tighter table on mobile */
+  .legs-table th,
+  .legs-table td { padding:6px 8px; }
+  .legs-table    { font-size:12px; }
 }
