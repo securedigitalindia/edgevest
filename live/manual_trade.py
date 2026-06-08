@@ -83,8 +83,10 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "") -> int:
                                  f"for {symbol}")
             expiry_str = expiry_date.strftime("%d %b %Y")
 
-            ikey   = fo_ikey(symbol, itype, expiry_date,
-                             strike=(strike if itype in ("PE", "CE") else 0))
+            _strike = strike if itype in ("PE", "CE") else 0
+            ikey = fo_ikey(symbol, itype, expiry_date, strike=_strike)
+            if ikey is None:
+                ikey = fo_ikey(symbol, itype, expiry_date, strike=_strike, weekly=True)
             lot_sz = fo_lot_size(symbol, expiry_date) or 0
 
         elif itype == "EQ":
@@ -495,9 +497,11 @@ def _resolve_legs(symbol: str, legs: list[dict], now_utc: str) -> list[dict]:
             if expiry_date is None:
                 raise ValueError(f"Leg {i}: cannot resolve expiry {expiry_str!r}")
             expiry_str  = expiry_date.strftime("%d %b %Y")
-            ikey        = fo_ikey(symbol, itype, expiry_date,
-                                  strike=(strike if itype in ("PE", "CE") else 0))
-            lot_sz      = fo_lot_size(symbol, expiry_date) or 0
+            _strike2 = strike if itype in ("PE", "CE") else 0
+            ikey     = fo_ikey(symbol, itype, expiry_date, strike=_strike2)
+            if ikey is None:
+                ikey = fo_ikey(symbol, itype, expiry_date, strike=_strike2, weekly=True)
+            lot_sz   = fo_lot_size(symbol, expiry_date) or 0
         elif itype == "EQ":
             ikey   = leg.get("instrument_key")
             lot_sz = int(leg.get("lot_size") or 1)
