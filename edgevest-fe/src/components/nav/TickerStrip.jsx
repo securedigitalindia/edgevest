@@ -36,10 +36,6 @@ export default function TickerStrip() {
 
   return (
     <div className="ticker-strip">
-      <div className="ticker-live-badge">
-        <div className={`live-dot${stale ? ' stale' : ''}`} title="Green = live · Red = stale" />
-        <span className="ticker-mkt-lbl">NSE</span>
-      </div>
       <div className="ticker-clip">
         <div className="ticker-track" ref={trackRef} />
       </div>

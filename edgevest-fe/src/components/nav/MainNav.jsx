@@ -65,6 +65,8 @@ export default function MainNav({ onOpenDrawer, subscribed }) {
                 {isClient && <div className="prof-menu-credits">💎 {credits?.balance ?? '—'} credits</div>}
                 <div className="prof-menu-item" style={{cursor:'pointer'}} onClick={() => { setMenuOpen(false); onOpenDrawer('profile') }}>Profile</div>
                 <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
+                <div style={{padding:'6px 14px',fontSize:10,color:'#475569',letterSpacing:.3}}>EdgeVest v{__APP_VERSION__}</div>
+                <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
                 <a href={`${AUTH_BASE}/logout`} className="prof-menu-item">Sign out</a>
               </div>
             )}
