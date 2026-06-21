@@ -1,0 +1,16 @@
+[Unit]
+Description=Edgevest Trade Server (gunicorn)
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/edgevest
+EnvironmentFile=/home/ubuntu/edgevest/.env
+ExecStart=/home/ubuntu/edgevest/edgevest-web
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

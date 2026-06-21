@@ -1,0 +1,182 @@
+# ============================================================
+#  Drishti — sync/daily_sync.py
+#  End-of-day sync: fetches recent candles and upserts them.
+#  Run this every evening after market close (after 3:35pm IST).
+#  Safe to run multiple times — upsert won't duplicate rows.
+# ============================================================
+
+import sys
+import os
+import time
+import pandas as pd
+import yfinance as yf
+from datetime import datetime, timezone
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from config import SYMBOLS, TIMEFRAMES, FETCH_DELAY_SECONDS
+from db.queries import (
+    upsert_candles, update_sync_log,
+    get_latest_ts, get_row_count
+)
+from bootstrap.yfinance_loader import fetch_historical
+
+
+# -----------------------------------------------------------
+# Sync period per timeframe
+# Used to fetch "recent enough" data to catch today's candles
+# -----------------------------------------------------------
+SYNC_PERIODS = {
+    "1m":  "7d",     # yfinance max for 1m
+    "5m":  "60d",    # yfinance max for 5m
+    "15m": "60d",    # yfinance max for 15m
+    "1h":  "30d",
+    "1d":  "30d",
+    "1wk": "90d",
+    "1mo": "90d",
+}
+
+# How far back to re-sync from latest_before.
+# 5m/15m/1h: 8h covers a full NSE session so all tick-built candles
+#             (volume=NULL) get overwritten with proper yfinance OHLCV.
+# Others: a few days/weeks to catch any late yfinance corrections.
+SYNC_LOOKBACK = {
+    "1m":  pd.Timedelta(hours=8),
+    "5m":  pd.Timedelta(hours=8),
+    "15m": pd.Timedelta(hours=8),
+    "1h":  pd.Timedelta(hours=12),
+    "1d":  pd.Timedelta(days=5),
+    "1wk": pd.Timedelta(weeks=2),
+    "1mo": pd.Timedelta(days=62),
+}
+
+
+def sync_symbol(symbol_cfg: dict) -> dict:
+    """
+    Sync all timeframes for a single symbol.
+    Returns a summary dict.
+    """
+    ticker = symbol_cfg["ticker"]
+    name   = symbol_cfg["name"]
+    summary = {"symbol": name, "timeframes": {}}
+
+    print(f"\n  {name}  ({ticker})")
+
+    for tf in TIMEFRAMES:
+        tf_key   = tf["key"]
+        interval = tf["interval"]
+        period   = SYNC_PERIODS[tf_key]
+
+        latest_before = get_latest_ts(name, tf_key)
+        count_before  = get_row_count(name, tf_key)
+
+        if count_before == 0:
+            print(f"    [{tf['description']}]  No data in DB — run bootstrap first")
+            summary["timeframes"][tf_key] = {"status": "skipped_empty"}
+            continue
+
+        df = fetch_historical(ticker, interval, period)
+
+        if df.empty:
+            print(f"    [{tf['description']}]  ✗  No data from yfinance")
+            summary["timeframes"][tf_key] = {"status": "fetch_failed"}
+            continue
+
+        # Re-sync from (latest_before - lookback) so that:
+        # • 1h: all tick-built candles from today's session get replaced with
+        #        proper yfinance OHLCV (volume was NULL in tick-built candles)
+        # • others: catches any late yfinance corrections
+        if latest_before:
+            cutoff = pd.Timestamp(latest_before, tz="UTC") - SYNC_LOOKBACK[tf_key]
+            df = df[df["ts"] >= cutoff].copy()
+
+        if df.empty:
+            print(f"    [{tf['description']}]  ✓  Already up to date")
+            summary["timeframes"][tf_key] = {"status": "up_to_date", "new_rows": 0}
+            continue
+
+        rows = upsert_candles(name, tf_key, df)
+        update_sync_log(name, tf_key, rows)
+
+        count_after   = get_row_count(name, tf_key)
+        latest_after  = get_latest_ts(name, tf_key)
+        new_rows      = count_after - count_before
+
+        status = "updated" if new_rows > 0 else "corrected"
+        emoji  = "✓" if new_rows > 0 else "~"
+
+        print(f"    [{tf['description']}]  {emoji}  "
+              f"+{new_rows} new rows  |  "
+              f"latest: {str(latest_after)[:16]}  |  "
+              f"total: {count_after}")
+
+        summary["timeframes"][tf_key] = {
+            "status":   status,
+            "new_rows": new_rows,
+            "latest":   str(latest_after)[:16],
+            "total":    count_after,
+        }
+
+        time.sleep(FETCH_DELAY_SECONDS)
+
+    return summary
+
+
+def run_daily_sync(symbols=None):
+    """
+    Run end-of-day sync for all symbols (or a subset).
+    """
+    now = datetime.now(timezone.utc)
+    print(f"\n{'='*55}")
+    print(f"  Drishti — Daily Sync")
+    print(f"  {now.strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"{'='*55}")
+
+    targets = SYMBOLS
+    if symbols:
+        targets = [s for s in SYMBOLS if s["name"] in symbols]
+
+    print(f"\nSyncing {len(targets)} symbol(s)...\n")
+    start = time.time()
+    all_summaries = []
+
+    for sym in targets:
+        summary = sync_symbol(sym)
+        all_summaries.append(summary)
+
+    elapsed = time.time() - start
+
+    # Print summary table
+    print(f"\n{'='*55}")
+    print(f"  Sync complete in {elapsed:.1f}s")
+    print(f"{'='*55}")
+    print(f"\n  {'Symbol':<14} {'1m':>6} {'5m':>6} {'15m':>6} {'1h':>6} {'1d':>6} {'1wk':>6} {'1mo':>6}")
+    print(f"  {'-'*60}")
+    for s in all_summaries:
+        tfs = s["timeframes"]
+        def fmt(tf_key):
+            info = tfs.get(tf_key, {})
+            if info.get("status") == "up_to_date":
+                return "  ok"
+            elif info.get("status") == "updated":
+                return f"+{info.get('new_rows', 0):>3}"
+            elif info.get("status") == "skipped_empty":
+                return " ---"
+            else:
+                return "  ?"
+        print(f"  {s['symbol']:<14} {fmt('1m'):>6} {fmt('5m'):>6} {fmt('15m'):>6} {fmt('1h'):>6} {fmt('1d'):>6} {fmt('1wk'):>6} {fmt('1mo'):>6}")
+    print()
+
+
+# -----------------------------------------------------------
+# Entry point
+# -----------------------------------------------------------
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Drishti daily sync")
+    parser.add_argument(
+        "symbols", nargs="*",
+        help="Symbol names to sync (default: all). E.g. RELIANCE NIFTY50"
+    )
+    args = parser.parse_args()
+    run_daily_sync(args.symbols if args.symbols else None)

@@ -1,0 +1,225 @@
+.dash-layout { display:grid; grid-template-columns:min(480px,100%) 1fr; gap:20px; padding:20px 24px; max-width:1400px; margin:0 auto; }
+@media (max-width:960px) { .dash-layout { grid-template-columns:1fr; } }
+@media (max-width:768px)  { .dash-layout { padding:12px; gap:12px; } }
+
+/* Tabs (positions panel) */
+.pos-tab { padding:4px 12px; font-size:12px; font-weight:600; cursor:pointer; border:none; background:none; color:var(--muted); border-bottom:2px solid transparent; }
+.pos-tab.active { color:var(--blue); border-bottom-color:var(--blue); }
+.pos-tab-new { color:var(--green); margin-left:4px; }
+.pos-tab-new.active { color:var(--green); border-bottom-color:var(--green); }
+
+/* Trade / history table */
+.legs-table { width:100%; border-collapse:collapse; font-size:13px; }
+.legs-table th { font-size:11px; font-weight:600; color:var(--muted); text-align:left; padding:7px 14px; border-bottom:1px solid var(--border); text-transform:uppercase; letter-spacing:.4px; background:#f8fafc; }
+.legs-table td { padding:9px 14px; border-bottom:1px solid #f1f5f9; vertical-align:top; }
+.legs-table tr:last-child td { border-bottom:none; }
+
+.side-buy  { color:var(--green); font-weight:700; }
+.side-sell { color:var(--red);   font-weight:700; }
+.pnl-pos   { color:var(--green); font-weight:600; }
+.pnl-neg   { color:var(--red);   font-weight:600; }
+.pnl-neu   { color:var(--muted); }
+.ltp-cell  { font-weight:600; }
+
+/* Segment chips */
+.seg-chip { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; border:1.5px solid #e2e8f0; background:#fff; color:#64748b; cursor:pointer; transition:all .15s; }
+.seg-chip:hover { border-color:var(--blue); color:var(--blue); }
+.seg-chip.active { background:var(--blue); border-color:var(--blue); color:#fff; }
+
+/* Rec item */
+.rec-item         { border:1px solid var(--border); border-left-width:4px; border-radius:10px; margin-bottom:12px; overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.06); transition:box-shadow .15s; }
+.rec-item:hover   { box-shadow:0 4px 14px rgba(0,0,0,.1); }
+.rec-item-open    { border-left-color:#22c55e; }
+.rec-item-exited  { border-left-color:#94a3b8; }
+
+/* Collapse toggle chevron */
+.rec-collapse-btn { display:inline-flex; align-items:center; justify-content:center; margin-left:auto; color:var(--muted); transition:transform .22s ease; flex-shrink:0; }
+.rec-collapse-btn.collapsed { transform:rotate(-90deg); }
+
+/* Collapsible body */
+.rec-body           { overflow:hidden; max-height:1200px; opacity:1; transition:max-height .28s ease, opacity .2s ease; will-change:max-height; }
+.rec-body-collapsed { max-height:0; opacity:0; pointer-events:none; }
+
+/* Prevent browser scroll-anchor jumps when cards expand/collapse */
+.rec-item { overflow-anchor:none; }
+@keyframes rec-highlight {
+  0%   { background:#dbeafe; box-shadow:0 0 0 3px rgba(59,130,246,.35), 0 4px 20px rgba(59,130,246,.18); }
+  45%  { background:#eff6ff; box-shadow:0 0 0 2px rgba(59,130,246,.15), 0 4px 14px rgba(59,130,246,.08); }
+  100% { background:#fff;    box-shadow:0 2px 8px rgba(0,0,0,.06); }
+}
+.rec-item-highlight { animation:rec-highlight 2.8s ease-out forwards; }
+
+/* Trade / history cards */
+.trade-card        { border:1px solid var(--border); border-left:4px solid #22c55e; border-radius:8px; margin-bottom:12px; overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.06); transition:box-shadow .15s; }
+.trade-card:hover  { box-shadow:0 4px 14px rgba(0,0,0,.1); }
+.trade-card-closed { border-left-color:#94a3b8; }
+.rec-header  { padding:12px 14px 10px; border-bottom:1px solid var(--border); }
+.rec-symbol  { font-weight:800; font-size:16px; color:#0f172a; }
+.rec-note    { font-size:12px; color:#475569; margin-top:4px; }
+.rec-ts      { font-size:11px; color:var(--muted); margin-top:4px; }
+.rec-seg-tag { font-size:10px; padding:2px 7px; border-radius:10px; background:#f1f5f9; color:#64748b; font-weight:600; }
+.rec-legs    { padding:10px 14px 2px; }
+
+/* Side pill */
+.leg-pill      { display:inline-flex; align-items:center; justify-content:center; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; min-width:40px; flex-shrink:0; }
+.leg-pill-buy  { background:#dcfce7; color:#15803d; }
+.leg-pill-sell { background:#fee2e2; color:#dc2626; }
+
+/* Leg rows */
+.rec-leg-row  { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f1f5f9; }
+.rec-leg-row:last-child { border-bottom:none; }
+.rec-leg-name { flex:1; min-width:0; }
+.rec-leg-sym  { font-size:13px; font-weight:700; color:#1e293b; }
+.rec-leg-contract { font-size:11px; color:var(--muted); margin-top:1px; }
+.rec-leg-meta { font-size:12px; color:#475569; white-space:nowrap; }
+
+/* Leg groups */
+.leg-group        { margin-bottom:8px; padding-left:10px; }
+.leg-group-entry  { border-left:3px solid #93c5fd; }
+.leg-group-adj    { border-left:3px solid #fcd34d; }
+.leg-grp-hdr      { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; padding-bottom:4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.leg-grp-note     { font-size:11px; font-weight:600; color:#92400e; text-transform:none; letter-spacing:0; }
+
+/* Connector between entry and adjustment */
+.adj-connector { font-size:10px; font-weight:700; color:#b45309; text-transform:uppercase; letter-spacing:.4px; padding:4px 0 6px 2px; }
+
+
+/* Stats strip (replaces stacked P&L bars) */
+.rec-stats-strip { display:flex; border-top:1px solid var(--border); }
+.rec-stat        { flex:1; padding:8px 12px; text-align:center; border-right:1px solid var(--border); }
+.rec-stat:last-child { border-right:none; }
+.rec-stat-lbl    { font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; }
+.rec-stat-val    { font-size:14px; font-weight:700; color:var(--text); margin-top:2px; }
+
+/* P&L bar (kept for TradeCard / HistoryCard) */
+.pnl-bar { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; border-top:1px solid var(--border); background:#f8fafc; font-size:13px; }
+.pnl-bar-lbl { color:var(--muted); font-size:12px; }
+
+/* Action bar & notices */
+.adj-badge      { font-size:11px; padding:2px 7px; border-radius:20px; background:#fef9c3; color:#854d0e; font-weight:600; }
+.rec-action-bar { display:flex; gap:8px; padding:8px 14px; border-top:1px solid var(--border); background:#fafafa; flex-wrap:wrap; }
+.rec-adj-notice { margin:10px 14px 12px; padding:10px 14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; display:flex; align-items:flex-start; gap:10px; }
+
+/* Inline forms (push / adjust / exit) */
+.inline-action { padding:12px; border-top-width:2px; border-top-style:solid; }
+.inline-action h4 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
+.action-adj   { border-top-color:#e0e7ff; background:#f5f3ff; }
+.action-adj h4  { color:#3730a3; }
+.action-exit  { border-top-color:#fee2e2; background:#fff9f9; }
+.action-exit h4 { color:var(--red); }
+.action-push  { border-top-color:#bfdbfe; background:#f0f7ff; }
+.action-push h4 { color:#1d4ed8; }
+
+/* Pending adj banner */
+.pending-adj-banner { padding:8px 12px; border-top:2px solid #fbbf24; background:#fffbeb; font-size:12px; }
+
+/* Trades panel header right side */
+.trades-header-right { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.trades-header-divider { width:1px; height:18px; background:var(--border); flex-shrink:0; }
+
+/* Account chips (trader account switcher) */
+.acct-chips { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.acct-chip { display:flex; align-items:center; gap:5px; padding:4px 12px; font-size:12px; font-weight:500; border:1.5px solid var(--border); border-radius:6px; background:#fff; color:var(--text); cursor:pointer; white-space:nowrap; transition:all .15s; line-height:1.4; }
+.acct-chip:hover  { border-color:var(--blue); color:var(--blue); background:#eff6ff; }
+.acct-chip.active { background:var(--blue); border-color:var(--blue); color:#fff; font-weight:600; }
+.acct-chip-dot    { width:7px; height:7px; border-radius:50%; background:currentColor; opacity:.7; flex-shrink:0; }
+.acct-chip-add { border-style:dashed; color:var(--muted); }
+.acct-chip-add:hover { border-color:var(--blue); color:var(--blue); background:#eff6ff; border-style:dashed; }
+.add-account-link { background:none; border:none; padding:0; font-size:12px; color:var(--blue); cursor:pointer; white-space:nowrap; text-decoration:underline; text-underline-offset:2px; flex-shrink:0; }
+.add-account-link:hover { color:var(--blue-dark,#1d4ed8); }
+
+/* Account summary bar (capital + P&L strip) */
+.acct-summary-bar  { display:flex; align-items:center; gap:0; background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:8px 14px; margin-bottom:10px; }
+.acct-summary-stat { flex:1; text-align:center; }
+.acct-summary-val  { font-size:13px; font-weight:700; color:var(--text); }
+.acct-summary-lbl  { font-size:10px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-top:1px; }
+.acct-summary-sep  { width:1px; height:28px; background:var(--border); flex-shrink:0; margin:0 4px; }
+
+/* Game strip card (dashboard) */
+.gsc               { border:1px solid var(--border); border-left:3px solid var(--gsc-accent,#6366f1); border-radius:10px; padding:12px 14px; background:#fff; cursor:pointer; transition:box-shadow .15s,border-color .15s; }
+.gsc:hover         { box-shadow:0 4px 14px rgba(0,0,0,.08); border-color:#cbd5e1; border-left-color:var(--gsc-accent,#6366f1); }
+
+.gsc-header        { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+.gsc-icon          { font-size:15px; line-height:1; flex-shrink:0; }
+.gsc-type          { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; flex:1; }
+.gsc-status        { font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; flex-shrink:0; }
+.gsc-live          { background:#dcfce7; color:#15803d; }
+.gsc-soon          { background:#f1f5f9; color:#64748b; }
+.gsc-pool          { font-size:12px; font-weight:700; color:#d97706; flex-shrink:0; }
+
+.gsc-title         { font-size:13px; font-weight:700; color:#0f172a; line-height:1.4; margin-bottom:5px; }
+.gsc-meta          { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); flex-wrap:wrap; }
+.gsc-dot           { color:#cbd5e1; }
+
+/* Portfolio strip inside game card */
+.gsc-portfolio-wrap  { margin:10px 0 2px; }
+.gsc-pf-acct-name    { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:5px; padding-left:2px; }
+.gsc-portfolio       { display:flex; align-items:center; background:#f8fafc; border:1px solid #f1f5f9; border-radius:8px; overflow:hidden; }
+.gsc-pf-stat       { flex:1; padding:7px 0; text-align:center; }
+.gsc-pf-lbl        { font-size:9px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:2px; }
+.gsc-pf-val        { font-size:12px; font-weight:700; color:var(--text); }
+.gsc-pf-sep        { width:1px; height:28px; background:#e2e8f0; flex-shrink:0; }
+
+.gsc-footer        { display:flex; align-items:center; justify-content:space-between; margin-top:10px; padding-top:10px; border-top:1px solid #f1f5f9; gap:8px; }
+.gsc-entry-status  { display:flex; align-items:center; gap:8px; font-size:12px; }
+.gsc-joined        { color:#16a34a; font-weight:600; }
+.gsc-won           { color:#d97706; font-weight:700; }
+.gsc-actions       { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+
+.gsc-btn           { font-size:12px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1.5px solid transparent; transition:all .12s; line-height:1.4; white-space:nowrap; }
+.gsc-btn-primary   { background:var(--blue); border-color:var(--blue); color:#fff; }
+.gsc-btn-primary:hover { background:#1d4ed8; }
+.gsc-btn-primary:disabled { opacity:.6; cursor:not-allowed; }
+.gsc-btn-ghost     { background:#f8fafc; border-color:var(--border); color:#475569; }
+.gsc-btn-ghost:hover { background:#f1f5f9; border-color:#94a3b8; }
+
+/* Form leg rows (push / exit forms) */
+.form-leg-row      { display:grid; grid-template-columns:1fr 70px 100px; gap:8px; align-items:end; margin-bottom:8px; }
+.form-leg-row-exit { grid-template-columns:1fr 130px; }
+/* min-width:0 lets grid cells shrink below content size — prevents push form overflow */
+.form-leg-row > * { min-width:0; }
+.form-leg-info     { display:flex; gap:8px; align-items:flex-start; min-width:0; }
+.form-leg-info > div { min-width:0; }
+.rec-leg-sym      { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rec-leg-contract { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* New trade ticket (tab view) */
+.new-trade-ticket  { padding:4px 0 4px; }
+.new-trade-divider { height:1px; background:var(--border); margin:12px 0; }
+.new-trade-footer  { display:flex; align-items:center; gap:10px; padding-top:12px; border-top:1px solid var(--border); margin-top:4px; }
+
+/* Scrollable legs table — prevents 6-col table from clipping inside trade-card on mobile */
+.legs-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.legs-table      { min-width:420px; }
+
+@media (max-width:640px) {
+  /* Card header: let tabs + account selector wrap to a second row */
+  .card-header { flex-wrap:wrap; }
+
+  /* Account selector row moves to full-width second line */
+  .trades-header-right {
+    flex-basis: 100%;
+    justify-content: flex-end;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+    margin-top: 2px;
+  }
+  /* Cap the account select width so it doesn't dominate the row */
+  .trades-header-right select { max-width: 150px; }
+
+  /* Slightly tighter tab labels */
+  .pos-tab { padding:4px 8px; font-size:11px; }
+
+  /* Account summary: 2×2 instead of 1×4 */
+  .acct-summary-bar  { flex-wrap:wrap; row-gap:6px; padding:8px 10px; }
+  .acct-summary-sep  { display:none; }
+  .acct-summary-stat { flex:1 1 calc(50% - 4px); }
+
+  /* Form leg rows: slightly tighter columns */
+  .form-leg-row { grid-template-columns:1fr 64px 88px; gap:6px; }
+
+  /* Tighter table on mobile */
+  .legs-table th,
+  .legs-table td { padding:6px 8px; }
+  .legs-table    { font-size:12px; }
+}

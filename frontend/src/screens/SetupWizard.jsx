@@ -1,0 +1,187 @@
+import { useState, useEffect } from 'react'
+import { saveProfile, getProfile } from '../api/settings'
+import useAuthStore from '../store/authStore'
+import './SetupWizard.css'
+
+const SEGMENTS  = [
+  ['equity',      'Equity'],
+  ['derivatives', 'Derivatives (F&O)'],
+  ['commodities', 'Commodities'],
+  ['currency',    'Currency'],
+  ['mf',          'Mutual Funds'],
+]
+const RISK_OPTS  = [['conservative','Conservative'],['moderate','Moderate'],['aggressive','Aggressive']]
+const TYPE_OPTS  = [['trader','Trader'],['investor','Investor'],['both','Both']]
+const FOCUS_OPTS = [['self_directed','Self-directed'],['advisory','Advisory / Managed'],['mf_focused','MF Focused']]
+
+function Chips({ options, value, multi, onChange }) {
+  const selected = value ? value.split(',').filter(Boolean) : []
+  function toggle(v) {
+    if (multi) {
+      const next = selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v]
+      onChange(next.join(','))
+    } else {
+      onChange(selected[0] === v ? '' : v)
+    }
+  }
+  return (
+    <div className="wiz-chips" data-multi={multi ? '' : undefined}>
+      {options.map(([v, lbl]) => (
+        <div key={v} className={`wiz-chip${selected.includes(v) ? ' active' : ''}`} onClick={() => toggle(v)}>
+          {lbl}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export default function SetupWizard({ user }) {
+  const { setUser } = useAuthStore()
+  const [step,       setStep]       = useState(1)
+  const [dir,        setDir]        = useState('fwd')
+  const [segment,    setSegment]    = useState('')
+  const [riskType,   setRiskType]   = useState('')
+  const [traderType, setTraderType] = useState('')
+  const [focus,      setFocus]      = useState('')
+  const [saving,     setSaving]     = useState(false)
+  const [err,        setErr]        = useState('')
+
+  function nextStep() { setErr(''); setDir('fwd'); setStep(s => s + 1) }
+  function prevStep() { setErr(''); setDir('bwd'); setStep(s => s - 1) }
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'Enter') return
+      document.querySelector('.wiz-actions .wiz-btn-primary')?.click()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
+  function validateStep2() {
+    if (!segment) { setErr('Please select at least one segment.'); return false }
+    return true
+  }
+  function validateStep3() {
+    if (!riskType || !traderType || !focus) { setErr('Please complete all selections.'); return false }
+    return true
+  }
+
+  async function finish() {
+    if (!validateStep3()) return
+    setErr('')
+    setSaving(true)
+    try {
+      const res = await saveProfile({ segment, risk_type: riskType, trader_type: traderType, focus, setup_done: true })
+      if (!res?.ok) { setErr(res?.error || 'Failed to save. Please try again.'); return }
+      const profile = await getProfile()
+      if (profile != null && !profile?.setup_done) { setErr('Save did not persist — please try again.'); return }
+      setUser({ ...user, setup_done: true })
+    } catch (e) {
+      setErr('Unexpected error. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const pct        = `${(step / 3) * 100}%`
+  const totalSteps = 3
+
+  return (
+    <div className="wiz-overlay">
+
+      {/* Mobile-only topbar: back chevron + progress */}
+      <div className="wiz-topbar">
+        <button
+          className="wiz-back-btn"
+          onClick={prevStep}
+          aria-label="Back"
+          style={{ visibility: step === 1 ? 'hidden' : 'visible' }}
+        >
+          ‹
+        </button>
+        <div className="wiz-progress">
+          <div className="wiz-progress-fill" style={{ width: pct }} />
+        </div>
+        <div className="wiz-topbar-spacer" />
+      </div>
+
+      <div className="wiz-brand">Dri<span>sh</span>ti</div>
+
+      <div className="wiz-card">
+        {/* Desktop-only progress bar */}
+        <div className="wiz-progress wiz-progress-card">
+          <div className="wiz-progress-fill" style={{ width: pct }} />
+        </div>
+
+        {/* Step 1 — Welcome */}
+        {step === 1 && (
+          <div key={1} className={`wiz-step wiz-step-${dir}`}>
+            <div className="wiz-step-lbl">Step 1 of {totalSteps}</div>
+            <h2>Welcome to EdgeVest</h2>
+            <p className="wiz-desc">Your profile helps us tailor signals and advisory content to how you trade. This takes about 30 seconds.</p>
+
+            <div className="wiz-identity">
+              {user.picture
+                ? <img src={user.picture} className="wiz-avatar" alt="" />
+                : <div className="wiz-avatar-init">{user.name[0].toUpperCase()}</div>
+              }
+              <div>
+                <div className="wiz-name">{user.name}</div>
+                <div className="wiz-email">{user.email}</div>
+              </div>
+            </div>
+
+            <div className="wiz-actions">
+              <button className="wiz-btn-primary" onClick={nextStep}>Get started →</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2 — Segments */}
+        {step === 2 && (
+          <div key={2} className={`wiz-step wiz-step-${dir}`}>
+            <div className="wiz-step-lbl">Step 2 of {totalSteps}</div>
+            <h2>What do you trade?</h2>
+            <p className="wiz-desc">Select all segments you actively trade in. This helps us surface relevant signals.</p>
+
+            <div className="wiz-field-lbl">Segments <span className="wiz-hint">(select one or more)</span></div>
+            <Chips options={SEGMENTS} value={segment} multi onChange={setSegment} />
+
+            {err && <div className="wiz-err">{err}</div>}
+            <div className="wiz-actions">
+              <button className="wiz-btn-ghost wiz-desktop-back" onClick={prevStep}>← Back</button>
+              <button className="wiz-btn-primary" onClick={() => { if (validateStep2()) nextStep() }}>Next →</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3 — Trading style */}
+        {step === 3 && (
+          <div key={3} className={`wiz-step wiz-step-${dir}`}>
+            <div className="wiz-step-lbl">Step 3 of {totalSteps}</div>
+            <h2>Your trading style</h2>
+            <p className="wiz-desc">A few quick questions to personalise your experience.</p>
+
+            <div className="wiz-field-lbl">Risk appetite</div>
+            <Chips options={RISK_OPTS} value={riskType} multi={false} onChange={setRiskType} />
+
+            <div className="wiz-field-lbl">You are primarily a</div>
+            <Chips options={TYPE_OPTS} value={traderType} multi={false} onChange={setTraderType} />
+
+            <div className="wiz-field-lbl">Primary focus</div>
+            <Chips options={FOCUS_OPTS} value={focus} multi={false} onChange={setFocus} />
+
+            {err && <div className="wiz-err">{err}</div>}
+            <div className="wiz-actions">
+              <button className="wiz-btn-ghost wiz-desktop-back" onClick={prevStep}>← Back</button>
+              <button className="wiz-btn-primary" onClick={finish} disabled={saving}>
+                {saving ? 'Saving…' : 'Finish setup'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

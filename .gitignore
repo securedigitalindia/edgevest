@@ -1,0 +1,43 @@
+# Python
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/**/*.pyc
+backend/*.pyo
+backend/data/
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+*.pyc
+*.pyo
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/logs/
+frontend/*.log
+
+# Env / secrets
+.env
+.env.*
+!.env.production
+*.local
+
+# Claude local settings (keep CLAUDE.md, ignore local overrides)
+**/.claude/settings.local.json
+
+# Temp / data dump files (date-named)
+backend/[0-9]*.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.sw?
