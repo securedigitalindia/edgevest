@@ -10,7 +10,7 @@ from functools import wraps
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(f".env.{os.environ.get('FLASK_ENV', 'production')}")
 
 from flask import (Flask, request, jsonify,
                    session, redirect, url_for, abort, g)
