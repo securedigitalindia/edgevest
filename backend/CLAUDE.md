@@ -6,25 +6,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Drishti is a live NSE market signal agent. It polls Upstox every 5 seconds during market hours, detects technical indicator crossings (Supertrend, EMA, RSI), sends Telegram alerts with optional trade suggestions, and maintains a full OHLCV history via yfinance.
 
+Feature PRDs (design docs written before/alongside a nontrivial new feature) live in `docs/prd/` at the repo root — check there for design context (schema decisions, non-goals, open questions) before building analysis or extensions on top of an existing feature.
+
 ## Setup
 
 ```bash
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-python main.py init        # create DB tables (includes ticks table)
-python main.py bootstrap   # seed full OHLCV history (~5–10 min)
+python poller.py init        # create DB tables (includes ticks table)
+python poller.py bootstrap   # seed full OHLCV history (~5–10 min)
 ```
 
 ## Commands
 
 ```bash
-python main.py live               # start live poller (market hours only, runs EOD tasks at 16:00)
-python main.py live --force       # skip holiday/hours check — for testing outside market hours
-python main.py bootstrap          # seed all symbols, all timeframes
-python main.py bootstrap RELIANCE # seed one symbol
-python main.py sync               # manual EOD sync (normally auto-triggered by poller at 16:00)
-python main.py verify             # check row counts and detect gaps
-python main.py init               # (re-)create all tables, idempotent
+python poller.py live               # start live poller (market hours only, runs EOD tasks at 16:00)
+python poller.py live --force       # skip holiday/hours check — for testing outside market hours
+python poller.py bootstrap          # seed all symbols, all timeframes
+python poller.py bootstrap RELIANCE # seed one symbol
+python poller.py sync               # manual EOD sync (normally auto-triggered by poller at 16:00)
+python poller.py verify             # check row counts and detect gaps
+python poller.py init               # (re-)create all tables, idempotent
 ```
 
 ## Daily Lifecycle (live poller)
@@ -63,7 +65,7 @@ Startup      holiday check → expiry cache refresh → load triggers → mornin
 **`sync/daily_sync.py`** — incremental upsert for all timeframes. Called at startup and again at 16:00 by the poller.
 
 ### Live Polling (`live/`)
-**`live/poller.py`** — main loop. Orchestrates all startup/EOD tasks and the 5s poll cycle. Entry point via `python main.py live`.
+**`live/poller.py`** — main loop. Orchestrates all startup/EOD tasks and the 5s poll cycle. Invoked via `backend/poller.py live` (the top-level CLI dispatcher — `bootstrap`/`sync`/`verify`/`init`/`live`/`analysis` — not to be confused with this file of the same base name).
 
 **`live/upstox_client.py`** — `get_ltp(instrument_keys)` via Upstox Python SDK. Singleton API client. Returns `{instrument_key: float}`. Instrument keys use pipe format (`NSE_INDEX|Nifty 50`); equities use ISIN not trading symbol.
 

@@ -157,6 +157,114 @@ def cleanup_ticks(days_to_keep: int = 7) -> int:
     return deleted
 
 
+def write_option_chain_snapshot(rows: list[dict]) -> int:
+    """
+    Batch-write option-chain snapshot rows to option_chain_5m.
+    Each row is a dict with keys matching the table columns:
+    ts, symbol, spot_ltp, expiry_type, expiry_rank, expiry_date,
+    strike, opt_type, ltp, oi, iv.
+
+    Uses INSERT OR IGNORE — the UNIQUE(ts, symbol, expiry_date, strike, opt_type)
+    constraint is idempotency protection against a poller restart re-capturing
+    the same 5-min slot, not a dedup-and-overwrite pattern.
+
+    Returns number of rows actually inserted (rows silently skipped by the
+    UNIQUE constraint are not counted).
+    """
+    if not rows:
+        return 0
+
+    records = [(
+        r["ts"], r["symbol"], float(r["spot_ltp"]), r["expiry_type"],
+        int(r["expiry_rank"]), r["expiry_date"], float(r["strike"]), r["opt_type"],
+        _float_or_none(r.get("ltp")), _float_or_none(r.get("oi")), _float_or_none(r.get("iv")),
+    ) for r in rows]
+
+    conn = get_connection()
+    cur = conn.executemany("""
+        INSERT OR IGNORE INTO option_chain_5m
+            (ts, symbol, spot_ltp, expiry_type, expiry_rank, expiry_date, strike, opt_type, ltp, oi, iv)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, records)
+    count = cur.rowcount
+    conn.commit()
+    conn.close()
+    return count
+
+
+def get_merged_cadence_dates(symbol: str) -> list[str]:
+    """
+    Distinct expiry_date values captured for a symbol, merging the
+    'weekly' and 'monthly' expiry_type buckets and sorting ascending.
+
+    Upstox's own weekly/monthly split excludes the monthly-coinciding
+    date from the weekly bucket even though it's calendar-wise 7 days
+    from its neighbors (e.g. weekly=[07-21,08-04,08-11], monthly=[07-28,08-25]
+    — all 7 days apart). The stored expiry_rank column is bucket-relative,
+    not cadence-relative, so callers needing a true weekly-spaced sequence
+    (calendar-spread strategies) must use this merged rank instead —
+    see docs/prd/calendar-spread-strike-scoring.md.
+    """
+    conn = get_connection()
+    cur = conn.execute("""
+        SELECT DISTINCT expiry_date FROM option_chain_5m
+        WHERE symbol = ? AND expiry_type IN ('weekly', 'monthly')
+        ORDER BY expiry_date
+    """, (symbol,))
+    dates = [row[0] for row in cur.fetchall()]
+    conn.close()
+    return dates
+
+
+def get_option_chain_ltp(symbol: str, opt_type: str, expiry_date: str, strike: float, ts: str) -> Optional[float]:
+    """Single CE/PE ltp lookup at an exact captured strike/expiry/timestamp, or None if not captured."""
+    conn = get_connection()
+    cur = conn.execute("""
+        SELECT ltp FROM option_chain_5m
+        WHERE symbol = ? AND opt_type = ? AND expiry_date = ? AND strike = ? AND ts = ?
+    """, (symbol, opt_type, expiry_date, strike, ts))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def get_latest_option_chain_ts(symbol: str, date_prefix: str | None = None) -> Optional[str]:
+    """
+    Most recent option_chain_5m ts for a symbol. Pass date_prefix (e.g. '2026-07-21')
+    to get the latest ts within just that UTC calendar day instead of overall latest.
+    """
+    conn = get_connection()
+    if date_prefix:
+        cur = conn.execute(
+            "SELECT MAX(ts) FROM option_chain_5m WHERE symbol = ? AND ts LIKE ?",
+            (symbol, f"{date_prefix}%"),
+        )
+    else:
+        cur = conn.execute("SELECT MAX(ts) FROM option_chain_5m WHERE symbol = ?", (symbol,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row and row[0] else None
+
+
+def get_option_chain_capture_days(symbol: str, expiry_date: str) -> list[str]:
+    """
+    Distinct UTC calendar dates (as 'YYYY-MM-DD' prefixes) on which any row for the
+    given expiry_date contract was captured. Used to enumerate which DTE values are
+    available for the DTE-proxy method (one calendar day of capture = one DTE data
+    point for whichever contract is 'imminent' that day) — see the
+    calendar-spread-debit-proxy skill.
+    """
+    conn = get_connection()
+    cur = conn.execute("""
+        SELECT DISTINCT substr(ts, 1, 10) FROM option_chain_5m
+        WHERE symbol = ? AND expiry_date = ?
+        ORDER BY 1
+    """, (symbol, expiry_date))
+    days = [row[0] for row in cur.fetchall()]
+    conn.close()
+    return days
+
+
 def get_ticks(symbol: str, start_utc, end_utc) -> pd.DataFrame:
     """
     Return ticks for symbol in [start_utc, end_utc) sorted ascending.

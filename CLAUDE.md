@@ -14,7 +14,7 @@ Each sub-folder has its own `CLAUDE.md` with detailed context. Read the relevant
 
 - **Backend** (`backend/server.py`) — Flask REST API on port 5555. Google OAuth login, session cookies. Serves `/api/*`, `/auth/*`, `/logout`.
 - **Frontend** (`frontend/`) — Vite dev server on port 5173. Proxies `/api`, `/auth`, `/logout` → `localhost:5555` in dev.
-- **Poller** (`backend/main.py live`) — separate long-running process, independent of the Flask server. Polls Upstox every 5s, sends Telegram alerts.
+- **Poller** (`backend/poller.py live`) — separate long-running process, independent of the Flask server. Polls Upstox every 5s, sends Telegram alerts.
 
 ## Dev Setup
 
@@ -26,7 +26,7 @@ cd backend && source venv/bin/activate && python server.py
 cd frontend && npm run dev
 
 # Poller (terminal 3, optional)
-cd backend && source venv/bin/activate && python main.py live --force
+cd backend && source venv/bin/activate && python poller.py live --force
 ```
 
 ## Key Conventions

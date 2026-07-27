@@ -34,7 +34,7 @@ from live.triggers import build_trigger, BaseTrigger
 from live.alert import send_alert
 from live.expiry import expiry_cache
 from live.intraday_sync import CandleWatcher
-from live import tick_store, candle_builder
+from live import tick_store, candle_builder, option_chain_capture
 from live.holidays import check_or_exit
 from live.briefing import send_morning_brief, send_eod_brief
 from live.fo_instruments import SPOT_IKEYS
@@ -226,6 +226,14 @@ def run_live(force: bool = False):
     for w in watchers.values():
         w.mark_startup()
 
+    # Separate 5-min timer for option-chain snapshot capture. Deliberately its
+    # own CandleWatcher instance (not the "5m" candle watcher above) — sharing
+    # would mean whichever caller checks should_build() first consumes that
+    # boundary's single True, starving the other. Fully independent of
+    # candle-building / ticks / price_cache; feeds only option_chain_5m.
+    option_chain_watcher = CandleWatcher(5)
+    option_chain_watcher.mark_startup()
+
     if not ikeys:
         print("\nNo triggers active. Check TRIGGERS and UPSTOX_INSTRUMENT_KEYS in config.py")
         return
@@ -279,6 +287,14 @@ def run_live(force: bool = False):
                         print(f"  [refresh failed — {trig.symbol} {trig.name}]  {e}",
                               flush=True)
             print("  Done.\n", flush=True)
+
+        # 5-min option-chain snapshot capture — own fetch mechanism (option-chain
+        # endpoint, not per-instrument LTP), fully separate from _all_ikeys below.
+        if option_chain_watcher.should_build():
+            try:
+                option_chain_capture.run_capture()
+            except Exception as e:
+                print(f"  [option chain capture failed]  {e}", flush=True)
 
         # Build full key list: trigger instruments + spot indices + open trade legs
         try:

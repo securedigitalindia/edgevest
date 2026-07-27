@@ -284,6 +284,40 @@ def init_db():
     print("  ✓  Table ready: ticks")
 
     # -------------------------------------------------------
+    # option_chain_5m — 5-min full option-chain snapshots.
+    # Standalone analysis dataset (calendar-spread research) — NOT a
+    # candle-building buffer like `ticks`, so no retention/cleanup job.
+    # INSERT OR IGNORE only (idempotency guard against poller-restart
+    # re-capture of the same 5-min slot), never OR REPLACE.
+    # -------------------------------------------------------
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS option_chain_5m (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts            TEXT    NOT NULL,
+            symbol        TEXT    NOT NULL,
+            spot_ltp      REAL    NOT NULL,
+            expiry_type   TEXT    NOT NULL,
+            expiry_rank   INTEGER NOT NULL,
+            expiry_date   TEXT    NOT NULL,
+            strike        REAL    NOT NULL,
+            opt_type      TEXT    NOT NULL,
+            ltp           REAL,
+            oi            REAL,
+            iv            REAL,
+            UNIQUE (ts, symbol, expiry_date, strike, opt_type)
+        )
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_option_chain_5m_sym_ts
+        ON option_chain_5m (symbol, ts DESC)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_option_chain_5m_strike_expiry
+        ON option_chain_5m (symbol, expiry_date, strike, opt_type)
+    """)
+    print("  ✓  Table ready: option_chain_5m")
+
+    # -------------------------------------------------------
     # recommended_trades — one row per trade (header only)
     # All leg details live in trade_legs.
     # -------------------------------------------------------
