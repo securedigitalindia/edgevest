@@ -247,6 +247,7 @@ def init_db():
                 low         REAL,
                 close       REAL,
                 volume      REAL,
+                oi          REAL,
                 PRIMARY KEY (symbol, ts)
             )
         """)
@@ -255,6 +256,12 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_{tbl}_sym_ts
             ON {tbl} (symbol, ts DESC)
         """)
+
+        # Migrate: add oi to candle tables that pre-date this column (Upstox
+        # history switch — yfinance never provided open interest)
+        existing_candle_cols = {row[1] for row in cur.execute(f"SELECT * FROM pragma_table_info('{tbl}')")}
+        if "oi" not in existing_candle_cols:
+            cur.execute(f"ALTER TABLE {tbl} ADD COLUMN oi REAL")
 
         print(f"  ✓  Table ready: {tbl}")
 

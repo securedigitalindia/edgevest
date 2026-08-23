@@ -8,7 +8,7 @@ Run:
 Daily lifecycle:
   Startup   : holiday check → expiry cache refresh → build triggers
   Market hrs: poll every 5s → store ticks → run triggers → build 1h candles at :15 boundary
-  16:00 IST : daily yfinance sync → tick cleanup → expiry cache refresh → exit
+  16:00 IST : daily Upstox sync → tick cleanup → expiry cache refresh → exit
 """
 
 import argparse
@@ -89,9 +89,10 @@ def _wait_until(target_hour: int, target_minute: int = 0):
 def _run_startup_tasks():
     """
     Run at poller startup before market opens.
-    Only refreshes expiry cache — no yfinance sync here because the market
-    may already be open and yfinance would return incomplete in-progress candles.
-    The EOD sync at 16:00 IST is the right time to sync (market closed by then).
+    Only refreshes expiry cache — no Upstox candle sync here because the market
+    may already be open and the provider would return an incomplete in-progress
+    candle for today. The EOD sync at 16:00 IST is the right time to sync
+    (market closed by then).
     """
     print("── Startup tasks ──────────────────────────────────")
     print("Refreshing option expiry dates from Upstox...\n")
@@ -112,7 +113,7 @@ def _run_startup_tasks():
 def _run_eod_tasks(daily_alerts: list):
     """
     Run at 16:00 IST after market close.
-    yfinance has complete EOD data by then.
+    Upstox has complete EOD data by then.
     Full sync + tick cleanup + expiry cache refresh + EOD brief.
     """
     from sync.daily_sync import run_daily_sync
@@ -121,7 +122,7 @@ def _run_eod_tasks(daily_alerts: list):
     now = _ist_now()
     print(f"\n[{now.strftime('%H:%M IST')}]  ── EOD tasks ───────────────────────────────────")
 
-    print("\nRunning end-of-day yfinance sync...\n")
+    print("\nRunning end-of-day Upstox sync...\n")
     try:
         run_daily_sync()
     except Exception as e:
@@ -366,7 +367,7 @@ def run_live(force: bool = False):
                 print(f"  [post-close cache update]  {e}", flush=True)
             time.sleep(30)
 
-    # EOD tasks at 16:00 — yfinance data is reliable by then
+    # EOD tasks at 16:00 — Upstox data is reliable by then
     # Skipped on --force (testing) since market didn't actually close
     if not force:
         _run_eod_tasks(daily_alerts)

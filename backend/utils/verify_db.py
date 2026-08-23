@@ -17,6 +17,9 @@ from db.init_db import get_connection, TF_TABLE
 
 # Expected minimum rows per timeframe (rough sanity thresholds)
 MIN_ROWS = {
+    "1m":  100,
+    "5m":  100,
+    "15m": 100,
     "1h":  500,
     "1d":  500,
     "1wk": 100,

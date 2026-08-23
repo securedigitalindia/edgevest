@@ -2,24 +2,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listRecs, createRec, deleteRec, exitRec, adjustRec, createAccountTrade,
   listTrades, listHistory, exitTrade, applyAdjTrade, deleteTrade,
-  listBrokers, addBroker, listAccounts, addAccount, fetchPrices,
+  listBrokers, addBroker, listAccounts, addAccount,
   updateAccountCapital, getAccountPortfolio,
 } from '../api/trades'
+import { useTrackedPrices } from './usePrices'
 
 export function useRecs() {
   return useQuery({ queryKey: ['recs'], queryFn: listRecs, refetchInterval: 10000 })
 }
 
-export function useRecPrices(keys = []) {
-  const keyStr = [...keys].sort().join(',')
-  return useQuery({
-    queryKey: ['rec-prices', keyStr],
-    queryFn:  () => fetchPrices(keys),
-    enabled:  keys.length > 0,
-    refetchInterval: 5000,
-    staleTime: 4000,
-  })
-}
+// Shares one poll with every other price consumer in the app instead of
+// running its own — see hooks/usePrices.js.
+export const useRecPrices = useTrackedPrices
 
 export function useCreateRec() {
   const qc = useQueryClient()

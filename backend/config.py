@@ -8,12 +8,13 @@ import os
 # -----------------------------------------------------------
 # Symbols
 # -----------------------------------------------------------
-# Each entry: (yfinance_ticker, display_name, type)
+# Each entry: (display_name, type). Upstox instrument key is resolved via
+# UPSTOX_INSTRUMENT_KEYS[name] — see below.
 # type: "equity" | "index"
 SYMBOLS = [
-    {"ticker": "^NSEI",        "name": "NIFTY50",    "type": "index"},
-    {"ticker": "^NSEBANK",     "name": "BANKNIFTY",  "type": "index"},
-    {"ticker": "RELIANCE.NS",  "name": "RELIANCE",   "type": "equity"},
+    {"name": "NIFTY50",    "type": "index"},
+    {"name": "BANKNIFTY",  "type": "index"},
+    {"name": "RELIANCE",   "type": "equity"},
 ]
 
 # -----------------------------------------------------------
@@ -29,54 +30,49 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "data", "drishti.db")
 # -----------------------------------------------------------
 # Timeframes
 # -----------------------------------------------------------
-# key        : internal name used for table suffix and yfinance interval
-# interval   : yfinance interval string
-# period     : max history to bootstrap (yfinance period string)
-# yf_limit   : max days yfinance reliably provides for this interval
-# description: human label
+# key            : internal name used for table suffix, also the Upstox
+#                  unit/interval lookup key in bootstrap/upstox_loader.UPSTOX_TF_MAP
+# bootstrap_days : how many days of history to seed on a full bootstrap
+#                  (clamped to Upstox's own data floor per unit — see
+#                  UPSTOX_TF_MAP's DATA_FLOOR — so 1d/1wk/1mo's 7300 days
+#                  just means "as far back as Upstox has", currently Jan 2000)
+# description    : human label
 
 TIMEFRAMES = [
     {
-        "key":         "1m",
-        "interval":    "1m",
-        "period":      "7d",        # yfinance max for 1m
-        "description": "1 Minute",
+        "key":            "1m",
+        "bootstrap_days": 7,
+        "description":    "1 Minute",
     },
     {
-        "key":         "5m",
-        "interval":    "5m",
-        "period":      "60d",       # yfinance max for 5m
-        "description": "5 Minute",
+        "key":            "5m",
+        "bootstrap_days": 60,
+        "description":    "5 Minute",
     },
     {
-        "key":         "15m",
-        "interval":    "15m",
-        "period":      "60d",       # yfinance max for 15m
-        "description": "15 Minute",
+        "key":            "15m",
+        "bootstrap_days": 60,
+        "description":    "15 Minute",
     },
     {
-        "key":         "1h",
-        "interval":    "1h",
-        "period":      "730d",      # yfinance max for 1h
-        "description": "1 Hour",
+        "key":            "1h",
+        "bootstrap_days": 730,
+        "description":    "1 Hour",
     },
     {
-        "key":         "1d",
-        "interval":    "1d",
-        "period":      "20y",
-        "description": "1 Day",
+        "key":            "1d",
+        "bootstrap_days": 7300,
+        "description":    "1 Day",
     },
     {
-        "key":         "1wk",
-        "interval":    "1wk",
-        "period":      "20y",
-        "description": "1 Week",
+        "key":            "1wk",
+        "bootstrap_days": 7300,
+        "description":    "1 Week",
     },
     {
-        "key":         "1mo",
-        "interval":    "1mo",
-        "period":      "20y",
-        "description": "1 Month",
+        "key":            "1mo",
+        "bootstrap_days": 7300,
+        "description":    "1 Month",
     },
 ]
 
@@ -94,9 +90,10 @@ INDICATORS = {
 # -----------------------------------------------------------
 # Sync settings
 # -----------------------------------------------------------
-# yfinance request delay (seconds) between symbol fetches
-# to avoid rate limiting
-FETCH_DELAY_SECONDS = 1.5
+# Delay (seconds) between Upstox chunk fetches during bootstrap/sync —
+# Upstox's rate limits (50/sec, 500/min) are far higher than this needs,
+# so this is just gentle pacing, not load-bearing throttling.
+FETCH_DELAY_SECONDS = 0.25
 
 # -----------------------------------------------------------
 # Live polling

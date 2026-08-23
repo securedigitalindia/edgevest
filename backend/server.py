@@ -30,8 +30,8 @@ if _CORS_ORIGINS:
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-# Secure session cookies — enforced in prod (HTTPS), relaxed in dev
-_PROD = os.environ.get("FLASK_ENV", "production") != "development"
+# Secure session cookies — enforced in prod/staging (HTTPS), relaxed in dev (plain HTTP, local machine only)
+_PROD = os.environ.get("FLASK_ENV", "production") != "dev"
 app.config["SESSION_COOKIE_SECURE"]   = _PROD
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "None" if _PROD else "Lax"
@@ -171,6 +171,12 @@ def refresh_session():
 # Auth routes
 # ─────────────────────────────────────────────────────────
 
+# One backend process can be reached by multiple frontend origins (e.g. dev's
+# Vite server AND its CloudFront bundle) — the frontend tells us where it came
+# from via ?next=<origin>, checked against the same trusted list CORS uses.
+def _post_auth_redirect():
+    return session.pop("post_login_redirect", None) or FRONTEND_URL or "/"
+
 @app.route("/login")
 def login():
     return redirect(FRONTEND_URL or "/")
@@ -179,6 +185,9 @@ def login():
 def auth_google():
     session.clear()
     session.permanent = True
+    next_origin = request.args.get("next")
+    if next_origin in _CORS_ORIGINS:
+        session["post_login_redirect"] = next_origin
     redirect_uri = url_for("auth_callback", _external=True)
     return google.authorize_redirect(redirect_uri, prompt="consent")
 
@@ -198,17 +207,19 @@ def auth_callback():
         picture   = userinfo.get("picture", ""),
     )
     if not user["active"]:
-        return redirect(FRONTEND_URL or "/")
+        return redirect(_post_auth_redirect())
     session["user"] = user
     if user["role"] == "client":
         from db.queries import expire_stale_subscriptions
         expire_stale_subscriptions()
-    return redirect(FRONTEND_URL or "/")
+    return redirect(_post_auth_redirect())
 
 @app.route("/logout")
 def logout():
+    next_origin = request.args.get("next")
+    target = next_origin if next_origin in _CORS_ORIGINS else (FRONTEND_URL or "/")
     session.clear()
-    return redirect(FRONTEND_URL or "/")
+    return redirect(target)
 
 
 # ─────────────────────────────────────────────────────────

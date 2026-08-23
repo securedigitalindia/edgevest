@@ -5,7 +5,7 @@ Generates a next-day outlook by combining:
   • 1d candles  — primary trend (Supertrend, EMA 20/50/200, RSI 14, ATR 14)
   • 15m candles — end-of-day momentum (Supertrend, EMA 9/21, RSI 14)
   • Options chain — PCR, Max Pain, OI walls (via Upstox OptionsApi)
-  • India VIX — via yfinance
+  • India VIX — via Upstox
 
 Entry point:  run_daily_analysis()
 Called from   live/poller.py at 08:30 IST each trading day.
@@ -23,20 +23,19 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pandas_ta as ta
-import yfinance as yf
 
 from db.queries import get_candles
 from live.alert import send_telegram, _h
 from live.expiry import expiry_cache
+from live.upstox_client import get_ltp
 
 IST   = ZoneInfo("Asia/Kolkata")
 _DIVL = "━" * 36
 _DIV  = "─" * 36
 
-NIFTY_SYMBOL    = "NIFTY50"
-NIFTY_IKEY      = "NSE_INDEX|Nifty 50"
-NIFTY_YF_TICKER = "^NSEI"
-VIX_YF_TICKER   = "^INDIAVIX"
+NIFTY_SYMBOL = "NIFTY50"
+NIFTY_IKEY   = "NSE_INDEX|Nifty 50"
+VIX_IKEY     = "NSE_INDEX|India VIX"
 
 
 # ─────────────────────────────────────────────────────────
@@ -76,16 +75,14 @@ def _swing_levels(df: pd.DataFrame, lookback: int = 20) -> dict:
 
 
 # ─────────────────────────────────────────────────────────
-# India VIX via yfinance
+# India VIX via Upstox
 # ─────────────────────────────────────────────────────────
 
 def _fetch_vix() -> float | None:
     try:
-        df = yf.Ticker(VIX_YF_TICKER).history(period="5d", interval="1d", auto_adjust=True)
-        if df.empty:
-            return None
-        close = df["Close"].dropna()
-        return round(float(close.iloc[-1]), 2)
+        prices = get_ltp([VIX_IKEY])
+        ltp = prices.get(VIX_IKEY)
+        return round(ltp, 2) if ltp is not None else None
     except Exception as e:
         print(f"  [daily_analysis]  VIX fetch failed: {e}", flush=True)
         return None

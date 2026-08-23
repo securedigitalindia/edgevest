@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Drishti is a live NSE market signal agent. It polls Upstox every 5 seconds during market hours, detects technical indicator crossings (Supertrend, EMA, RSI), sends Telegram alerts with optional trade suggestions, and maintains a full OHLCV history via yfinance.
+Drishti is a live NSE market signal agent. It polls Upstox every 5 seconds during market hours, detects technical indicator crossings (Supertrend, EMA, RSI), sends Telegram alerts with optional trade suggestions, and maintains a full OHLCV history via Upstox's History V3 API.
 
 Feature PRDs (design docs written before/alongside a nontrivial new feature) live in `docs/prd/` at the repo root — check there for design context (schema decisions, non-goals, open questions) before building analysis or extensions on top of an existing feature.
 
@@ -35,7 +35,7 @@ python poller.py init               # (re-)create all tables, idempotent
 Startup      holiday check → expiry cache refresh → load triggers → morning Telegram brief
 09:15–15:30  poll every 5s: store LTP ticks → run triggers → alert on crossing → build 1h candles at :15 boundary
 15:30        stop polling
-16:00        full yfinance sync + tick cleanup + expiry cache refresh + EOD Telegram brief → exit
+16:00        full Upstox sync + tick cleanup + expiry cache refresh + EOD Telegram brief → exit
 ```
 
 ## Architecture
@@ -60,9 +60,11 @@ Startup      holiday check → expiry cache refresh → load triggers → mornin
 - `roll_recommended_trade(trade_id, exit_ltp, exit_time, new_expiry_str, new_pe_strike, ...)` — mark current as 'rolled', open replacement row with parent_trade_id linking back; use at monthly expiry
 
 ### Data Pipeline (`bootstrap/`, `sync/`)
-**`bootstrap/yfinance_loader.py`** — `fetch_historical()` shared by bootstrap and sync. Normalises to UTC, drops in-progress candles for intraday intervals.
+**`bootstrap/upstox_loader.py`** — `fetch_historical()` shared by bootstrap and sync, via Upstox's History V3 API (`live/upstox_client.get_historical_candles`). Chunks requests per Upstox's per-timeframe lookback caps (30 days for 1m/5m/15m, 91 days for 1h, ~10 years for 1d, no cap for 1wk/1mo), normalises to UTC, and drops an in-progress last candle uniformly across all timeframes via `_is_incomplete_last_candle()`.
 
-**`sync/daily_sync.py`** — incremental upsert for all timeframes. Called at startup and again at 16:00 by the poller.
+**`sync/daily_sync.py`** — true gap-fill: for each symbol/timeframe, fetches from `get_latest_ts()` (minus a small `SYNC_RECHECK_DAYS=2` defensive window, in case Upstox revises an already-published candle) through today, however large that gap is. Called only at 16:00 by the poller (not at startup — see `live/poller.py`'s `_run_startup_tasks()`).
+
+**Known limitation**: `utils/verify_db.py`'s diff-based `check_gaps()` cannot detect a single missing ad-hoc special session sitting between two otherwise-normal trading days (a diff of ~3 days across a weekend still looks like a normal weekend gap even with a day silently missing inside it — this is exactly how NSE's one-off Sunday, 2026-02-01 Union Budget session went undetected under yfinance). Correctness here rests on the data provider actually having every session, not on `verify_db` catching gaps after the fact — one motivation for using Upstox (a direct exchange feed) over yfinance.
 
 ### Live Polling (`live/`)
 **`live/poller.py`** — main loop. Orchestrates all startup/EOD tasks and the 5s poll cycle. Invoked via `backend/poller.py live` (the top-level CLI dispatcher — `bootstrap`/`sync`/`verify`/`init`/`live`/`analysis` — not to be confused with this file of the same base name).
@@ -71,9 +73,9 @@ Startup      holiday check → expiry cache refresh → load triggers → mornin
 
 **`live/tick_store.py`** — writes LTP ticks to DB on every poll. Call `init(ikey_to_name)` once at startup, then `record(prices)` each cycle.
 
-**`live/candle_builder.py`** — at each 1h candle close (:15 IST boundary), aggregates ticks in the window → OHLCV → upserts to `candles_1h`. Skips if fewer than 3 ticks or tick coverage < 50% of window (keeps existing yfinance data in that case).
+**`live/candle_builder.py`** — at each 1h candle close (:15 IST boundary), aggregates ticks in the window → OHLCV → upserts to `candles_1h`. Skips if fewer than 3 ticks or tick coverage < 50% of window (keeps existing candle data in that case).
 
-**`live/intraday_sync.py`** — `HourlyCandleWatcher`: fires `should_sync()` once per hour at :15 IST. Still used for the watcher timing logic; yfinance startup sync has moved to `daily_sync`.
+**`live/intraday_sync.py`** — `HourlyCandleWatcher`: fires `should_sync()` once per hour at :15 IST. Still used for the watcher timing logic; the candle-provider startup sync has moved to `daily_sync`.
 
 **`live/triggers.py`** — trigger classes. `build_trigger(cfg, symbol)` instantiates from config. All triggers inherit `BaseTrigger` which handles cooldown (`cooldown_minutes` in config) and trade suggestion dispatch. Types:
 - `SupertrendCrossTrigger` — LTP crosses Supertrend line
@@ -99,11 +101,11 @@ Startup      holiday check → expiry cache refresh → load triggers → mornin
 
 ## Key Conventions
 
-- Symbols stored as `name` field (e.g. `"RELIANCE"`), not yfinance ticker.
+- Symbols stored as `name` field (e.g. `"RELIANCE"`); Upstox instrument key resolved via `UPSTOX_INSTRUMENT_KEYS[name]`.
 - All DB timestamps are ISO-8601 UTC strings; `get_candles()` returns tz-aware `pd.Timestamp`. Ticks stored as `"YYYY-MM-DDTHH:MM:SSZ"` — use this exact format for comparisons.
 - `upsert_candles` uses INSERT OR REPLACE — safe to run multiple times.
 - NSE 1h candles start/end at `:15` past each hour (09:15, 10:15, ... 15:15). The 15:15–15:30 partial window is not built into a candle.
 - Instrument keys use pipe format (`NSE_INDEX|Nifty 50`) in config and code; Upstox SDK responses use colon format (`NSE_INDEX:Nifty 50`) — `upstox_client.py` normalises back to pipe.
 - Trigger cooldown: `_signal()` in `BaseTrigger` returns `None` if within cooldown window — subclass `check()` methods already propagate this correctly.
 - 1d indicators (EMA20, ST) use yesterday's closed candles during the trading day — this is correct behaviour. The EMA line is fixed intraday; live LTP is compared against it every 5s.
-- Tick-built 1h candles have `volume=NULL`. The 16:00 yfinance sync overwrites them with official OHLCV including volume.
+- Tick-built 1h candles have `volume=NULL`. The 16:00 Upstox sync overwrites them with official OHLCV including volume.

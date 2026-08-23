@@ -20,7 +20,7 @@ from db.init_db import get_connection, TF_TABLE
 def upsert_candles(symbol: str, tf_key: str, df: pd.DataFrame) -> int:
     """
     Insert or replace candles from a DataFrame.
-    df must have columns: ts, open, high, low, close, volume
+    df must have columns: ts, open, high, low, close, volume (oi optional).
     Returns number of rows written.
     """
     if df.empty:
@@ -37,14 +37,15 @@ def upsert_candles(symbol: str, tf_key: str, df: pd.DataFrame) -> int:
             _float_or_none(row.get("low")),
             _float_or_none(row.get("close")),
             _float_or_none(row.get("volume")),
+            _float_or_none(row.get("oi")),
         ))
 
     conn = get_connection()
     cur = conn.cursor()
     cur.executemany(f"""
         INSERT OR REPLACE INTO {tbl}
-            (symbol, ts, open, high, low, close, volume)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (symbol, ts, open, high, low, close, volume, oi)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, records)
     conn.commit()
     conn.close()
@@ -87,7 +88,7 @@ def get_candles(symbol: str, tf_key: str, limit: int = 500) -> pd.DataFrame:
     tbl = TF_TABLE[tf_key]
     conn = get_connection()
     df = pd.read_sql_query(f"""
-        SELECT ts, open, high, low, close, volume
+        SELECT ts, open, high, low, close, volume, oi
         FROM {tbl}
         WHERE symbol = ?
         ORDER BY ts DESC
@@ -101,6 +102,23 @@ def get_candles(symbol: str, tf_key: str, limit: int = 500) -> pd.DataFrame:
     df = df.sort_values("ts").reset_index(drop=True)
     df["ts"] = pd.to_datetime(df["ts"], utc=True)
     return df
+
+
+def delete_candles(symbol: str, tf_key: str) -> int:
+    """
+    Delete all candles for a symbol+TF. Used by bootstrap to guarantee a
+    clean reseed — starting from an empty table means the fresh Upstox
+    fetch that follows can never collide with (and thus never leave
+    behind) a stale duplicate row from an earlier provider/run.
+    Returns number of rows deleted.
+    """
+    tbl = TF_TABLE[tf_key]
+    conn = get_connection()
+    cur = conn.execute(f"DELETE FROM {tbl} WHERE symbol = ?", (symbol,))
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
 
 
 def get_row_count(symbol: str, tf_key: str) -> int:

@@ -23,6 +23,8 @@ frontend/*.log
 .env
 .env.*
 !frontend/.env.production
+!frontend/.env.staging
+!frontend/.env.dev
 *.local
 
 # Claude local settings (keep CLAUDE.md, ignore local overrides)

@@ -70,7 +70,7 @@ def build_all(symbol_names: list[str], tf_key: str) -> dict[str, int]:
         ).replace(tzinfo=timezone.utc)
         coverage = (end_utc - first_tick).total_seconds() / window_secs
         if coverage < MIN_COVERAGE:
-            print(f"  [candle/{tf_key}]  {name:<14}  {coverage:.0%} coverage — keeping yfinance data",
+            print(f"  [candle/{tf_key}]  {name:<14}  {coverage:.0%} coverage — keeping existing candle data",
                   flush=True)
             results[name] = 0
             continue

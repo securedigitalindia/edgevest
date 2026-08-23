@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { AUTH_BASE } from '../../api/client'
+import { authUrl } from '../../api/client'
 import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../../store/authStore'
 import { useQuery } from '@tanstack/react-query'
@@ -67,7 +67,7 @@ export default function MainNav({ onOpenDrawer, subscribed }) {
                 <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
                 <div style={{padding:'6px 14px',fontSize:10,color:'#475569',letterSpacing:.3}}>EdgeVest v{__APP_VERSION__}</div>
                 <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
-                <a href={`${AUTH_BASE}/logout`} className="prof-menu-item">Sign out</a>
+                <a href={authUrl('/logout')} className="prof-menu-item">Sign out</a>
               </div>
             )}
           </div>

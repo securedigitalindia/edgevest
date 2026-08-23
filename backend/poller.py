@@ -26,7 +26,7 @@ def main():
     symbols = args[1:] if len(args) > 1 else None
 
     if command == "bootstrap":
-        from bootstrap.yfinance_loader import run_bootstrap
+        from bootstrap.upstox_loader import run_bootstrap
         run_bootstrap(symbols)
 
     elif command == "sync":

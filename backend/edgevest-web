@@ -1,7 +1,7 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 source venv/bin/activate
-if [ "${FLASK_ENV}" = "development" ]; then
+if [ "${FLASK_ENV}" = "dev" ]; then
     exec python server.py "$@"
 else
     exec gunicorn server:app -c gunicorn.conf.py "$@"

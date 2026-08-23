@@ -1,4 +1,3 @@
-yfinance>=0.2.38
 pandas>=2.0.0
 # pandas-ta: install with --no-deps on Python 3.14+ to skip numba (unsupported)
 # run: grep -v pandas-ta requirements.txt | pip install -r /dev/stdin && pip install pandas-ta --no-deps

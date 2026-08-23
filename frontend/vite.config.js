@@ -5,9 +5,13 @@ import { readFileSync } from 'fs'
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(version),
+    // npm run dev (serve) always goes through this file's own proxy below,
+    // same-origin — overrides whatever VITE_API_URL is set to in .env.dev.
+    // npm run build:dev keeps the absolute dev-api.edgevest.in URL from .env.dev.
+    ...(command === 'serve' ? { 'import.meta.env.VITE_API_URL': JSON.stringify('/api') } : {}),
   },
   plugins: [
     react(),
@@ -48,4 +52,4 @@ export default defineConfig({
       '/logout': { target: 'http://localhost:5555', changeOrigin: true },
     },
   },
-})
+}))

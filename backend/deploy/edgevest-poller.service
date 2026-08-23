@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 User=ubuntu
-WorkingDirectory=/home/ubuntu/edgevest
-EnvironmentFile=/home/ubuntu/edgevest/.env
-ExecStart=/home/ubuntu/edgevest/edgevest-poller
+WorkingDirectory=/home/ubuntu/edgevest/backend
+EnvironmentFile=/home/ubuntu/edgevest/backend/.env.production
+ExecStart=/home/ubuntu/edgevest/backend/edgevest-poller
 Restart=always
 RestartSec=30
 StandardOutput=journal

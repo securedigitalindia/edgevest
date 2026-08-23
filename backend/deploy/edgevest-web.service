@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 User=ubuntu
-WorkingDirectory=/home/ubuntu/edgevest
-EnvironmentFile=/home/ubuntu/edgevest/.env
-ExecStart=/home/ubuntu/edgevest/edgevest-web
+WorkingDirectory=/home/ubuntu/edgevest/backend
+EnvironmentFile=/home/ubuntu/edgevest/.env.production
+ExecStart=/home/ubuntu/edgevest/backend/edgevest-web
 Restart=always
 RestartSec=5
 StandardOutput=journal
