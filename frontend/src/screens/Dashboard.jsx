@@ -542,6 +542,7 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
           <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',flex:1,minWidth:0}}>
             <span className="rec-symbol" style={{fontSize:15}}>{rec.note || rec.symbol}</span>
+            <span style={{fontSize:10,fontWeight:600,color:'var(--muted)'}}>#{rec.id}</span>
             <span className={`badge badge-${rec.status === 'open' ? 'open' : 'exited'}`}>{rec.status === 'open' ? 'Live' : rec.status}</span>
             {rec.segment && <span className="rec-seg-tag">{rec.segment}</span>}
             {rec.adj_count > 0 && <span className="adj-badge">{rec.adj_count} adj</span>}
