@@ -640,7 +640,14 @@ def close_account_trade(
     if conn_data is None:
         raise ValueError(f"Account trade id={account_trade_id} not found or already closed")
 
-    entry_legs = [l for l in get_account_trade_legs(account_trade_id) if l["action"] == "entry"]
+    # Must match the same "currently active legs" set the frontend shows and
+    # collects prices for (server.py's /api/account-trades listing) — legs
+    # already closed by an earlier adjustment (action='exit') don't need a
+    # price here, or this rejects a correctly-filled-in exit as incomplete.
+    all_legs    = get_account_trade_legs(account_trade_id)
+    exited_keys = {l["instrument_key"] for l in all_legs if l["action"] == "exit"}
+    entry_legs  = [l for l in all_legs
+                   if l["action"] == "entry" and l["instrument_key"] not in exited_keys]
     if len(prices) != len(entry_legs):
         raise ValueError(f"Expected {len(entry_legs)} price(s), got {len(prices)}")
 

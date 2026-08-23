@@ -528,7 +528,7 @@ def api_recommendations():
 @require_role("super_admin", "admin")
 def api_rec_exit(rec_id):
     from datetime import datetime, timezone
-    from db.queries import get_recommendation, get_trade_legs, close_recommended_trade
+    from db.queries import get_recommendation, get_current_legs, close_recommended_trade
     trade = get_recommendation(rec_id)
     if not trade:
         return jsonify(ok=False, error="Recommendation not found"), 404
@@ -537,7 +537,11 @@ def api_rec_exit(rec_id):
     data       = request.json or {}
     prices     = data.get("prices", [])
     now        = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    entry_legs = [l for l in get_trade_legs(rec_id) if l["action"] == "entry"]
+    # Must match the same "currently active legs" set the frontend shows and
+    # collects prices for (/api/recommendations' listing uses get_current_legs
+    # too) — a naive action=='entry' count doesn't net out adjustments, so it
+    # can expect more prices than the frontend actually asked for.
+    entry_legs = get_current_legs(rec_id)
 
     if len(prices) != len(entry_legs):
         return jsonify(ok=False, error="Price required for every leg"), 400

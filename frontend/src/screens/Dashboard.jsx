@@ -268,7 +268,7 @@ function ExitedLeg({ entry: e, exitLeg: x, symbol }) {
   )
 }
 
-function LegGroup({ title, note, legs, symbol, type = 'entry', exitLegs, exitOffset = 0, prices }) {
+function LegGroup({ title, note, legs, symbol, type = 'entry', exitLegs, prices }) {
   return (
     <div className={`leg-group leg-group-${type}`}>
       {(title || note) && (
@@ -279,7 +279,12 @@ function LegGroup({ title, note, legs, symbol, type = 'entry', exitLegs, exitOff
       )}
       {legs.map((l, i) =>
         exitLegs
-          ? <ExitedLeg key={i} entry={l} exitLeg={exitLegs[exitOffset + i]} symbol={symbol} />
+          // Match by instrument_key, not array position — exit_legs is netted
+          // per instrument (original + adjustment on the same instrument share
+          // one exit row), so it can have fewer rows than the flattened legs
+          // list. Position-based indexing here silently drops adjustment rows
+          // whenever an adjustment reuses the original's instrument.
+          ? <ExitedLeg key={i} entry={l} exitLeg={exitLegs.find(x => x.instrument_key && x.instrument_key === l.instrument_key)} symbol={symbol} />
           : <OpenLeg   key={i} leg={l} symbol={symbol} prices={prices} />
       )}
     </div>
@@ -295,18 +300,13 @@ function RecLegs({ rec, prices }) {
       <LegGroup type="entry" title="Entry"
         legs={rec.legs} symbol={rec.symbol} exitLegs={exitLegs} prices={prices} />
 
-      {adjs.map((a, ai) => {
-        const offset = exitLegs
-          ? rec.legs.length + adjs.slice(0, ai).reduce((s, a2) => s + (a2.legs?.length || 0), 0)
-          : 0
-        return (
-          <div key={a.id || ai}>
-            <div className="adj-connector">↓ Adjustment {ai + 1}</div>
-            <LegGroup type="adj" note={a.note}
-              legs={a.legs || []} symbol={rec.symbol} exitLegs={exitLegs} exitOffset={offset} prices={prices} />
-          </div>
-        )
-      })}
+      {adjs.map((a, ai) => (
+        <div key={a.id || ai}>
+          <div className="adj-connector">↓ Adjustment {ai + 1}</div>
+          <LegGroup type="adj" note={a.note}
+            legs={a.legs || []} symbol={rec.symbol} exitLegs={exitLegs} prices={prices} />
+        </div>
+      ))}
 
     </div>
   )
@@ -492,14 +492,19 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
   const doDel  = useDeleteRec()
   const isOpen = rec.status === 'open'
 
-  // Realized P&L for exited recs — flatten original + adjustment legs to match exit_legs index
+  // Realized P&L for exited recs. exit_legs is netted per instrument_key by
+  // the backend (get_current_legs combines original + adjustment lots on the
+  // same instrument into one exit row), so it can have FEWER rows than the
+  // flattened original+adjustment entry legs — match by instrument_key, not
+  // array position, or an adjustment sharing the original's instrument would
+  // silently get skipped here.
   let totalPnl = null
   if (rec.status === 'exited' && rec.exit_legs?.length) {
     const adjs = rec.adjustments || []
     const allEntryLegs = [...rec.legs, ...adjs.flatMap(a => a.legs || [])]
     let total = 0, has = false
-    allEntryLegs.forEach((e, i) => {
-      const x = rec.exit_legs[i]
+    allEntryLegs.forEach(e => {
+      const x = rec.exit_legs.find(xl => xl.instrument_key && xl.instrument_key === e.instrument_key)
       if (e.price != null && x?.price != null) {
         const qty = (e.lots || 0) * (e.lot_size || 1)
         total += e.side === 'SELL' ? (e.price - x.price) * qty : (x.price - e.price) * qty
