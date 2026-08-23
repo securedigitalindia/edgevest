@@ -425,7 +425,7 @@ class Nifty500MultipleTrigger(BaseTrigger):
                     trade_id = open_recommended_trade(
                         self.name, self.symbol, level, ltp, now_utc, exit_level,
                         margin_required=margin_required, margin_final=margin_final,
-                        expiry_str=exp_str,
+                        expiry_strs=[exp_str],
                     )
                     add_trade_legs(trade_id, [
                         {

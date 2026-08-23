@@ -334,23 +334,43 @@ _LEG_COLS = [
 _LEG_SELECT = ", ".join(_LEG_COLS)
 
 
-def _compute_display_code(conn, expiry_str: str | None) -> str | None:
+def display_code_prefix(expiry_strs) -> str:
     """
-    Human-friendly trade identifier: {MON}{YY}-{N} — e.g. AUG26-1, SEP26-2.
-    N increments per (month, year) across every trade ever assigned that
-    prefix, in creation order. expiry_str is expected in "%d %b %Y" form
-    (e.g. "25 Aug 2026"), matching how it's stored on trade_legs everywhere
-    else. Returns None if expiry_str is missing/unparseable — display_code
-    is best-effort, nothing depends on it being set.
+    {MON}{YY} for the NEAREST (earliest) expiry among the given legs'
+    expiry_str values (e.g. "AUG26") — or "EQ" if none of them have one at
+    all (a pure equity trade, no F&O legs). expiry_strs is any iterable of
+    strings/None, each expected in "%d %b %Y" form (e.g. "25 Aug 2026"),
+    matching how it's stored on trade_legs everywhere else — unparseable or
+    missing entries are ignored, not treated as an error.
+
+    Deliberately picks the nearest, not just whichever leg happens to be
+    first — a calendar spread's legs (e.g. a near/far PE pair) aren't
+    necessarily inserted in expiry order, so "first leg" would be fragile.
     """
-    if not expiry_str:
-        return None
     from datetime import datetime
-    try:
-        dt = datetime.strptime(expiry_str, "%d %b %Y")
-    except ValueError:
-        return None
-    prefix = dt.strftime("%b").upper() + dt.strftime("%y")
+    dates = []
+    for s in expiry_strs:
+        if not s:
+            continue
+        try:
+            dates.append(datetime.strptime(s, "%d %b %Y"))
+        except ValueError:
+            continue
+    if not dates:
+        return "EQ"
+    nearest = min(dates)
+    return nearest.strftime("%b").upper() + nearest.strftime("%y")
+
+
+def _compute_display_code(conn, expiry_strs) -> str:
+    """
+    Human-friendly trade identifier: {MON}{YY}-{N} for the nearest expiry
+    among the given legs (e.g. AUG26-1, SEP26-2), or EQ-{N} for a pure
+    equity trade with no expiry at all. N increments per prefix across every
+    trade ever assigned it, in creation order. expiry_strs is any iterable
+    of each leg's expiry_str (some may be None/missing).
+    """
+    prefix = display_code_prefix(expiry_strs)
     count = conn.execute(
         "SELECT COUNT(*) FROM recommended_trades WHERE display_code LIKE ?",
         (f"{prefix}-%",),
@@ -365,11 +385,11 @@ def open_recommended_trade(
     parent_trade_id:  int   | None = None,
     margin_required:  float | None = None,
     margin_final:     float | None = None,
-    expiry_str:       str   | None = None,
+    expiry_strs       = None,  # iterable of each leg's expiry_str, for display_code
 ) -> int:
     """Insert a new open trade header. Returns the new row id."""
     conn = get_connection()
-    display_code = _compute_display_code(conn, expiry_str)
+    display_code = _compute_display_code(conn, expiry_strs or [])
     cur = conn.execute("""
         INSERT INTO recommended_trades
             (trigger_name, symbol, parent_trade_id,
@@ -1665,8 +1685,7 @@ def roll_recommended_trade(
         )
 
         # --- open new, linked trade ---
-        new_expiry_str = in_legs[0].get("expiry_str") if in_legs else None
-        display_code = _compute_display_code(conn, new_expiry_str)
+        display_code = _compute_display_code(conn, [l.get("expiry_str") for l in in_legs])
         cur2 = conn.execute("""
             INSERT INTO recommended_trades
                 (trigger_name, symbol, parent_trade_id,

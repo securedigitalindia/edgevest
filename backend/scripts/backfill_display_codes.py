@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """
 One-time (safely re-runnable) backfill: assigns display_code ({MON}{YY}-{N},
-e.g. AUG26-1) to every recommended_trade that doesn't have one yet — needed
-for trades created before this field existed. New trades get it automatically
-at creation (open_recommended_trade / roll_recommended_trade in db/queries.py).
+e.g. AUG26-1, or EQ-{N} for a pure equity trade) to every recommended_trade
+that doesn't have one yet — needed for trades created before this field
+existed. New trades get it automatically at creation (open_recommended_trade
+/ roll_recommended_trade in db/queries.py).
 
-Processes trades oldest-first by entry_time, so the per-(month,year) numbering
+Processes trades oldest-first by entry_time, so the per-prefix numbering
 comes out in the same order those trades actually happened. Each trade's
-expiry is taken from its own legs (original entry legs if present, else
-whatever legs it has) — every trade row maps to exactly one expiry cycle by
-design, so this is unambiguous.
-
-Skips trades with no legs at all (nothing to derive an expiry from — will
-just keep display_code=NULL) or non-F&O legs with no expiry_str (e.g. a
-manual equity trade) — same as new trades, this is best-effort, nothing
-depends on display_code being set.
+prefix is the NEAREST expiry among ALL of its legs (a calendar spread's
+near/far legs aren't necessarily inserted in expiry order, so picking just
+one leg — e.g. "whichever comes first" — would be fragile) via
+db.queries.display_code_prefix(), or "EQ" if none of its legs have an expiry
+at all (a pure equity trade).
 
 Usage:
     cd backend && python scripts/backfill_display_codes.py            # dry run
@@ -27,17 +25,7 @@ import argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from db.init_db import get_connection  # noqa: E402
-from datetime import datetime  # noqa: E402
-
-
-def _prefix(expiry_str: str | None) -> str | None:
-    if not expiry_str:
-        return None
-    try:
-        dt = datetime.strptime(expiry_str, "%d %b %Y")
-    except ValueError:
-        return None
-    return dt.strftime("%b").upper() + dt.strftime("%y")
+from db.queries import display_code_prefix  # noqa: E402
 
 
 def main(apply: bool) -> None:
@@ -63,15 +51,13 @@ def main(apply: bool) -> None:
 
     assigned = 0
     for (trade_id,) in trades:
-        row = conn.execute(
-            "SELECT expiry_str FROM trade_legs WHERE trade_id = ? AND expiry_str IS NOT NULL "
-            "ORDER BY id LIMIT 1",
-            (trade_id,),
-        ).fetchone()
-        prefix = _prefix(row[0] if row else None)
-        if not prefix:
-            print(f"  trade_id={trade_id}: no usable expiry_str on its legs — skipped")
+        leg_rows = conn.execute(
+            "SELECT expiry_str FROM trade_legs WHERE trade_id = ?", (trade_id,)
+        ).fetchall()
+        if not leg_rows:
+            print(f"  trade_id={trade_id}: no legs at all — skipped")
             continue
+        prefix = display_code_prefix([r[0] for r in leg_rows])
 
         counters[prefix] = counters.get(prefix, 0) + 1
         code = f"{prefix}-{counters[prefix]}"
