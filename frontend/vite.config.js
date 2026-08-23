@@ -28,15 +28,20 @@ export default defineConfig(({ command }) => ({
         orientation: 'portrait',
         start_url: '/',
         icons: [
-          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
           {
-            urlPattern: /^\/api\//,
+            // Function form so this matches regardless of origin — VITE_API_URL
+            // is an absolute cross-origin URL in every real build (only the
+            // npm run dev proxy path is same-origin), so a path-only regex
+            // never matched a real deployed build before this fix.
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
             handler: 'NetworkFirst',
             options: { cacheName: 'api-cache', networkTimeoutSeconds: 5 },
           },

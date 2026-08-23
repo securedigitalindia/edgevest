@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { authUrl } from '../../api/client'
 import { useQuery } from '@tanstack/react-query'
 import useAuthStore from '../../store/authStore'
@@ -23,6 +23,37 @@ export default function SettingsDrawer({ open, onClose, initialTab }) {
   const [mobile, setMobile] = useState(user?.mobile || '')
   const toast = useToast()
 
+  const drawerRef    = useRef(null)
+  const closeBtnRef  = useRef(null)
+  const prevFocusRef = useRef(null)
+
+  // Escape-to-close + a lightweight focus trap while open, restoring focus
+  // to whatever triggered the drawer (e.g. the settings gear) on close.
+  useEffect(() => {
+    if (!open) return
+    prevFocusRef.current = document.activeElement
+    closeBtnRef.current?.focus()
+
+    function onKeyDown(e) {
+      if (e.key === 'Escape') { onClose(); return }
+      if (e.key !== 'Tab' || !drawerRef.current) return
+      const focusables = drawerRef.current.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+      if (!focusables.length) return
+      const first = focusables[0]
+      const last  = focusables[focusables.length - 1]
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      prevFocusRef.current?.focus?.()
+    }
+  }, [open, onClose])
+
   if (!user) return null
 
   async function saveProfile() {
@@ -34,10 +65,10 @@ export default function SettingsDrawer({ open, onClose, initialTab }) {
   return (
     <>
       <div className={`drawer-overlay${open?' open':''}`} onClick={onClose} />
-      <div className={`drawer${open?' open':''}`}>
+      <div className={`drawer${open?' open':''}`} ref={drawerRef} role="dialog" aria-modal="true" aria-label="Settings">
         <div className="drawer-header">
           <h2>Settings</h2>
-          <button className="drawer-close" onClick={onClose}>✕</button>
+          <button className="drawer-close" onClick={onClose} ref={closeBtnRef} aria-label="Close settings">✕</button>
         </div>
         <div className="drawer-body">
           <div className="stabs">

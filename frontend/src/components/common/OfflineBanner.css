@@ -1,0 +1,11 @@
+/* No extra safe-area padding here — body already has padding-top:
+   env(safe-area-inset-top) globally (index.css), and this banner sits in
+   normal document flow below that, not position:fixed to the viewport. */
+.offline-banner {
+  background: #78350f;
+  color: #fef3c7;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  padding: 6px 12px;
+}
