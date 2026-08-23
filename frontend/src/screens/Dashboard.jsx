@@ -302,7 +302,7 @@ function RecLegs({ rec, prices }) {
 
       {adjs.map((a, ai) => (
         <div key={a.id || ai}>
-          <div className="adj-connector">↓ Adjustment {ai + 1}</div>
+          <div className="adj-connector">↓ Adjustment {ai + 1}{a.ts ? ` · ${fmtIstShort(a.ts)}` : ''}</div>
           <LegGroup type="adj" note={a.note}
             legs={a.legs || []} symbol={rec.symbol} exitLegs={exitLegs} prices={prices} />
         </div>
@@ -542,7 +542,6 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
           <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',flex:1,minWidth:0}}>
             <span className="rec-symbol" style={{fontSize:15}}>{rec.note || rec.symbol}</span>
-            <span style={{fontSize:10,fontWeight:600,color:'var(--muted)'}}>{rec.display_code || `#${rec.id}`}</span>
             <span className={`badge badge-${rec.status === 'open' ? 'open' : 'exited'}`}>{rec.status === 'open' ? 'Live' : rec.status}</span>
             {rec.segment && <span className="rec-seg-tag">{rec.segment}</span>}
             {rec.adj_count > 0 && <span className="adj-badge">{rec.adj_count} adj</span>}
@@ -563,7 +562,9 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
             </span>
           </div>
         </div>
-        <div className="rec-ts">{rec.entry_ist}{rec.exit_ist ? ` · Closed ${rec.exit_ist}` : ''}</div>
+        <div className="rec-ts">
+          {rec.entry_ist}{rec.exit_ist ? ` · Closed ${rec.exit_ist}` : ''} · <span style={{fontWeight:700,color:'var(--blue)'}}>#{rec.display_code || rec.id}</span>
+        </div>
       </div>
 
       {/* Collapsible body */}
