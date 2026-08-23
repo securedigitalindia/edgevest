@@ -426,6 +426,7 @@ class Nifty500MultipleTrigger(BaseTrigger):
                         self.name, self.symbol, level, ltp, now_utc, exit_level,
                         margin_required=margin_required, margin_final=margin_final,
                         expiry_strs=[exp_str],
+                        note="NIFTY 500-Multi Short",
                     )
                     add_trade_legs(trade_id, [
                         {
@@ -571,6 +572,7 @@ class Nifty500MultipleTrigger(BaseTrigger):
             new_entry_ltp    = ltp,
             new_exit_level   = trade["exit_level"],
             in_legs          = [pr[1] for pr in pairs],
+            note             = trade.get("note"),
         )
         print(f"  [500-multi]  rolled trade {trade['id']} -> {new_trade_id}  "
               f"({len(pairs)} leg(s))", flush=True)

@@ -147,6 +147,7 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "") -> int:
         margin_required = margin_required,
         margin_final    = margin_final,
         expiry_strs     = [l.get("expiry_str") for l in resolved_legs],
+        note            = note,
     )
 
     # --- 5. Insert legs ---

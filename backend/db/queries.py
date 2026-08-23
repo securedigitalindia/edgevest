@@ -309,7 +309,7 @@ _TRADE_COLS = [
     "id", "trigger_name", "symbol", "parent_trade_id",
     "entry_level", "entry_ltp", "entry_time",
     "exit_level", "status", "exit_ltp", "exit_time",
-    "margin_required", "margin_final", "display_code",
+    "margin_required", "margin_final", "display_code", "note",
 ]
 _TRADE_SELECT = ", ".join(_TRADE_COLS)
 
@@ -386,6 +386,7 @@ def open_recommended_trade(
     margin_required:  float | None = None,
     margin_final:     float | None = None,
     expiry_strs       = None,  # iterable of each leg's expiry_str, for display_code
+    note:             str   | None = None,
 ) -> int:
     """Insert a new open trade header. Returns the new row id."""
     conn = get_connection()
@@ -394,11 +395,11 @@ def open_recommended_trade(
         INSERT INTO recommended_trades
             (trigger_name, symbol, parent_trade_id,
              entry_level, entry_ltp, entry_time, exit_level, status,
-             margin_required, margin_final, display_code)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)
+             margin_required, margin_final, display_code, note)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
     """, (trigger_name, symbol, parent_trade_id,
           entry_level, entry_ltp, entry_time, exit_level,
-          margin_required, margin_final, display_code))
+          margin_required, margin_final, display_code, note or None))
     row_id = cur.lastrowid
     conn.commit()
     conn.close()
@@ -1637,6 +1638,7 @@ def roll_recommended_trade(
     old_trade_id: int, exit_time: str, out_legs: list[dict],
     new_trigger_name: str, new_symbol: str, new_entry_level: float,
     new_entry_ltp: float, new_exit_level: float, in_legs: list[dict],
+    note: str | None = None,
 ) -> int:
     """
     Roll a trade forward: atomically close old_trade_id (exit legs = out_legs)
@@ -1689,10 +1691,10 @@ def roll_recommended_trade(
         cur2 = conn.execute("""
             INSERT INTO recommended_trades
                 (trigger_name, symbol, parent_trade_id,
-                 entry_level, entry_ltp, entry_time, exit_level, status, display_code)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)
+                 entry_level, entry_ltp, entry_time, exit_level, status, display_code, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
         """, (new_trigger_name, new_symbol, old_trade_id,
-              new_entry_level, new_entry_ltp, exit_time, new_exit_level, display_code))
+              new_entry_level, new_entry_ltp, exit_time, new_exit_level, display_code, note or None))
         new_trade_id = cur2.lastrowid
 
         for leg in in_legs:

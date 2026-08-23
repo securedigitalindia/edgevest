@@ -393,11 +393,12 @@ def init_db():
 
             margin_required  REAL,
             margin_final     REAL,
-            display_code     TEXT
+            display_code     TEXT,
+            note             TEXT
         )
     """)
 
-    # Add margin/display_code columns to existing DBs that pre-date this addition
+    # Add margin/display_code/note columns to existing DBs that pre-date this addition
     existing_cols = {row[1] for row in cur.execute(
         "SELECT * FROM pragma_table_info('recommended_trades')"
     )}
@@ -405,6 +406,7 @@ def init_db():
         ("margin_required", "ALTER TABLE recommended_trades ADD COLUMN margin_required REAL"),
         ("margin_final",    "ALTER TABLE recommended_trades ADD COLUMN margin_final    REAL"),
         ("display_code",    "ALTER TABLE recommended_trades ADD COLUMN display_code    TEXT"),
+        ("note",            "ALTER TABLE recommended_trades ADD COLUMN note            TEXT"),
     ]:
         if col not in existing_cols:
             cur.execute(ddl)

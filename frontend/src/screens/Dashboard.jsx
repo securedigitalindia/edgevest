@@ -302,7 +302,7 @@ function RecLegs({ rec, prices }) {
 
       {adjs.map((a, ai) => (
         <div key={a.id || ai}>
-          <div className="adj-connector">↓ Adjustment {ai + 1}{a.ts ? ` · ${fmtIstShort(a.ts)}` : ''}</div>
+          <div className="adj-connector">↓ Adjustment {ai + 1}{a.ts_ist ? ` · ${a.ts_ist}` : ''}</div>
           <LegGroup type="adj" note={a.note}
             legs={a.legs || []} symbol={rec.symbol} exitLegs={exitLegs} prices={prices} />
         </div>
@@ -1384,7 +1384,7 @@ const TYPE_COLOR  = { price_prediction:'#6366f1', mcq:'#8b5cf6', leaderboard:'#2
 
 function fmtIstShort(ts) {
   if (!ts) return ''
-  const d = new Date(ts.replace('Z','') + (ts.endsWith('Z') ? '' : 'Z'))
+  const d = new Date(ts.endsWith('Z') ? ts : ts + 'Z')
   return d.toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true })
 }
 

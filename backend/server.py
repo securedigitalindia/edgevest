@@ -477,6 +477,8 @@ def api_recommendations():
         original_legs = get_original_entry_legs(r["id"])
         current_legs  = get_current_legs(r["id"])
         adjustments   = get_trade_adjustments(r["id"])
+        for a in adjustments:
+            a["ts_ist"] = _ist_str(a["ts"]) if a.get("ts") else None
 
         exit_legs, realized_pnl = [], None
         if r["status"] == "exited":
@@ -506,6 +508,7 @@ def api_recommendations():
         out.append({
             "id":              r["id"],
             "display_code":    r.get("display_code"),
+            "note":            r.get("note"),
             "symbol":          r["symbol"],
             "trigger":         r["trigger_name"],
             "status":          r["status"],
