@@ -298,11 +298,17 @@ class Nifty500MultipleTrigger(BaseTrigger):
         entry_cfg = self._trades_cfg[0] if self._trades_cfg else None
         signals   = []
 
-        # --- Auto-adjust: expiry day + past auto-roll time ---
+        # --- Auto-roll: expiry day + past auto-roll time ---
+        # All legs due to roll today are collected first, then rolled together
+        # in one call — FUT and PE share the same expiry in this strategy, so
+        # both would otherwise be flagged in the same pass; rolling one leg at
+        # a time would have the second leg's roll operate on a trade the first
+        # leg's roll already closed.
         open_trades = get_all_open_recommended_trades(self.symbol)
         if self._past_auto_roll_time(now_ist):
             for trade in open_trades:
                 active_legs = get_current_legs(trade["id"])
+                legs_to_roll = []
                 for leg in active_legs:
                     if not leg.get("auto_adjust"):
                         continue
@@ -314,11 +320,13 @@ class Nifty500MultipleTrigger(BaseTrigger):
                     leg_expiry = datetime.strptime(leg["expiry_str"], "%d %b %Y").date()
                     if leg_expiry == now_ist.date():
                         self._adjusted_today.add(key)
-                        adj_sig = self._do_auto_adjustment(
-                            trade, leg, ltp, now_utc, entry_cfg
-                        )
-                        if adj_sig:
-                            signals.append(adj_sig)
+                        legs_to_roll.append(leg)
+                if legs_to_roll:
+                    roll_sig = self._do_auto_roll(
+                        trade, legs_to_roll, ltp, now_utc, entry_cfg
+                    )
+                    if roll_sig:
+                        signals.append(roll_sig)
             open_trades = get_all_open_recommended_trades(self.symbol)
 
         # --- Exit: LTP drops to/below exit_level ---
@@ -470,18 +478,12 @@ class Nifty500MultipleTrigger(BaseTrigger):
             print(f"  [500-multi]  price fetch failed: {e}", flush=True)
             return {}
 
-    def _do_auto_adjustment(self, trade: dict, expiring_leg: dict,
-                            ltp: float, now_utc: str,
-                            entry_cfg: dict | None) -> dict | None:
-        """
-        Auto-roll a single expiring leg to the next expiry.
-        Creates an 'auto_roll' adjustment on the SAME trade — no new trade row.
-        Only the flagged leg is touched; other legs in the trade are untouched.
-        """
+    def _leg_roll_pair(self, expiring_leg: dict, ltp: float,
+                       entry_cfg: dict | None) -> tuple[dict, dict] | None:
+        """Compute (out_leg, in_leg) for rolling one expiring leg to the next
+        expiry. Returns None if the new expiry isn't available yet."""
         from live.expiry import expiry_cache
         from live.fo_instruments import nifty_fut_ikey, nifty_pe_ikey, nifty_lot_size
-        from live.trade_suggestions import build_trade_suggestion
-        from db.queries import add_trade_adjustment
 
         itype       = expiring_leg["instrument_type"]
         old_ikey    = expiring_leg["instrument_key"]
@@ -494,24 +496,24 @@ class Nifty500MultipleTrigger(BaseTrigger):
 
         new_expiry = expiry_cache.pick(self.symbol, "monthly", 1)
         if not new_expiry:
-            print(f"  [500-multi]  auto-adjust: new expiry unavailable — skip {itype}", flush=True)
+            print(f"  [500-multi]  auto-roll: new expiry unavailable — skip {itype}", flush=True)
             return None
 
         new_exp_str  = new_expiry.strftime("%d %b %Y")
         new_lot_size = nifty_lot_size(new_expiry) or 0
 
         if itype == "FUT":
-            new_ikey      = nifty_fut_ikey(new_expiry)
-            new_strike    = None
+            new_ikey   = nifty_fut_ikey(new_expiry)
+            new_strike = None
         else:
-            min_dist      = ltp * (p.get("min_pe_distance_pct", 3) / 100)
-            step          = p.get("strike_step", 500)
-            new_strike    = int((ltp - min_dist) // step) * step
-            new_ikey      = nifty_pe_ikey(new_expiry, new_strike)
+            min_dist   = ltp * (p.get("min_pe_distance_pct", 3) / 100)
+            step       = p.get("strike_step", 500)
+            new_strike = int((ltp - min_dist) // step) * step
+            new_ikey   = nifty_pe_ikey(new_expiry, new_strike)
 
-        prices        = self._fetch_prices(old_ikey, new_ikey)
-        old_price     = prices.get(old_ikey)
-        new_price     = prices.get(new_ikey)
+        prices    = self._fetch_prices(old_ikey, new_ikey)
+        old_price = prices.get(old_ikey)
+        new_price = prices.get(new_ikey)
 
         out_leg = {
             "side": "BUY" if expiring_leg["side"] == "SELL" else "SELL",
@@ -526,38 +528,120 @@ class Nifty500MultipleTrigger(BaseTrigger):
             "lots":            lots, "lot_size": new_lot_size, "price": new_price,
             "auto_adjust":     True,
         }
+        return out_leg, in_leg
 
-        adj_id = add_trade_adjustment(
-            trade_id = trade["id"],
-            adj_type = "auto_roll",
-            note     = f"Auto-roll {itype} {old_exp_str} → {new_exp_str}",
-            ts       = now_utc,
-            legs     = [out_leg, in_leg],
+    def _do_auto_roll(self, trade: dict, expiring_legs: list[dict],
+                      ltp: float, now_utc: str, entry_cfg: dict | None) -> dict | None:
+        """
+        Roll every expiring leg of `trade` forward together: fully exits the
+        current trade and opens a new, linked (parent_trade_id) trade with
+        the rolled-forward legs — instead of an 'auto_roll' adjustment on the
+        same trade. Every trade is now always either fully open or fully
+        exited, so realized P&L from the roll is available immediately via
+        the normal exit path. Every account_trade pushed against this
+        recommendation is rolled the same way, so client positions stay in
+        sync without needing a manual re-push.
+        """
+        from db.queries import roll_recommended_trade
+        from live.trade_suggestions import build_trade_suggestion
+
+        pairs = []
+        for leg in expiring_legs:
+            pair = self._leg_roll_pair(leg, ltp, entry_cfg)
+            if pair is None:
+                continue
+            out_leg, in_leg = pair
+            if out_leg["price"] is None or in_leg["price"] is None:
+                print(f"  [500-multi]  auto-roll: price unavailable for "
+                      f"{leg['instrument_type']} {leg['instrument_key']} — skip", flush=True)
+                continue
+            pairs.append((out_leg, in_leg))
+
+        if not pairs:
+            return None
+
+        new_trade_id = roll_recommended_trade(
+            old_trade_id     = trade["id"],
+            exit_time        = now_utc,
+            out_legs         = [pr[0] for pr in pairs],
+            new_trigger_name = trade["trigger_name"],
+            new_symbol       = self.symbol,
+            new_entry_level  = trade["entry_level"],
+            new_entry_ltp    = ltp,
+            new_exit_level   = trade["exit_level"],
+            in_legs          = [pr[1] for pr in pairs],
         )
-        print(f"  [500-multi]  auto-adjusted trade {trade['id']} "
-              f"{itype} {old_exp_str} → {new_exp_str}  adj_id={adj_id}", flush=True)
+        print(f"  [500-multi]  rolled trade {trade['id']} -> {new_trade_id}  "
+              f"({len(pairs)} leg(s))", flush=True)
 
-        roll_trade = build_trade_suggestion({
-            "type": "nifty_500_auto_roll",
-            "params": {
-                **p,
-                "instrument_type": itype,
-                "old_expiry_str":  old_exp_str,
-                "new_expiry_str":  new_exp_str,
-                "old_strike":      old_strike,
-                "new_strike":      new_strike,
-                "old_price":       old_price,
-                "new_price":       new_price,
-                "lots":            lots,
-                "entry_level":     int(trade["entry_level"]),
-            },
-        }, ltp, self.symbol)
+        self._roll_linked_account_trades(trade["id"], new_trade_id, pairs, now_utc)
+
+        p = entry_cfg["params"] if entry_cfg else {}
+        roll_trades = []
+        for out_leg, in_leg in pairs:
+            rt = build_trade_suggestion({
+                "type": "nifty_500_auto_roll",
+                "params": {
+                    **p,
+                    "instrument_type": in_leg["instrument_type"],
+                    "old_expiry_str":  out_leg["expiry_str"],
+                    "new_expiry_str":  in_leg["expiry_str"],
+                    "old_strike":      out_leg["strike"],
+                    "new_strike":      in_leg["strike"],
+                    "old_price":       out_leg["price"],
+                    "new_price":       in_leg["price"],
+                    "lots":            in_leg["lots"],
+                    "entry_level":     int(trade["entry_level"]),
+                },
+            }, ltp, self.symbol)
+            if rt:
+                roll_trades.append(rt)
 
         return self._make_signal(
             ltp, ltp, "500-MULTI AUTO ROLL",
             int(trade["entry_level"]), int(trade["exit_level"]),
-            [roll_trade] if roll_trade else [],
+            roll_trades,
         )
+
+    def _roll_linked_account_trades(self, old_trade_id: int, new_trade_id: int,
+                                    pairs: list[tuple[dict, dict]], now_utc: str) -> None:
+        """Roll every account_trade pushed against old_trade_id the same way
+        the recommendation itself just rolled — matched by instrument_key,
+        using each account's own lot count (may differ from the
+        recommendation's, e.g. if the client averaged their own position)."""
+        from db.queries import (
+            get_open_account_trades, get_account_trade_legs,
+            mark_account_trade_closed, create_account_trade,
+        )
+
+        linked = [t for t in get_open_account_trades() if t["recommended_trade_id"] == old_trade_id]
+        for at in linked:
+            at_legs     = get_account_trade_legs(at["id"])
+            exited_keys = {l["instrument_key"] for l in at_legs if l["action"] == "exit"}
+            current     = [l for l in at_legs
+                           if l["action"] == "entry" and l["instrument_key"] not in exited_keys]
+
+            exit_legs, entry_legs = [], []
+            for out_leg, in_leg in pairs:
+                match = next((l for l in current if l["instrument_key"] == out_leg["instrument_key"]), None)
+                if not match:
+                    continue
+                exit_legs.append({
+                    **out_leg, "action": "exit", "lots": match["lots"], "lot_size": match["lot_size"],
+                })
+                entry_legs.append({
+                    **in_leg, "lots": match["lots"], "lot_size": match["lot_size"],
+                    "action": "entry", "ts": now_utc,
+                })
+
+            if not exit_legs:
+                continue
+            mark_account_trade_closed(at["id"], exit_legs, now_utc, note="Rolled forward")
+            create_account_trade(
+                at["account_id"], entry_legs, recommended_trade_id=new_trade_id,
+                note="Auto-rolled", entry_time=now_utc,
+            )
+            print(f"  [500-multi]  rolled account_trade {at['id']} (account {at['account_id']})", flush=True)
 
     def _make_signal(self, ltp: float, indicator_val: float, event: str,
                      entry_level: int, exit_level: int, trades: list) -> dict:

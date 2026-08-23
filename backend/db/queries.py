@@ -1312,17 +1312,22 @@ def mark_account_trade_closed(
 def get_current_legs(trade_id: int) -> list[dict]:
     """
     Return currently active legs by netting BUY vs SELL lots per instrument
-    across all action='entry' legs (original entry + adjustments).
+    across ALL legs for the trade — action='entry' (original entry + same-
+    side/opposite-side adjustments) and action='exit' alike.
 
     Adjustments use the same instrument_key with the opposite side to reduce
-    the position. Net zero = fully closed, excluded from result.
-    The first-seen leg supplies display metadata (entry price, expiry, etc.)
-    for the net position.
+    the position, whether that offsetting leg is tagged 'entry' (the older
+    convention — get_current_legs nets it out either way) or 'exit' (used for
+    a mid-trade close that's been explicitly recorded as one, e.g. a rolled-
+    away leg backfilled after the fact). Net zero = fully closed, excluded
+    from result. The first-seen leg supplies display metadata (entry price,
+    expiry, etc.) for the net position — always an 'entry' row in practice,
+    since entries are always inserted before the exit that closes them.
     """
     conn = get_connection()
     rows = conn.execute(
         f"SELECT {_LEG_SELECT} FROM trade_legs"
-        f" WHERE trade_id = ? AND action = 'entry' ORDER BY id",
+        f" WHERE trade_id = ? ORDER BY id",
         (trade_id,)
     ).fetchall()
     conn.close()
@@ -1580,6 +1585,90 @@ def close_recommended_trade(
     )
     conn.commit()
     conn.close()
+
+
+def roll_recommended_trade(
+    old_trade_id: int, exit_time: str, out_legs: list[dict],
+    new_trigger_name: str, new_symbol: str, new_entry_level: float,
+    new_entry_ltp: float, new_exit_level: float, in_legs: list[dict],
+) -> int:
+    """
+    Roll a trade forward: atomically close old_trade_id (exit legs = out_legs)
+    and open a new trade (parent_trade_id=old_trade_id) with in_legs as its
+    entry legs — one transaction, so there's never a moment where neither the
+    old nor the new trade satisfies (symbol, entry_level, status='open'), which
+    would let the entry-signal dedup check (get_open_recommended_trade) think
+    the level is free.
+
+    Replaces the old add_trade_adjustment(adj_type='auto_roll') approach: every
+    trade is now always either fully open or fully exited, so realized P&L
+    from a roll is available immediately via the normal exit path instead of
+    needing special handling for a partially-closed still-open trade.
+
+    new_entry_level/new_symbol should normally just be the same as the old
+    trade's, so get_open_recommended_trade() keeps recognizing the level as
+    occupied — the trigger's dedup logic doesn't care whether a trade is an
+    original or a rolled successor, only (symbol, entry_level, status).
+
+    Returns the new trade's id.
+    """
+    conn = get_connection()
+    try:
+        # --- close old trade ---
+        cur = conn.execute(
+            "INSERT INTO trade_adjustments (trade_id, adj_type, note, ts) VALUES (?, 'exit', 'Rolled forward', ?)",
+            (old_trade_id, exit_time),
+        )
+        adj_id = cur.lastrowid
+        for leg in out_legs:
+            conn.execute("""
+                INSERT INTO trade_legs
+                    (trade_id, action, side, instrument_type, instrument_key,
+                     strike, expiry_str, lots, lot_size, price, ts, adjustment_id)
+                VALUES (?, 'exit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                old_trade_id, leg["side"], leg["instrument_type"],
+                leg.get("instrument_key"), _float_or_none(leg.get("strike")),
+                leg.get("expiry_str"), leg.get("lots", 1), leg.get("lot_size", 0),
+                _float_or_none(leg.get("price")), exit_time, adj_id,
+            ))
+        exit_ltp = out_legs[0]["price"] if out_legs else None
+        conn.execute(
+            "UPDATE recommended_trades SET status='exited', exit_ltp=?, exit_time=? WHERE id=?",
+            (exit_ltp, exit_time, old_trade_id),
+        )
+
+        # --- open new, linked trade ---
+        cur2 = conn.execute("""
+            INSERT INTO recommended_trades
+                (trigger_name, symbol, parent_trade_id,
+                 entry_level, entry_ltp, entry_time, exit_level, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+        """, (new_trigger_name, new_symbol, old_trade_id,
+              new_entry_level, new_entry_ltp, exit_time, new_exit_level))
+        new_trade_id = cur2.lastrowid
+
+        for leg in in_legs:
+            conn.execute("""
+                INSERT INTO trade_legs
+                    (trade_id, action, side, instrument_type, instrument_key,
+                     strike, expiry_str, lots, lot_size, price, ts, auto_adjust)
+                VALUES (?, 'entry', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                new_trade_id, leg["side"], leg["instrument_type"],
+                leg.get("instrument_key"), _float_or_none(leg.get("strike")),
+                leg.get("expiry_str"), leg.get("lots", 1), leg.get("lot_size", 0),
+                _float_or_none(leg.get("price")), exit_time,
+                1 if leg.get("auto_adjust") else 0,
+            ))
+
+        conn.commit()
+        return new_trade_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _float_or_none(val):
