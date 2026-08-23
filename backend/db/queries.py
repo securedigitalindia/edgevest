@@ -309,7 +309,7 @@ _TRADE_COLS = [
     "id", "trigger_name", "symbol", "parent_trade_id",
     "entry_level", "entry_ltp", "entry_time",
     "exit_level", "status", "exit_ltp", "exit_time",
-    "margin_required", "margin_final",
+    "margin_required", "margin_final", "display_code",
 ]
 _TRADE_SELECT = ", ".join(_TRADE_COLS)
 
@@ -334,6 +334,30 @@ _LEG_COLS = [
 _LEG_SELECT = ", ".join(_LEG_COLS)
 
 
+def _compute_display_code(conn, expiry_str: str | None) -> str | None:
+    """
+    Human-friendly trade identifier: {MON}{YY}-{N} — e.g. AUG26-1, SEP26-2.
+    N increments per (month, year) across every trade ever assigned that
+    prefix, in creation order. expiry_str is expected in "%d %b %Y" form
+    (e.g. "25 Aug 2026"), matching how it's stored on trade_legs everywhere
+    else. Returns None if expiry_str is missing/unparseable — display_code
+    is best-effort, nothing depends on it being set.
+    """
+    if not expiry_str:
+        return None
+    from datetime import datetime
+    try:
+        dt = datetime.strptime(expiry_str, "%d %b %Y")
+    except ValueError:
+        return None
+    prefix = dt.strftime("%b").upper() + dt.strftime("%y")
+    count = conn.execute(
+        "SELECT COUNT(*) FROM recommended_trades WHERE display_code LIKE ?",
+        (f"{prefix}-%",),
+    ).fetchone()[0]
+    return f"{prefix}-{count + 1}"
+
+
 def open_recommended_trade(
     trigger_name: str, symbol: str,
     entry_level: float, entry_ltp: float, entry_time: str,
@@ -341,18 +365,20 @@ def open_recommended_trade(
     parent_trade_id:  int   | None = None,
     margin_required:  float | None = None,
     margin_final:     float | None = None,
+    expiry_str:       str   | None = None,
 ) -> int:
     """Insert a new open trade header. Returns the new row id."""
     conn = get_connection()
+    display_code = _compute_display_code(conn, expiry_str)
     cur = conn.execute("""
         INSERT INTO recommended_trades
             (trigger_name, symbol, parent_trade_id,
              entry_level, entry_ltp, entry_time, exit_level, status,
-             margin_required, margin_final)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+             margin_required, margin_final, display_code)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)
     """, (trigger_name, symbol, parent_trade_id,
           entry_level, entry_ltp, entry_time, exit_level,
-          margin_required, margin_final))
+          margin_required, margin_final, display_code))
     row_id = cur.lastrowid
     conn.commit()
     conn.close()
@@ -1639,13 +1665,15 @@ def roll_recommended_trade(
         )
 
         # --- open new, linked trade ---
+        new_expiry_str = in_legs[0].get("expiry_str") if in_legs else None
+        display_code = _compute_display_code(conn, new_expiry_str)
         cur2 = conn.execute("""
             INSERT INTO recommended_trades
                 (trigger_name, symbol, parent_trade_id,
-                 entry_level, entry_ltp, entry_time, exit_level, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+                 entry_level, entry_ltp, entry_time, exit_level, status, display_code)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)
         """, (new_trigger_name, new_symbol, old_trade_id,
-              new_entry_level, new_entry_ltp, exit_time, new_exit_level))
+              new_entry_level, new_entry_ltp, exit_time, new_exit_level, display_code))
         new_trade_id = cur2.lastrowid
 
         for leg in in_legs:

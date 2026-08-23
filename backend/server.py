@@ -505,6 +505,7 @@ def api_recommendations():
 
         out.append({
             "id":              r["id"],
+            "display_code":    r.get("display_code"),
             "symbol":          r["symbol"],
             "trigger":         r["trigger_name"],
             "status":          r["status"],

@@ -137,6 +137,7 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "") -> int:
         print(f"  [manual_trade]  margin fetch failed: {e}", flush=True)
 
     # --- 4. Insert trade header ---
+    expiry_str = next((l.get("expiry_str") for l in resolved_legs if l.get("expiry_str")), None)
     trade_id = open_recommended_trade(
         trigger_name    = "MANUAL",
         symbol          = symbol,
@@ -146,6 +147,7 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "") -> int:
         exit_level      = 0,
         margin_required = margin_required,
         margin_final    = margin_final,
+        expiry_str      = expiry_str,
     )
 
     # --- 5. Insert legs ---
