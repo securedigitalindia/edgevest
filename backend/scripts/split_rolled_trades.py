@@ -85,7 +85,18 @@ def split_trade(conn, trade_id: int, apply: bool):
     new_trade_id = cur.lastrowid
 
     for l in live_legs:
-        conn.execute("UPDATE trade_legs SET trade_id = ? WHERE id = ?", (new_trade_id, l["id"]))
+        # adjustment_id=NULL — from the new trade's perspective this is its
+        # own original entry leg, not an adjustment. Leaving the old
+        # adjustment_id in place would point at a trade_adjustments row
+        # belonging to the OLD trade_id, which breaks both
+        # get_original_entry_legs() (requires adjustment_id IS NULL to count
+        # as an original leg) and get_trade_adjustments() (looks up by this
+        # trade's own id) — silently leaving the new trade's legs invisible
+        # everywhere except get_current_legs().
+        conn.execute(
+            "UPDATE trade_legs SET trade_id = ?, adjustment_id = NULL WHERE id = ?",
+            (new_trade_id, l["id"]),
+        )
 
     print(f"    -> new trade id={new_trade_id}")
     return new_trade_id
