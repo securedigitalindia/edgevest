@@ -10,6 +10,17 @@ edgevest/
 
 Each sub-folder has its own `CLAUDE.md` with detailed context. Read the relevant one before making changes.
 
+## Docs
+
+Whole-system reference docs, kept up to date with the actual codebase (not aspirational):
+
+- `docs/PRD.md` — product summary, user roles, core features, non-goals.
+- `docs/apis.md` — every Flask route: method, path, auth requirement, request/response shape.
+- `docs/architecture.md` — system design, backend/frontend split, environments & deployment, auth flow.
+- `docs/schema.md` — every SQLite table: columns, indexes, relationships.
+
+`docs/prd/*.md` is a separate folder for **feature-specific** PRDs (design docs written before/alongside one nontrivial feature) — check there for design context (schema decisions, non-goals, open questions) before building analysis or extensions on top of an existing feature. Don't confuse it with `docs/PRD.md` above, which is the whole-product doc.
+
 ## High-Level Architecture
 
 - **Backend** (`backend/server.py`) — Flask REST API on port 5555. Google OAuth login, session cookies. Serves `/api/*`, `/auth/*`, `/logout`.
