@@ -59,7 +59,7 @@ export default function ProfileHub() {
       )}
 
       <div className="phub-section">
-        <a href={authUrl('/logout')} className="phub-signout">Sign out</a>
+        <button className="phub-signout" onClick={() => window.location.replace(authUrl('/logout'))}>Sign out</button>
       </div>
 
       <div className="phub-version">EdgeVest v{__APP_VERSION__}</div>

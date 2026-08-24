@@ -41,14 +41,14 @@ export default function MainNav({ subscribed }) {
           <span className="nav-brand-name">EdgeVest</span>
         </div>
         <div className="nav-tabs">
-          <button className={`main-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard')}>Dashboard</button>
-          <button className={`main-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions')}>Positions</button>
-          <button className={`main-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games')}>Games</button>
-          <button className={`main-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile')}>Profile</button>
+          <button className={`main-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard', {replace:true})}>Dashboard</button>
+          <button className={`main-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions', {replace:true})}>Positions</button>
+          <button className={`main-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games', {replace:true})}>Games</button>
+          <button className={`main-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile', {replace:true})}>Profile</button>
         </div>
         <div className="nav-right">
           {isClient && (
-            <div className="nav-credits-pill" onClick={() => navigate('/games')} title="Your credits">
+            <div className="nav-credits-pill" onClick={() => navigate('/games', {replace:true})} title="Your credits">
               💎 <span>{credits?.balance ?? '—'}</span>
             </div>
           )}
@@ -67,11 +67,11 @@ export default function MainNav({ subscribed }) {
                   <span className={`role-chip role-chip-${user.role}`}>{user.role.replace('_',' ').toUpperCase()}</span>
                 </div>
                 {isClient && <div className="prof-menu-credits">💎 {credits?.balance ?? '—'} credits</div>}
-                <div className="prof-menu-item" style={{cursor:'pointer'}} onClick={() => { setMenuOpen(false); navigate('/profile') }}>Profile</div>
+                <div className="prof-menu-item" style={{cursor:'pointer'}} onClick={() => { setMenuOpen(false); navigate('/profile', {replace:true}) }}>Profile</div>
                 <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
                 <div style={{padding:'6px 14px',fontSize:10,color:'#475569',letterSpacing:.3}}>EdgeVest v{__APP_VERSION__}</div>
                 <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
-                <a href={authUrl('/logout')} className="prof-menu-item">Sign out</a>
+                <button className="prof-menu-item" onClick={() => window.location.replace(authUrl('/logout'))}>Sign out</button>
               </div>
             )}
           </div>
@@ -80,19 +80,19 @@ export default function MainNav({ subscribed }) {
 
       {/* Bottom tab bar — mobile only */}
       <div className="bottom-nav">
-        <button className={`bottom-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard')}>
+        <button className={`bottom-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard', {replace:true})}>
           <span className="bottom-nav-tab-icon">📊</span>
           Dashboard
         </button>
-        <button className={`bottom-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions')}>
+        <button className={`bottom-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions', {replace:true})}>
           <span className="bottom-nav-tab-icon">💼</span>
           Positions
         </button>
-        <button className={`bottom-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games')}>
+        <button className={`bottom-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games', {replace:true})}>
           <span className="bottom-nav-tab-icon">🎮</span>
           Games
         </button>
-        <button className={`bottom-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile')}>
+        <button className={`bottom-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile', {replace:true})}>
           <span className="bottom-nav-tab-icon">👤</span>
           Profile
         </button>
