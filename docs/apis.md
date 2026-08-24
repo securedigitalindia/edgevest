@@ -96,12 +96,12 @@ Re-verifies the session's user still exists in the DB (handles a deleted account
 
 | Method | Path | Auth | Body | Notes |
 |---|---|---|---|---|
-| GET | `/api/account-trades` | `require_login` | `?account_id=` optional | Clients see only their own (non-game) accounts' open trades; admins see all. Each row includes pending adjustments/exit awaiting the client's action. |
+| GET | `/api/account-trades` | `require_login` | `?account_id=` optional | Clients see only their own (non-game) accounts' open trades; admins see all. Each row includes pending adjustments/exit awaiting the client's action, plus a computed `segment` (F&O/ETF/Commodities/Equity, via the same `_compute_segment()` helper `/api/recommendations` uses — added so Positions' trade cards can show the same segment tag `RecItem` does). |
 | POST | `/api/account-trades/create` | `require_login`, non-admin only, must own `account_id` | `{ recommended_trade_id?, account_id, symbol, legs, note }` | Delegates to `live.manual_trade.push_to_account()`. |
 | POST | `/api/account-trades/<id>/adjust` | `require_login`, client must own the underlying account | `{ adjustment_id, adj_type, legs }` | Recalculates margin best-effort. |
 | POST | `/api/account-trades/<id>/exit` | `require_login`, non-admin, must own | `{ prices: [...], note }` | Delegates to `live.manual_trade.close_account_trade()`. |
 | POST | `/api/account-trades/<id>/delete` | `require_login`, non-admin, must own | — | |
-| GET | `/api/account-trades/history` | `require_login` | `?account_id=` optional | Closed trades, same ownership scoping as the open-trades list. |
+| GET | `/api/account-trades/history` | `require_login` | `?account_id=` optional | Closed trades, same ownership scoping as the open-trades list; also includes `segment`. |
 
 ## Games (paper-trading contests — price prediction / MCQ / leaderboard types)
 

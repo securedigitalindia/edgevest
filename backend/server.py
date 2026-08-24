@@ -140,6 +140,20 @@ def _ist_str(utc_str: str) -> str:
         return utc_str
 
 
+def _compute_segment(legs: list) -> str:
+    """F&O / ETF / Commodities / Equity, derived from a set of legs'
+    instrument_type. Shared by /api/recommendations and /api/account-trades*
+    so a trade card's segment tag means the same thing everywhere it appears."""
+    leg_types = {l.get("instrument_type", "") for l in legs}
+    if leg_types & {"CE", "PE", "FUT"}:
+        return "F&O"
+    if "ETF" in leg_types:
+        return "ETF"
+    if leg_types & {"COMMODITY", "MCX"}:
+        return "Commodities"
+    return "Equity"
+
+
 # ─────────────────────────────────────────────────────────
 # Session refresh — keeps role always current
 # ─────────────────────────────────────────────────────────
@@ -524,15 +538,7 @@ def api_recommendations():
                         has_pnl = True
                 realized_pnl = total if has_pnl else None
 
-        all_leg_types = {l.get("instrument_type", "") for l in (original_legs + current_legs)}
-        if all_leg_types & {"CE", "PE", "FUT"}:
-            segment = "F&O"
-        elif "ETF" in all_leg_types:
-            segment = "ETF"
-        elif all_leg_types & {"COMMODITY", "MCX"}:
-            segment = "Commodities"
-        else:
-            segment = "Equity"
+        segment = _compute_segment(original_legs + current_legs)
 
         out.append({
             "id":              r["id"],
@@ -684,6 +690,7 @@ def api_account_trades():
         applied_adjs  = get_applied_account_adjustments(t["id"])
         pending_adjs  = get_pending_adjustments_for_account_trade(t["id"])
         pending_exit  = get_pending_exit_for_account_trade(t["id"])
+        segment       = _compute_segment(original_legs + current_legs)
         out.append({
             "id":                  t["id"],
             "symbol":              t["symbol"] or "—",
@@ -691,6 +698,7 @@ def api_account_trades():
             "rec_id":              t["recommended_trade_id"],
             "account_id":          t["account_id"],
             "account_label":       t["account_label"] or t["broker_name"] or f"Account {t['account_id']}",
+            "segment":             segment,
             "trader_name":         t["trader_name"],
             "broker_name":         t["broker_name"],
             "entry_ist":           _ist_str(t["entry_time"]),
@@ -861,6 +869,7 @@ def api_account_trades_history():
             "account_label": t["account_label"] or t["broker_name"] or f"Account {t['account_id']}",
             "trader_name":   t["trader_name"],
             "broker_name":   t["broker_name"],
+            "segment":       _compute_segment(t["entry_legs"]),
             "entry_ist":     _ist_str(t["entry_time"]),
             "exit_ist":      _ist_str(t["exit_time"]) if t.get("exit_time") else "—",
             "entry_legs":    t["entry_legs"],
