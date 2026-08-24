@@ -230,7 +230,31 @@ One row per subscription period a user has held (historical — not just the cur
 | `created_at` | TEXT NOT NULL | |
 
 - **Index**: `idx_subscriptions_user` on `(user_id, status)`.
-- `activate_subscription()` expires any existing active subscription for the user before inserting the new one — only one `status='active'` row per user by convention (not DB-enforced).
+- `activate_subscription()` expires any existing active subscription for the user before inserting the new one — only one `status='active'` row per user by convention (not DB-enforced), across **all** plans, not one-per-plan.
+
+### `payment_orders`
+
+One row per Razorpay order — created for every paid-plan checkout attempt, whether or not it's ever completed. See `docs/prd/razorpay-subscription-billing.md` for the full feature writeup.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | |
+| `user_id` | INTEGER NOT NULL REFERENCES `users(id)` | |
+| `plan_id` | INTEGER NOT NULL REFERENCES `subscription_plans(id)` | |
+| `razorpay_order_id` | TEXT NOT NULL UNIQUE | Razorpay's own order id. The `UNIQUE` constraint, combined with the `status='created'` re-check inside `activate_subscription_from_payment()`, is what makes both `verify-payment` and the reconciliation cron idempotent against replays. |
+| `razorpay_payment_id` | TEXT | Nullable until paid |
+| `amount` | INTEGER NOT NULL | **Rupees, not paise** — same unit as `subscription_plans.price` / `subscriptions.amount_paid`. Only multiplied by 100 at the single point the Razorpay API requires paise (`create-order`). |
+| `currency` | TEXT NOT NULL DEFAULT `'INR'` | Hardcoded `"INR"` throughout — no multi-currency support |
+| `status` | TEXT NOT NULL DEFAULT `'created'` | `created` → `paid` (verified/activated) or → `duplicate_refunded` (added via migration, `7c1b695` — reconciled as a genuine duplicate and auto-refunded). No `failed`/`cancelled` status is ever written — an abandoned checkout just stays at `created` until the reconciliation cron next processes it. |
+| `created_at` / `updated_at` | TEXT | `updated_at` nullable |
+| `duplicate_of_order_id` | TEXT | Added via migration (`7c1b695`), nullable. The *other* order's `razorpay_order_id` that actually activated the still-covering subscription — best-effort, `None` if that subscription didn't originate from a traceable `payment_orders` row (e.g. gem redemption). Reconciliation-only. |
+| `refund_id` | TEXT | Added via migration (`7c1b695`), nullable. Razorpay's refund id, set only on `duplicate_refunded` rows. |
+| `refunded_at` | TEXT | Added via migration (`7c1b695`), nullable. |
+| `reconciled_at` | TEXT | Added via migration (`7c1b695`), nullable. Stamped on **every** order the reconciliation cron examines, paid-and-covered or not — audit trail of "we checked this," separate from whether it resulted in activation or refund. |
+
+- **Index**: `idx_payment_orders_user` on `(user_id)`.
+- No retention/cleanup job — kept indefinitely, same posture as `subscriptions` (financial/audit records, not a rolling buffer).
+- The reconciliation dedup check (`get_covering_subscription_order()`) reads `subscriptions.end_date` directly rather than `subscriptions.status`, specifically to avoid depending on `expire_stale_subscriptions()` having run recently — see `subscriptions` row above and the PRD's Mechanics section for why.
 
 ---
 

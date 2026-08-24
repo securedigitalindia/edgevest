@@ -53,6 +53,16 @@ The Flask API and the poller are **never the same process** and are deployed as 
 - **`alert.py` / `briefing.py`** — Telegram dispatch (per-signal alerts, morning/EOD briefs).
 - **`holidays.py`** — BSE/NSE trading-day calendar via `exchange-calendars`.
 
+### Payments (`backend/payments/`)
+
+The only modular package in the backend — every other feature area is flat (`server.py` for routes, `db/queries.py` for all SQL). Handles Razorpay Standard Checkout for paid subscription plans: order creation, signature verification/activation, and a pull-based reconciliation cron. SQL still stays centralized in `db/queries.py`, matching the rest of the codebase — this package holds routes, business-logic orchestration, and the Razorpay SDK wrapper, nothing else.
+
+Registered as a **Blueprint factory**, not a module-level `Blueprint`: `create_payments_blueprint(require_login, require_role, current_user)` takes those three as arguments because they're defined in `server.py` itself, and importing them at `payments/routes.py`'s module-load time would be a circular import. `server.py` passes its own already-defined versions in at registration (`app.register_blueprint(create_payments_blueprint(...))`); `payments/` never imports from `server.py`.
+
+`POST /api/payments/reconcile` is the one route in this codebase that doesn't use session-cookie auth at all — it's called by an external cron (no browser, no session), so it checks a static shared-secret header (`X-Cron-Secret`) instead. See `docs/apis.md`'s Payments section and `docs/prd/razorpay-subscription-billing.md` for the full request/response shapes and the reasoning behind that decision (a service-account/session-based alternative was considered and rejected as equivalent trust with more machinery).
+
+Full mechanics, schema, and decision history: `docs/prd/razorpay-subscription-billing.md`.
+
 ## 3. Frontend architecture
 
 React 18 SPA, Vite + `vite-plugin-pwa` (auto service worker, `NetworkFirst` for `/api/*` with a 5s timeout fallback to cache). No CSS framework — colocated `.css` files.
@@ -103,3 +113,5 @@ Session cookie config (`server.py:34-38`) varies by `_PROD` flag (see §4's tabl
 - **PNA blocks `dev.edgevest.in`'s direct backend calls** — see §4; this is a browser platform restriction, not fixable via CORS/backend config, only by adding real TLS to the loopback-exposed backend.
 - **Price polling was consolidated this session** — `TickerStrip`, `Dashboard` (twice), and `GameDetail` (twice) each used to run independent `/api/prices` polls. Now all funnel through one shared TanStack Query in `hooks/usePrices.js`, keyed by the *union* of every mounted consumer's needed instrument keys (tracked in the new `store/priceKeysStore.js` Zustand store, updated via `useEffect` per consumer). `useRecPrices` in `hooks/useTrades.js` is now just an alias for `useTrackedPrices`, kept for call-site compatibility. Backend's `POST /api/prices` always returns `_spot` regardless of the `keys` payload, which is what makes the union-based single-query approach work — one request satisfies both the global ticker and any screen-specific instrument prices.
 - **Prod backend has a hardcoded fallback secret in `config.py`** (`UPSTOX_ACCESS_TOKEN` default value, `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` are always hardcoded, not env-driven) — pre-existing, not touched this session, worth flagging for anyone doing a security pass.
+- **The payments reconciliation cron (`POST /api/payments/reconcile`) has no scheduler wired up yet** — the endpoint exists and works, but no crontab entry, systemd timer, or other scheduled caller was found anywhere in this repo as of 2026-08-24. Confirm whether it's configured directly on the EC2 box outside version control before assuming reconciliation is actually running in prod.
+- **Reconcile has no guard against concurrent self-overlap** — if two invocations of `POST /api/payments/reconcile` ever ran at the same time, two genuinely-duplicate stale orders for the same user+plan could both pass the "is this already covered?" check before either commits its subscription activation, resulting in both being activated instead of one activated and one refunded. No locking exists against this; it's a scheduling-discipline requirement (don't let the cron interval be shorter than a single run can take) rather than something enforced in code. See `docs/prd/razorpay-subscription-billing.md` Open questions.

@@ -12,6 +12,8 @@ Three decorators gate access, all defined at the top of `server.py`:
 - **`@require_role(*roles)`** — like `require_login`, plus 403 if `user["role"]` isn't in the allowed set. Roles seen in the code: `super_admin`, `admin`, `client`.
 - **`@require_subscription`** — defined but not applied to any route in the current file; would 402 client-role users without an active subscription.
 
+A fourth, unrelated auth mechanism exists for exactly one route: `POST /api/payments/reconcile` (see Payments section below) checks a static shared-secret header (`X-Cron-Secret`) instead of a session, since it's called by a cron job with no browser/session to authenticate with. It does not use any of the three decorators above.
+
 `is_admin()` = role in `{super_admin, admin}`. `is_super_admin()` = role `== super_admin`.
 
 `@app.before_request` (`refresh_session`) re-fetches the user's DB row at most once every 60 seconds per session, so role/active-flag changes propagate without forcing re-login — skipped for `login`, `auth_google`, `auth_callback`, `logout`, `static`, `api_prices`, `api_spot`.
@@ -136,8 +138,20 @@ Re-verifies the session's user still exists in the DB (handles a deleted account
 
 | Method | Path | Auth | Body | Notes |
 |---|---|---|---|---|
-| POST | `/api/subscribe` | `require_login` | `{ plan_id }` | Only free plans (`price == 0`) work today — paid returns `402 Payment not yet supported`. |
+| POST | `/api/subscribe` | `require_login` | `{ plan_id }` | Only free plans (`price == 0`) — paid plans return `402 Payment not yet supported` here specifically; use `/api/billing/create-order` + `/api/billing/verify-payment` (below) for paid plans instead. |
 | POST | `/api/subscribe-with-credits` | `require_login` | `{ plan_id }` | Delegates to `subscribe_with_credits()`; response status is 200 if `result["ok"]` else 400. |
+| GET | `/api/my-subscription` | `require_login` | — | `{ current: {...}|null, history: [...] }`. `current` = `get_user_subscription(uid)`; `history` = `get_subscription_history(uid, limit=20)`, newest first, joined to the plan's *current* name/gem_cost. Scoped to the caller only. |
+
+## Payments (Razorpay Standard Checkout)
+
+Lives in its own package, `backend/payments/` (Flask Blueprint, registered via a factory in `server.py` — see `docs/architecture.md` §2). Handles real-money payment for priced subscription plans; free/gem-redeemed plans go through the routes above instead, untouched by this feature.
+
+| Method | Path | Auth | Body | Response / Notes |
+|---|---|---|---|---|
+| POST | `/api/billing/create-order` | `require_login` | `{ plan_id }` | 500 if Razorpay keys unset for this env. 400 if `plan_id` invalid/inactive, plan has no price, or resulting paise amount `< 100` (Razorpay's minimum). Reuses a still-`created`, non-stale (<30 min) pending order for this user+plan instead of always minting a new Razorpay order, so a retry after a stalled checkout doesn't create a duplicate. On success: `{ ok, order_id, amount, currency, key_id, plan_name }` — `key_id` is Razorpay's *public* key, safe to return to the client; `amount` is paise. **Known minor issue**: when reusing a pending order, `amount` is recomputed from the plan's *current* price rather than the order's original amount — could briefly mismatch if the price changed mid-retry-window (cosmetic; the real charge is bound server-side to the Razorpay order, unaffected). |
+| POST | `/api/billing/verify-payment` | `require_login` | `{ razorpay_order_id, razorpay_payment_id, razorpay_signature }` | 500 if Razorpay keys unset. 400 if any field missing, if `razorpay_client.utility.verify_payment_signature` raises (bad/forged signature — never proceeds past this), or if the order doesn't belong to the caller (`order["user_id"] != current_user()["id"]`, anti-hijack check, returned as generic "Order not found" so as not to leak whether the order exists for someone else). On success, activates the subscription atomically and idempotently (`activate_subscription_from_payment` — a replayed call with the same `razorpay_order_id` returns `{"ok": false, "error": "Order not found or already processed"}` rather than double-activating). |
+| POST | `/api/payments/reconcile` | **`X-Cron-Secret` header** (shared secret via `hmac.compare_digest` against `PAYMENTS_CRON_SECRET` env var) — **not** `require_login`/`require_role` | — | Cron-only pull-based reconciliation for orders never synced via `verify-payment` (browser closed before the callback fired, network drop, etc.). For every `payment_orders` row still `status='created'` and older than a 10-minute grace period: asks Razorpay directly whether it was actually paid, then either late-activates it (if this plan isn't already covered by an unexpired subscription for this user) or auto-refunds it as a duplicate (if it is) — no human-in-the-loop step on the refund. See `docs/prd/razorpay-subscription-billing.md` for the full dedup-logic writeup and known risks (concurrent-invocation race; no scheduler currently configured to call this endpoint). Response: `{ ok, synced: [...], duplicate_refunded: [...], still_pending: [...], errors: [...] }`. |
+| GET | `/api/payments/flagged` | `require_role(super_admin, admin)` | — | `{ ok, orders: [...] }` — every `payment_orders` row with `status='duplicate_refunded'`, joined to user email and plan name, for admin audit. |
 
 ## Profile (trading-preferences onboarding)
 

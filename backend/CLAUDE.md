@@ -99,6 +99,17 @@ Startup      holiday check → expiry cache refresh → load triggers → mornin
 
 **`live/briefing.py`** — `send_morning_brief(trigger_count)` and `send_eod_brief(alerts)` Telegram messages. Morning brief includes a rotating market quote and tomorrow's trading status. EOD brief summarises alerts fired that day.
 
+## Payments (`backend/payments/`)
+
+Razorpay Standard Checkout for paid subscription plans — the one modular package in the backend (everywhere else is flat: `server.py` for routes, `db/queries.py` for all SQL). Registered into `server.py` as a Blueprint via a factory (`create_payments_blueprint`), not a module-level `Blueprint`, since `require_login`/`require_role`/`current_user` live in `server.py` and importing them at this package's module-load time would be circular — `server.py` passes them in at registration instead.
+
+- `routes.py` — four routes: `POST /api/billing/create-order`, `POST /api/billing/verify-payment` (session auth), `POST /api/payments/reconcile` (cron-only, shared-secret `X-Cron-Secret` header instead of a session), `GET /api/payments/flagged` (admin).
+- `service.py` — orchestration (`get_or_create_order`, `verify_and_activate`, `reconcile_pending_orders`); no Flask/HTTP concerns.
+- `razorpay_client.py` — the only file that calls the `razorpay` SDK directly.
+- SQL stays in `db/queries.py` per the project-wide convention — this package never touches SQL itself.
+
+Unrelated to Drishti/the poller — this is billing for the client-facing product, sharing only the same Flask process and SQLite file. Full mechanics, schema, and decision history (including why `/api/payments/reconcile` uses a shared secret instead of a service account, and the renewal-vs-duplicate-payment dedup logic): `docs/prd/razorpay-subscription-billing.md`. Route/response shapes: `docs/apis.md`. Table schema: `docs/schema.md`.
+
 ## Key Conventions
 
 - Symbols stored as `name` field (e.g. `"RELIANCE"`); Upstox instrument key resolved via `UPSTOX_INSTRUMENT_KEYS[name]`.

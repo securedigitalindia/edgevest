@@ -1,6 +1,6 @@
 # Razorpay Subscription Billing + "My Plan" Client Tab
 
-**Status: Shipped** (`dev` branch, commits `f98b890`, `cf69014`, `b5d3510`)
+**Status: Shipped** (`dev` branch, commits `f98b890`, `cf69014`, `b5d3510`, `7c1b695`; reconciliation dup-detection logic refined 2026-08-24, undocumented commit at time of writing)
 
 ## Problem
 
@@ -18,7 +18,7 @@ A client on `NoSubscriptionGate` can pay for a priced plan with a real card/UPI/
 
 - Recurring/auto-debit subscriptions (Razorpay Subscriptions API, mandates, UPI Autopay) — this is one-time Standard Checkout per purchase; renewal is still a manual re-purchase.
 - Refunds, cancellations, or partial-period proration — not built; a `subscriptions` row, once activated, has no cancellation path other than a new subscription superseding it (`status='expired'` set on the prior active row, see Mechanics).
-- Webhooks — verification is entirely client-round-trip (`verify-payment` called from the browser after `handler` fires); no server-to-server Razorpay webhook listener exists, so a payment that completes but whose browser tab is killed before `verify-payment` fires will show as `payment_orders.status='created'` forever with no automatic reconciliation.
+- Webhooks — no server-to-server Razorpay webhook listener exists. **Partially mitigated as of `7c1b695`**: a pull-based reconciliation cron (`POST /api/payments/reconcile`, see Mechanics) now polls Razorpay directly for any order left at `status='created'` past a grace period, so a payment that completes but whose browser tab dies before `verify-payment` fires is no longer stuck forever — it's just delayed until the next cron run, and only if a cron is actually scheduled to call it (see Open questions — no crontab/systemd timer exists in this repo as of this writing).
 - Multi-currency — `currency` is hardcoded `"INR"` in both the `payment_orders` row and the Razorpay order payload.
 - Invoicing / GST line items — not built.
 - A dedicated frontend `VITE_RAZORPAY_KEY_ID` env var — deliberately not added (see Design decisions).
@@ -83,14 +83,49 @@ function paymentLabel(s) {
 
 `useVerifyPayment` (in `frontend/src/hooks/useBilling.js`) invalidates both `['me']` and `['my-subscription']` on success, so if this tab is later wired to avoid the full-page reload used by `NoSubscriptionGate` today, it already reflects a fresh payment without one.
 
+### Reconciliation cron (`7c1b695`, dedup logic refined 2026-08-24)
+
+Problem: `verify-payment` only syncs a payment when the browser successfully calls back after checkout completes. If that call never arrives (tab closed right after paying, network drop) but the payment genuinely completed on Razorpay's side, the order sits at `payment_orders.status='created'` forever and the user never gets their subscription despite paying. If they then retry and pay again, nothing reconciles the resulting duplicate.
+
+`POST /api/payments/reconcile` (`backend/payments/routes.py`, `service.reconcile_pending_orders()`) is a pull-based fix, run by an external cron (not a Flask-scheduled job — this repo has no background scheduler, so something outside the app, e.g. system cron or a scheduled task on the EC2 box, must call this endpoint periodically):
+
+1. `get_stale_pending_orders(grace_minutes=10)` — every `payment_orders` row still `status='created'` and older than the grace period.
+2. For each, `razorpay_client.fetch_order_payments(razorpay_order_id)` — asks Razorpay directly what actually happened to that order, independent of whether the browser ever called back.
+3. `mark_order_reconciled(order_id)` — timestamp the check regardless of outcome (audit trail of "we looked").
+4. If no `captured` payment exists → still genuinely unpaid, left alone (`status='created'`), reported as `still_pending`.
+5. If a `captured` payment exists → branches on whether this plan is a **genuine duplicate** or a **legitimate purchase/renewal** (see next section). Duplicate → auto-refund via Razorpay's refund API, no human-in-the-loop step (confirmed decision — see Non-goals for what's still manual: partial refunds, cancellations). Not a duplicate → `activate_subscription_from_payment(...)` (the same atomic/idempotent function `verify-payment` uses), late-activating the subscription.
+
+A proactive dedup guard at order-creation time (`get_or_create_order` in `service.py`) also reduces how often duplicates reach this path at all: it reuses an existing non-stale (`created_at` within 30 min) `status='created'` order for the same user+plan instead of always minting a new Razorpay order, so double-clicking "Pay" or retrying a stalled checkout doesn't itself create a second order in the first place.
+
+### Distinguishing "duplicate payment" from "legitimate renewal" (decided 2026-08-24)
+
+EdgeVest's plans are typically annual — a client renews the *same* `plan_id` again once their current subscription lapses. This makes "has this user ever paid for this plan before" a **wrong** test for duplicate detection: it would flag every legitimate renewal as a duplicate and auto-refund it.
+
+The correct test, decided in conversation: **is this plan already covered by a subscription that hasn't expired yet, right now?** If yes, a second captured payment for the same plan is definitionally superfluous — refund it. If no (first purchase, or the prior subscription for this plan has actually lapsed), the payment is legitimate — activate it.
+
+Implemented as `get_covering_subscription_order(user_id, plan_id, exclude_payment_order_id)` (`db/queries.py`): queries `subscriptions WHERE user_id=? AND plan_id=? AND end_date >= today()` directly, rather than checking `subscriptions.status='active'`. This matters because `status` is only flipped from `'active'` to `'expired'` by `expire_stale_subscriptions()`, which is called opportunistically from a few `server.py` routes on the request path (login, etc.) — the reconcile cron is a separate, independent process with no guarantee any of those routes ran recently for this user, so trusting a possibly-stale `status` field could misread a genuinely-lapsed subscription as still covering. Comparing `end_date` directly sidesteps that dependency entirely. It also sidesteps a second subtlety: `activate_subscription_from_payment`'s "expire the prior active row" step has no `plan_id` filter — a user can only ever hold one `status='active'` subscription across *all* plans, not one per plan — so a `plan_id`-scoped `end_date` check is the only unambiguous way to ask "is *this* plan still covered," independent of what the shared `status` field currently says for some other plan the user may have since switched to.
+
+When a covering subscription is found, `get_covering_subscription_order` separately looks up the most recent `payment_orders` row with `status='paid'` for that same user+plan, to populate `duplicate_of_order_id` on the refunded row (admin audit link via `GET /api/payments/flagged`). This can come back `None` if the covering subscription didn't originate from a Razorpay payment at all (e.g. gem redemption, or a free plan) — the refund still proceeds, just without that audit link populated.
+
+### Cron authentication (decided 2026-08-24)
+
+`POST /api/payments/reconcile` has no browser session to authenticate with (it's called by a cron, not a logged-in user), so it can't use `@require_login`/`@require_role` like every other route in this codebase. It instead checks a static shared-secret header (`X-Cron-Secret`, compared via `hmac.compare_digest` against the `PAYMENTS_CRON_SECRET` env var).
+
+Considered and rejected: a "service account" that authenticates through the same session-cookie path as everything else. Rejected because Google OAuth is an interactive browser-redirect flow — a cron job has no browser to complete it with — so a service account would still need *something* bearer-token-shaped underneath (a long-lived session cookie minted for a designated service user, or an API key mapped to a service-account row). That's the same trust model as the shared secret, plus new machinery this codebase has no precedent for (session lifecycle/expiry handling, or a service-account concept alongside the existing `client`/`admin`/`super_admin` roles). Only worth it if multiple cron/service jobs eventually need distinct scoped permissions — for this single endpoint, the shared secret is simpler.
+
 ## Architecture impact
 
 **Backend — additive only, nothing pre-existing changed except imports:**
-- `backend/server.py` — `import razorpay`; `razorpay_client` singleton (`None` if `RAZORPAY_KEY_ID` unset, so a misconfigured env degrades billing routes to a clean 500 instead of crashing the whole app at import time — same defensive pattern used elsewhere in this codebase for optional integrations). Three new routes: `POST /api/billing/create-order`, `POST /api/billing/verify-payment`, `GET /api/my-subscription`. Pre-existing `POST /api/subscribe` (free-only) and `POST /api/subscribe-with-credits` (gem redemption) are untouched — this feature adds a third, parallel activation path rather than modifying either.
-- `backend/db/queries.py` — three new functions: `create_payment_order`, `get_payment_order_by_razorpay_id`, `activate_subscription_from_payment`, plus `get_subscription_history`. All additive; no existing query function's signature or behavior changed.
-- `backend/db/init_db.py` — new `payment_orders` table + `idx_payment_orders_user` index, additive `CREATE TABLE IF NOT EXISTS` block. `subscription_plans` and `subscriptions` schemas are unchanged (both already had the columns this feature needed: `price` on the former, `amount_paid` on the latter).
+- **`backend/payments/`** (added `7c1b695`) — the first modular package in this codebase; every other feature is flat (`server.py` for routes, `db/queries.py` for all SQL). Holds routes, the Razorpay SDK wrapper, and business-logic orchestration for billing; SQL still stays centralized in `db/queries.py` per the existing project-wide convention — this package never touches SQL directly.
+  - `routes.py` — `create_payments_blueprint(require_login, require_role, current_user)`, a **factory**, not a module-level `Blueprint`. Those three are defined in `server.py`; importing them at `payments/routes.py`'s module-load time would be a circular import, so `server.py` passes its own already-defined versions in at registration time instead (`server.py`: `app.register_blueprint(create_payments_blueprint(require_login, require_role, current_user))`). `payments/` never imports from `server.py`.
+  - `service.py` — orchestration only, no Flask/HTTP concerns (`get_or_create_order`, `verify_and_activate`, `reconcile_pending_orders`).
+  - `razorpay_client.py` — the only file that calls the `razorpay` SDK directly; `is_configured()` guards every route (500 "Payments not configured" if `RAZORPAY_KEY_ID`/`SECRET` unset for the env, matching the defensive optional-integration pattern used elsewhere in this codebase).
+  - Four routes registered: `POST /api/billing/create-order`, `POST /api/billing/verify-payment` (both `@require_login`), `POST /api/payments/reconcile` (shared-secret `X-Cron-Secret` auth, no session — see Mechanics), `GET /api/payments/flagged` (`@require_role(super_admin, admin)`).
+- `server.py` — `GET /api/my-subscription` (`@require_login`) stays directly in `server.py`, not moved into `payments/`, since it's a read-only query alongside other client-facing endpoints rather than a billing action. Pre-existing `POST /api/subscribe` (free-only) and `POST /api/subscribe-with-credits` (gem redemption) are untouched — this feature adds a third, parallel activation path rather than modifying either.
+- `backend/db/queries.py` — additive functions: `create_payment_order`, `get_payment_order_by_razorpay_id`, `activate_subscription_from_payment`, `get_subscription_history`, `get_pending_order_for_user_plan`, `get_stale_pending_orders`, `get_covering_subscription_order` (added `7c1b695` as `get_active_or_recent_subscription_source`, reworked 2026-08-24 — see Mechanics), `mark_order_reconciled`, `mark_order_duplicate_refunded`, `get_flagged_duplicate_orders`. All additive; no existing query function's signature or behavior changed.
+- `backend/db/init_db.py` — `payment_orders` table + `idx_payment_orders_user` index (`f98b890`), plus four additive columns via `ALTER TABLE ... ADD COLUMN` migration entries (`7c1b695`): `duplicate_of_order_id`, `refund_id`, `refunded_at`, `reconciled_at`, all nullable `TEXT`. `subscription_plans` and `subscriptions` schemas are otherwise unchanged (both already had the columns this feature needed: `price` on the former, `amount_paid`/`end_date` on the latter).
 - `backend/requirements.txt` — `razorpay>=1.4.0` added.
-- `backend/.env.dev` — `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` test keys added (gitignored, not part of any commit).
+- `backend/.env.dev` — `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` / `PAYMENTS_CRON_SECRET` (added `7c1b695`) test values (gitignored, not part of any commit).
 
 **Frontend — additive only:**
 - `frontend/src/api/billing.js` (new) — `createOrder`, `verifyPayment`, `getMySubscription`, `loadRazorpayScript`.
@@ -114,17 +149,23 @@ CREATE TABLE payment_orders (
     currency            TEXT    NOT NULL DEFAULT 'INR',
     status              TEXT    NOT NULL DEFAULT 'created',
     created_at          TEXT    NOT NULL,
-    updated_at          TEXT
+    updated_at          TEXT,
+    -- added 7c1b695, nullable TEXT via ALTER TABLE, reconciliation-only:
+    duplicate_of_order_id TEXT,
+    refund_id             TEXT,
+    refunded_at           TEXT,
+    reconciled_at         TEXT
 )
 ```
 Index: `idx_payment_orders_user (user_id)`.
 
 - `amount` is **rupees, not paise** — same unit as `subscription_plans.price` and `subscriptions.amount_paid`. Both those pre-existing columns are unitless `INTEGER`s with no currency field; this feature treats them as rupees throughout (matching how an admin already types "999" into `PlansTab`'s price field) and only multiplies by 100 to get paise at the single point where the Razorpay API requires it (`amount_paise = int(plan["price"]) * 100` in `create-order`). `payment_orders.amount` is written as `plan["price"]` (rupees) in `create_payment_order()`, and that same rupee value flows straight into `subscriptions.amount_paid` in `activate_subscription_from_payment()` — no unit is ever silently mixed across the two tables.
-- `status` values used: `'created'` (order made, not yet paid or abandoned) → `'paid'` (verified and activated). No `'failed'`/`'cancelled'` status is ever written — a failed or dismissed checkout just leaves the row at `'created'` forever (see Non-goals re: no webhook reconciliation).
-- `razorpay_order_id` is `UNIQUE` — this, plus the `status='created'` re-check inside `activate_subscription_from_payment`, is what makes verification idempotent against replays.
-- No changes to `subscription_plans` or `subscriptions` schemas — both already had every column this feature needed (`price`, `amount_paid`).
+- `status` values used: `'created'` (order made, not yet paid or abandoned) → `'paid'` (verified and activated) or → `'duplicate_refunded'` (reconciled as a genuine duplicate, added `7c1b695`; see Mechanics). No `'failed'`/`'cancelled'` status is ever written — a failed or dismissed checkout just leaves the row at `'created'` until the reconciliation cron next processes it (or forever, if that cron isn't actually scheduled — see Open questions).
+- `razorpay_order_id` is `UNIQUE` — this, plus the `status='created'` re-check inside `activate_subscription_from_payment`, is what makes verification idempotent against replays (both from `verify-payment` and from the reconcile cron calling the same function).
+- `duplicate_of_order_id` / `refund_id` / `refunded_at` / `reconciled_at` (`7c1b695`) — reconciliation-only bookkeeping. `reconciled_at` is stamped on every order the cron examines, paid-and-covered or not, as an audit trail of "we checked this." `duplicate_of_order_id` holds the *other* order's `razorpay_order_id` (the one that actually activated the still-covering subscription), best-effort — `None` if that subscription didn't originate from a traceable `payment_orders` row (e.g. gem redemption).
+- No changes to `subscription_plans` schema. `subscriptions` schema also unchanged — already had every column this feature needed (`amount_paid`, and critically `end_date`, which the reconciliation dedup logic reads directly rather than trusting `status`; see Mechanics).
 - No retention/cleanup job for `payment_orders` — kept indefinitely, same posture as `subscriptions` itself (financial/audit records, not a rolling buffer).
-- Written from: `create_payment_order()` (order creation), `activate_subscription_from_payment()` (marks `paid`). Read by: `get_payment_order_by_razorpay_id()` (verify-payment's ownership check).
+- Written from: `create_payment_order()` (order creation), `activate_subscription_from_payment()` (marks `paid`), `mark_order_reconciled()` / `mark_order_duplicate_refunded()` (reconcile cron). Read by: `get_payment_order_by_razorpay_id()` (verify-payment's ownership check), `get_stale_pending_orders()` / `get_pending_order_for_user_plan()` / `get_covering_subscription_order()` / `get_flagged_duplicate_orders()` (reconcile cron + admin audit view).
 
 ## Success criteria
 
@@ -134,10 +175,14 @@ Index: `idx_payment_orders_user (user_id)`.
 - `GET /api/my-subscription` returns the caller's own `current`/`history` only — never another user's data (enforced by `current_user()["id"]` scoping, same as every other `require_login` route).
 - Admin can set a price on a plan that was created before this feature shipped (`price=0` originally) via `PlansTab`'s new inline editor, and the client-facing `Pay ₹{price}` button appears for that plan immediately after.
 - A replayed `POST /api/billing/verify-payment` (same `razorpay_order_id`, called twice) activates a subscription at most once — second call returns `{"ok": false, "error": "Order not found or already processed"}`.
+- `POST /api/payments/reconcile`, called with a valid `X-Cron-Secret`, correctly late-activates a stale-but-genuinely-paid order that has no covering subscription, and correctly auto-refunds one that does — verified by construction/code-reading during the 2026-08-24 dedup-logic rework (not yet exercised against live Razorpay test-mode data for the reconciliation path specifically; the original `f98b890`/`b5d3510` criteria above *were* confirmed against real test-mode transactions).
 
 ## Open questions
 
-- No webhook listener exists, so a payment that completes on Razorpay's side but never reaches `verify-payment` (browser closed mid-flow, network drop after `handler` fires) has no automatic reconciliation path — that `payment_orders` row stays `status='created'` forever and the user's money is taken with no subscription activated. Whether to add a Razorpay webhook (`payment.captured` event → server-side activation, independent of the client round-trip) is undecided.
+- **No webhook listener exists**, though this is now partially mitigated by the pull-based reconciliation cron (`7c1b695`) — see Mechanics. Whether to eventually add a real Razorpay webhook (`payment.captured` event → server-side activation, independent of both the client round-trip and cron polling latency) is still undecided.
+- **The reconciliation cron isn't actually scheduled anywhere** — `POST /api/payments/reconcile` exists and works, but no crontab entry, systemd timer, or other scheduler was found in this repo as of 2026-08-24. Confirm whether it's set up directly on the EC2 box outside version control, or still needs to be added.
+- **Concurrent reconcile invocations could double-activate a genuine duplicate pair** (found during 2026-08-24 verification pass, not fixed): if the cron overlaps itself — two invocations running at once — two truly-duplicate stale orders for the same user+plan could both pass the `get_covering_subscription_order` check before either commits its activation, since neither would yet see the other's not-yet-committed subscription row as "covering." Both would activate; neither would be refunded. No locking exists against this. Mitigation today is purely operational: don't schedule the cron with an interval shorter than a single run can take, and/or add a lock (e.g. skip-if-already-running) before this ships to an unattended schedule.
+- **`get_or_create_order`'s reused-order response can show a stale `amount`** (found during 2026-08-24 verification pass, not fixed): when reusing a still-pending order, the returned `amount` is recomputed from the plan's *current* price rather than read back from the order's own stored `amount`. If an admin edits a plan's price while a user has a pending retry window open (up to 30 min), the Razorpay Checkout modal could briefly display a mismatched amount. Cosmetic only — the actual charge is bound server-side to the Razorpay order object, unaffected by the client-passed `amount` field — but worth a fix (read `existing["amount"]` instead) if it's ever noticed in practice.
 - The `payment.failed` / `ondismiss` failure paths were not reliably exercisable during testing — the commonly-documented `failure@razorpay` UPI VPA convention did not reliably trigger a failure in practice, and generic test cards (e.g. `4111 1111 1111 1111`) are rejected outright as "International cards are not supported" on Razorpay test accounts with international cards disabled by default. Whoever next needs to test the failure path should use a domestic test card from the Razorpay Dashboard's own Test Mode page and check current Razorpay docs directly for the correct failure-simulation method, rather than relying on the VPA convention.
 - `SubscriptionTab`'s `paymentLabel()` cannot always distinguish "this historical subscription was a free plan" from "it was redeemed with gems" after the fact — it infers this from the plan's *current* `gem_cost`, which may have changed since that historical `subscriptions` row was created (e.g. a plan that cost gems at purchase time but has since been set to `gem_cost=0`). Accepted as a known, minor labelling imprecision rather than a reason to add a `payment_method` column to `subscriptions` retroactively — undecided whether that column should be added going forward for new rows.
-- No decision on recurring billing, refunds/cancellations, or multi-currency — all explicitly out of scope for this shipped version (see Non-goals).
+- No decision on recurring billing, refunds/cancellations (beyond the narrow auto-refund-a-duplicate case), or multi-currency — all explicitly out of scope for this shipped version (see Non-goals).
