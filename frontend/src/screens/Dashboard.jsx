@@ -840,13 +840,13 @@ function TradeCard({ trade: t, isAdmin, prices }) {
       : null
     const bgStyle = bg ? {background:bg} : {}
     return (
-      <tr key={i} style={bgStyle}>
-        <td><span className={`leg-pill ${l.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{l.side}</span></td>
-        <td>{instrument}</td>
-        <td>{fmtQty(l.lots, l.lot_size, l.instrument_type)}</td>
-        <td>{fmtRs(l.price, 2)}</td>
-        <td className="ltp-cell" style={bgStyle}>{ltp != null ? fmtRs(ltp, 2) : '—'}</td>
-        <td style={bgStyle} className={legPnl != null ? (legPnl >= 0 ? 'pnl-pos' : 'pnl-neg') : 'pnl-neu'}>
+      <tr key={i} className="leg-row" style={bgStyle}>
+        <td data-label="Side"><span className={`leg-pill ${l.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{l.side}</span></td>
+        <td data-label="Instrument">{instrument}</td>
+        <td data-label="Qty">{fmtQty(l.lots, l.lot_size, l.instrument_type)}</td>
+        <td data-label="Entry">{fmtRs(l.price, 2)}</td>
+        <td data-label="LTP" className="ltp-cell" style={bgStyle}>{ltp != null ? fmtRs(ltp, 2) : '—'}</td>
+        <td data-label="P&L" style={bgStyle} className={legPnl != null ? (legPnl >= 0 ? 'pnl-pos' : 'pnl-neg') : 'pnl-neu'}>
           {legPnl != null ? fmtPnl(legPnl) : '—'}
         </td>
       </tr>
@@ -999,13 +999,13 @@ function HistoryCard({ trade: t }) {
       ? (() => { const qty=(entry.lots||0)*(entry.lot_size||1); return entry.side==='SELL'?(entry.price-exitLeg.price)*qty:(exitLeg.price-entry.price)*qty })()
       : null
     return (
-      <tr key={`${entry.id}`} style={bg?{background:bg}:{}}>
-        <td><span className={`leg-pill ${entry.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{entry.side}</span></td>
-        <td>{instrument}</td>
-        <td>{fmtQty(entry.lots, entry.lot_size, entry.instrument_type)}</td>
-        <td>{fmtRs(entry.price, 2)}</td>
-        <td>{exitLeg?.price != null ? fmtRs(exitLeg.price, 2) : '—'}</td>
-        <td>{legPnl!=null?<span style={{color:legPnl>=0?'var(--green)':'var(--red)',fontWeight:600}}>{fmtPnl(legPnl)}</span>:'—'}</td>
+      <tr key={`${entry.id}`} className="leg-row" style={bg?{background:bg}:{}}>
+        <td data-label="Side"><span className={`leg-pill ${entry.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{entry.side}</span></td>
+        <td data-label="Instrument">{instrument}</td>
+        <td data-label="Qty">{fmtQty(entry.lots, entry.lot_size, entry.instrument_type)}</td>
+        <td data-label="Entry">{fmtRs(entry.price, 2)}</td>
+        <td data-label="Exit">{exitLeg?.price != null ? fmtRs(exitLeg.price, 2) : '—'}</td>
+        <td data-label="P&L">{legPnl!=null?<span style={{color:legPnl>=0?'var(--green)':'var(--red)',fontWeight:600}}>{fmtPnl(legPnl)}</span>:'—'}</td>
       </tr>
     )
   }

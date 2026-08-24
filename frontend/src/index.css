@@ -31,7 +31,13 @@ body {
   -webkit-font-smoothing: antialiased;
   padding-top: env(safe-area-inset-top);
   overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
+
+/* Form fields need real text selection/editing, unlike the rest of the UI chrome */
+input, select, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 
 a { text-decoration: none; color: inherit; -webkit-touch-callout: none; }
 button { cursor: pointer; font-family: inherit; -webkit-touch-callout: none; user-select: none; }
