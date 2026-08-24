@@ -5,6 +5,8 @@ import { useRecs, useRecPrices, useCreateRec, useDeleteRec, useExitRec, useAdjus
          useAccounts, useAccountPortfolio } from '../hooks/useTrades'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getCredits, getPlans, subscribeWithCredits, listGames, submitEntry, getPortfolio } from '../api/games'
+import { loadRazorpayScript } from '../api/billing'
+import { useCreateOrder, useVerifyPayment } from '../hooks/useBilling'
 import useAuthStore from '../store/authStore'
 import { searchInstruments } from '../api/trades'
 import { useToast } from '../components/common/Toast'
@@ -1285,6 +1287,37 @@ function NoSubscriptionGate() {
     onError: () => toast('Something went wrong', 'err'),
   })
 
+  const createOrder   = useCreateOrder()
+  const verifyPayment = useVerifyPayment()
+  const [payingPlanId, setPayingPlanId] = useState(null)
+
+  async function payWithRazorpay(plan) {
+    setPayingPlanId(plan.id)
+    try {
+      if (!(await loadRazorpayScript())) { toast('Could not load payment gateway', 'err'); return }
+      const order = await createOrder.mutateAsync(plan.id)
+      if (!order.ok) { toast(order.error || 'Could not start payment', 'err'); return }
+      const rzp = new window.Razorpay({
+        key: order.key_id, order_id: order.order_id, amount: order.amount, currency: order.currency,
+        name: 'EdgeVest', description: plan.name,
+        handler: async (resp) => {
+          const res = await verifyPayment.mutateAsync({
+            razorpay_order_id:   resp.razorpay_order_id,
+            razorpay_payment_id: resp.razorpay_payment_id,
+            razorpay_signature:  resp.razorpay_signature,
+          })
+          if (res.ok) { toast('Subscription activated! 🎉', 'ok'); setTimeout(() => window.location.reload(), 800) }
+          else toast(res.error || 'Payment verification failed', 'err')
+        },
+        modal: { ondismiss: () => toast('Payment cancelled', 'err') },
+      })
+      rzp.on('payment.failed', () => toast('Payment failed', 'err'))
+      rzp.open()
+    } finally {
+      setPayingPlanId(null)
+    }
+  }
+
   const balance = credits?.balance ?? 0
   const cheapest = plans.length ? Math.min(...plans.map(p => p.gem_cost ?? 0).filter(c => c > 0)) : null
   const canUnlock = cheapest != null && balance >= cheapest
@@ -1338,7 +1371,7 @@ function NoSubscriptionGate() {
                 <div style={{fontWeight:700,fontSize:14,color:'#1e293b'}}>{plan.name}</div>
                 <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{plan.duration_days} days · {plan.description}</div>
                 <div style={{fontSize:12,fontWeight:700,color: afford ? '#6366f1' : '#94a3b8',marginTop:4}}>
-                  {isFree ? 'Free' : `💎 ${gemCost} gems`}
+                  {isFree ? 'Free' : `💎 ${gemCost} gems`}{plan.price > 0 ? `  ·  ₹${plan.price}` : ''}
                 </div>
                 {!afford && need > 0 && (
                   <div style={{fontSize:11,color:'#f59e0b',marginTop:3,fontWeight:600}}>
@@ -1346,19 +1379,34 @@ function NoSubscriptionGate() {
                   </div>
                 )}
               </div>
-              <button
-                disabled={!active}
-                onClick={() => buy.mutate(plan.id)}
-                style={{
-                  flexShrink:0, padding:'8px 16px', borderRadius:7, border:'none',
-                  background: active ? '#6366f1' : '#e2e8f0',
-                  color: active ? '#fff' : '#94a3b8',
-                  fontWeight:700, fontSize:13,
-                  cursor: active ? 'pointer' : 'not-allowed', whiteSpace:'nowrap',
-                }}
-              >
-                {isFree ? 'Claim Free' : afford ? `Redeem 💎 ${gemCost}` : `💎 ${gemCost}`}
-              </button>
+              <div style={{display:'flex',flexDirection:'column',gap:6,flexShrink:0}}>
+                <button
+                  disabled={!active}
+                  onClick={() => buy.mutate(plan.id)}
+                  style={{
+                    padding:'8px 16px', borderRadius:7, border:'none',
+                    background: active ? '#6366f1' : '#e2e8f0',
+                    color: active ? '#fff' : '#94a3b8',
+                    fontWeight:700, fontSize:13,
+                    cursor: active ? 'pointer' : 'not-allowed', whiteSpace:'nowrap',
+                  }}
+                >
+                  {isFree ? 'Claim Free' : afford ? `Redeem 💎 ${gemCost}` : `💎 ${gemCost}`}
+                </button>
+                {plan.price > 0 && (
+                  <button
+                    disabled={payingPlanId === plan.id}
+                    onClick={() => payWithRazorpay(plan)}
+                    style={{
+                      padding:'8px 16px', borderRadius:7, border:'1.5px solid #6366f1',
+                      background:'#fff', color:'#6366f1', fontWeight:700, fontSize:13,
+                      cursor: payingPlanId === plan.id ? 'not-allowed' : 'pointer', whiteSpace:'nowrap',
+                    }}
+                  >
+                    {payingPlanId === plan.id ? 'Opening…' : `Pay ₹${plan.price}`}
+                  </button>
+                )}
+              </div>
             </div>
           )
         })}

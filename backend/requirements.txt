@@ -10,3 +10,4 @@ authlib>=1.3
 python-dotenv>=1.0
 flask-cors
 gunicorn>=21.0
+razorpay>=1.4.0

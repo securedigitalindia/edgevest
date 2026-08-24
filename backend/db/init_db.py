@@ -597,6 +597,28 @@ def init_db():
     """)
     print("  ✓  Table ready: subscriptions")
 
+    # payment_orders — one row per Razorpay order, for signature-verification
+    # idempotency and audit; amount is rupees, same unit as subscription_plans.price
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS payment_orders (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id             INTEGER NOT NULL REFERENCES users(id),
+            plan_id             INTEGER NOT NULL REFERENCES subscription_plans(id),
+            razorpay_order_id   TEXT    NOT NULL UNIQUE,
+            razorpay_payment_id TEXT,
+            amount              INTEGER NOT NULL,
+            currency            TEXT    NOT NULL DEFAULT 'INR',
+            status              TEXT    NOT NULL DEFAULT 'created',
+            created_at          TEXT    NOT NULL,
+            updated_at          TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_payment_orders_user
+        ON payment_orders(user_id)
+    """)
+    print("  ✓  Table ready: payment_orders")
+
     # account_trades — one row per account per recommendation
     cur.execute("""
         CREATE TABLE IF NOT EXISTS account_trades (

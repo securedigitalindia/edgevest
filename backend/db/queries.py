@@ -2383,3 +2383,86 @@ def subscribe_with_credits(user_id: int, plan_id: int) -> dict:
         return {"ok": True, "balance": new_balance}
     finally:
         conn.close()
+
+
+# -----------------------------------------------------------
+# Razorpay payments
+# -----------------------------------------------------------
+
+def create_payment_order(user_id: int, plan_id: int, razorpay_order_id: str,
+                          amount: int, currency: str = "INR") -> int:
+    """Record a freshly-created Razorpay order. Returns the new row id."""
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection()
+    try:
+        cur = conn.execute("""
+            INSERT INTO payment_orders
+                (user_id, plan_id, razorpay_order_id, amount, currency, status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'created', ?)
+        """, (user_id, plan_id, razorpay_order_id, amount, currency, now_str))
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def get_payment_order_by_razorpay_id(razorpay_order_id: str) -> dict | None:
+    conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT id, user_id, plan_id, razorpay_order_id, razorpay_payment_id,
+                   amount, currency, status, created_at, updated_at
+            FROM payment_orders WHERE razorpay_order_id = ?
+        """, (razorpay_order_id,)).fetchone()
+        if not row:
+            return None
+        cols = ["id", "user_id", "plan_id", "razorpay_order_id", "razorpay_payment_id",
+                "amount", "currency", "status", "created_at", "updated_at"]
+        return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+
+def activate_subscription_from_payment(user_id: int, plan_id: int, razorpay_order_id: str,
+                                        razorpay_payment_id: str, amount: int) -> dict:
+    """
+    Mark a payment_orders row paid and activate the subscription it paid for,
+    atomically. Re-checks the order is still 'created' and belongs to this
+    user inside the same transaction, so a replayed/duplicate verify call
+    can't double-activate or hijack someone else's order.
+    """
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    today    = datetime.now(timezone.utc).date()
+    conn = get_connection()
+    try:
+        order = conn.execute("""
+            SELECT id FROM payment_orders
+            WHERE razorpay_order_id = ? AND user_id = ? AND status = 'created'
+        """, (razorpay_order_id, user_id)).fetchone()
+        if not order:
+            return {"ok": False, "error": "Order not found or already processed"}
+
+        plan = conn.execute(
+            "SELECT duration_days FROM subscription_plans WHERE id=?", (plan_id,)
+        ).fetchone()
+        if not plan:
+            return {"ok": False, "error": f"Plan {plan_id} not found"}
+
+        conn.execute("""
+            UPDATE payment_orders SET status='paid', razorpay_payment_id=?, updated_at=?
+            WHERE id=?
+        """, (razorpay_payment_id, now_str, order["id"]))
+
+        from datetime import timedelta
+        end_date = (today + timedelta(days=plan["duration_days"])).isoformat()
+        conn.execute("UPDATE subscriptions SET status='expired' WHERE user_id=? AND status='active'",
+                     (user_id,))
+        conn.execute("""
+            INSERT INTO subscriptions (user_id, plan_id, status, start_date, end_date, amount_paid, created_at)
+            VALUES (?, ?, 'active', ?, ?, ?, ?)
+        """, (user_id, plan_id, today.isoformat(), end_date, amount, now_str))
+
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
