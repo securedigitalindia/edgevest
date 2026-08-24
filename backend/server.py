@@ -1194,6 +1194,17 @@ def api_credits():
     )
 
 
+@app.route("/api/my-subscription", methods=["GET"])
+@require_login
+def api_my_subscription():
+    from db.queries import get_user_subscription, get_subscription_history
+    uid = current_user()["id"]
+    return jsonify(
+        current=get_user_subscription(uid),
+        history=get_subscription_history(uid),
+    )
+
+
 # ─────────────────────────────────────────────────────────
 # API: prices / spot
 # ─────────────────────────────────────────────────────────

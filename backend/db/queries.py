@@ -2329,6 +2329,20 @@ def get_credit_history(user_id: int, limit: int = 30) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_subscription_history(user_id: int, limit: int = 20) -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT s.id, s.plan_id, s.status, s.start_date, s.end_date, s.amount_paid, s.created_at,
+               p.name AS plan_name, p.gem_cost AS plan_gem_cost
+        FROM subscriptions s
+        JOIN subscription_plans p ON p.id = s.plan_id
+        WHERE s.user_id = ?
+        ORDER BY s.created_at DESC LIMIT ?
+    """, (user_id, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def subscribe_with_credits(user_id: int, plan_id: int) -> dict:
     """
     Redeem gems to activate a subscription. Returns {ok, balance, error}.
