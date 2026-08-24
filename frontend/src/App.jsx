@@ -1,4 +1,4 @@
-import { useState, Suspense, lazy } from 'react'
+import { Suspense, lazy } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import useAuthStore from './store/authStore'
 import useMe from './hooks/useMe'
@@ -8,16 +8,28 @@ import { ToastProvider } from './components/common/Toast'
 import OfflineBanner from './components/common/OfflineBanner'
 import InstallPrompt from './components/common/InstallPrompt'
 import './index.css'
+// Tailwind + shadcn/ui — scoped to .sc-scope, inert on every existing page.
+// See src/styles/shadcn.css's header comment for why.
+import './styles/shadcn.css'
 
 // Route-level code splitting — each of these is only needed for one of the
 // mutually-exclusive states below (logged out / mid-setup / main app), or
-// (SettingsDrawer) only once the user actually opens it, so none of them
-// need to ship in the initial bundle for every visit.
-const Dashboard      = lazy(() => import('./screens/Dashboard'))
-const Games          = lazy(() => import('./screens/Games'))
-const SetupWizard    = lazy(() => import('./screens/SetupWizard'))
-const Landing        = lazy(() => import('./screens/Landing'))
-const SettingsDrawer = lazy(() => import('./components/drawer/SettingsDrawer'))
+// only once the user actually navigates to that particular page, so none of
+// them need to ship in the initial bundle for every visit.
+const Dashboard       = lazy(() => import('./screens/Dashboard'))
+const Positions       = lazy(() => import('./screens/Positions'))
+const Games           = lazy(() => import('./screens/Games'))
+const SetupWizard     = lazy(() => import('./screens/SetupWizard'))
+const Landing         = lazy(() => import('./screens/Landing'))
+const ProfileHub      = lazy(() => import('./screens/profile/ProfileHub'))
+const ProfileDetails  = lazy(() => import('./screens/profile/ProfileDetails'))
+const MyPlan          = lazy(() => import('./screens/profile/MyPlan'))
+const MyAccounts      = lazy(() => import('./screens/profile/MyAccounts'))
+const Gems            = lazy(() => import('./screens/profile/Gems'))
+const Brokers         = lazy(() => import('./screens/profile/Brokers'))
+const Users           = lazy(() => import('./screens/profile/Users'))
+const Plans           = lazy(() => import('./screens/profile/Plans'))
+const Subscriptions   = lazy(() => import('./screens/profile/Subscriptions'))
 
 const Loading = () => <div className="empty" style={{marginTop:80}}>Loading…</div>
 
@@ -30,19 +42,6 @@ function AppShell() {
   useMe()
 
   const { user, ready } = useAuthStore()
-  const [drawer, setDrawer]             = useState(false)
-  const [drawerTab, setDrawerTab]       = useState(null)
-  // Stays true once the drawer's been opened the first time, so its chunk is
-  // still only fetched on demand, but it stays mounted afterwards — needed
-  // for its open/close CSS transition to actually play (unmounting on every
-  // close would just make it vanish instantly instead of sliding out).
-  const [drawerLoaded, setDrawerLoaded] = useState(false)
-
-  function openDrawer(initialTab) {
-    setDrawerTab(initialTab ?? null)
-    setDrawer(true)
-    setDrawerLoaded(true)
-  }
 
   if (!ready) return <Loading />
 
@@ -60,20 +59,25 @@ function AppShell() {
     <>
       <OfflineBanner />
       <TickerStrip />
-      <MainNav onOpenDrawer={openDrawer} subscribed={subscribed} />
+      <MainNav subscribed={subscribed} />
       <InstallPrompt />
-      {drawerLoaded && (
-        <Suspense fallback={null}>
-          <SettingsDrawer open={drawer} onClose={() => setDrawer(false)} initialTab={drawerTab} />
-        </Suspense>
-      )}
       <Suspense fallback={<Loading />}>
         <Routes>
-          <Route path="/"          element={<RootRedirect />} />
-          <Route path="/dashboard" element={<Dashboard openDrawer={openDrawer} subscribed={subscribed} />} />
-          <Route path="/games"     element={<Games subscribed={subscribed} />} />
-          <Route path="/games/:id" element={<Games subscribed={subscribed} />} />
-          <Route path="*"          element={<Navigate to="/dashboard" replace />} />
+          <Route path="/"                     element={<RootRedirect />} />
+          <Route path="/dashboard"             element={<Dashboard subscribed={subscribed} />} />
+          <Route path="/positions"             element={<Positions />} />
+          <Route path="/games"                 element={<Games subscribed={subscribed} />} />
+          <Route path="/games/:id"             element={<Games subscribed={subscribed} />} />
+          <Route path="/profile"               element={<ProfileHub />} />
+          <Route path="/profile/details"       element={<ProfileDetails />} />
+          <Route path="/profile/plan"          element={<MyPlan />} />
+          <Route path="/profile/accounts"      element={<MyAccounts />} />
+          <Route path="/profile/gems"          element={<Gems />} />
+          <Route path="/profile/brokers"       element={<Brokers />} />
+          <Route path="/profile/users"         element={<Users />} />
+          <Route path="/profile/plans"         element={<Plans />} />
+          <Route path="/profile/subscriptions" element={<Subscriptions />} />
+          <Route path="*"                      element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Suspense>
     </>

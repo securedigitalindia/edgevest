@@ -9,7 +9,7 @@ React 18 SPA built with Vite. Advisory-first market intelligence UI for the Edge
 - **Zustand** — auth state only (`authStore.js`)
 - **Axios** — HTTP client (`src/api/client.js`)
 - **Vite** + `vite-plugin-pwa` — PWA, auto service worker
-- No CSS framework — plain CSS files per component/screen
+- No CSS framework for existing pages — plain CSS files per component/screen. **New pages only** may opt into Tailwind + shadcn/ui (`src/components/ui/*`, `src/styles/shadcn.css`) by wrapping their root in `<div className="sc-scope">` — see that file's header comment for why it's scoped this way and never migrate an existing page's plain-CSS styling to it without being asked.
 
 ## Commands
 
@@ -27,23 +27,42 @@ src/
 ├── api/           — API modules (one per domain)
 │   ├── client.js  — axios instance, base URL, error interceptor
 │   ├── auth.js
+│   ├── billing.js
 │   ├── games.js
 │   ├── prices.js
 │   ├── settings.js
 │   └── trades.js
 ├── components/
-│   ├── common/    — Toast.jsx, ErrorBoundary.jsx
-│   ├── drawer/    — SettingsDrawer.jsx (profile, brokers, accounts tabs)
+│   ├── common/    — Toast.jsx, ErrorBoundary.jsx, PageHeader.jsx (back-button + title bar, used by Positions + all /profile/* pages), Icons.jsx (Bank/Game/Chevron/Plus/Trend — shared by Positions' AccountPicker and profile/MyAccounts)
 │   ├── games/     — GameDetail.jsx
-│   └── nav/       — MainNav.jsx, TickerStrip.jsx
-├── hooks/         — useMe, useTrades, useGames, usePrices, useSettings (TanStack Query)
+│   ├── nav/       — MainNav.jsx (top + bottom nav, 4 peer tabs), TickerStrip.jsx
+│   ├── trades/    — InstrumentSearch.jsx, LegBuilder.jsx, legHelpers.js (newLeg/collectLegs) — shared by Dashboard's rec forms and Positions' New Trade form
+│   └── ui/        — shadcn/ui primitives (button/card/dialog/dropdown-menu/tabs/input/label) — new pages only, see Stack above; no current callers until a new page adopts them
+├── hooks/         — useMe, useTrades, useGames, usePrices, useSettings, useBilling (TanStack Query)
 ├── screens/
-│   ├── Dashboard.jsx  — main trading UI (positions, recommendations, P&L)
-│   ├── Games.jsx      — paper trading games
-│   ├── Landing.jsx    — unauthenticated landing / login
-│   └── SetupWizard.jsx — first-time user onboarding
+│   ├── Dashboard.jsx    — Recommended Positions + live games teaser
+│   ├── Positions.jsx    — "My Positions" / "All Positions" (admin): open/history tabs, account switcher, new-trade form
+│   ├── Games.jsx        — paper trading games
+│   ├── Landing.jsx      — unauthenticated landing / login
+│   ├── SetupWizard.jsx  — first-time user onboarding
+│   └── profile/         — account settings, one screen per route (replaces the old SettingsDrawer)
+│       ├── ProfileHub.jsx       — /profile menu: identity header + role-branched links
+│       ├── ProfileDetails.jsx   — identity, mobile, trading-preference chips
+│       ├── MyPlan.jsx           — client: current subscription + history
+│       ├── MyAccounts.jsx       — client: brokerage accounts + capital
+│       ├── Gems.jsx             — client: gem balance + transaction history
+│       ├── Brokers.jsx          — admin: broker list
+│       ├── Users.jsx            — admin: user management
+│       ├── Plans.jsx            — admin: subscription plan editor
+│       └── Subscriptions.jsx    — admin: all users' subscriptions
 ├── store/
 │   └── authStore.js   — Zustand: { user, ready } + setUser()
+├── styles/
+│   └── shadcn.css     — Tailwind + shadcn tokens, .sc-scope-gated (see Stack above)
+├── lib/
+│   └── utils.js       — shadcn's cn() class-merge helper (new pages only)
+├── utils/
+│   └── format.js      — fmtRs/fmtPnl/fmtQty/fmtIstShort, shared by Dashboard, Positions, profile screens
 ├── App.jsx        — routing shell, auth gate, setup gate
 └── main.jsx       — React root
 ```
@@ -59,13 +78,25 @@ Subscription gate: `user.subscription_valid !== false` — passed as `subscribed
 
 ## Routing
 
-| Path | Screen |
-|---|---|
-| `/` | redirect → `/dashboard` |
-| `/dashboard` | Dashboard |
-| `/games` | Games list |
-| `/games/:id` | Game detail |
-| `*` | redirect → `/dashboard` |
+Bottom nav (mobile, ≤768px) / top nav (desktop) has 4 peer tabs: `Dashboard | Positions | Games | Profile`. Admin-only `/profile/*` routes self-guard with `if (!isAdmin) return <Navigate to="/profile" replace />`.
+
+| Path | Screen | Notes |
+|---|---|---|
+| `/` | redirect → `/dashboard` | |
+| `/dashboard` | Dashboard | Recommended Positions (or `NoSubscriptionGate`) + games teaser |
+| `/positions` | Positions | "My Positions" (client) / "All Positions" (admin) |
+| `/games` | Games list | |
+| `/games/:id` | Game detail | |
+| `/profile` | ProfileHub | menu, role-branched |
+| `/profile/details` | ProfileDetails | all roles |
+| `/profile/plan` | MyPlan | client only |
+| `/profile/accounts` | MyAccounts | client only |
+| `/profile/gems` | Gems | client only |
+| `/profile/brokers` | Brokers | admin only |
+| `/profile/users` | Users | admin only |
+| `/profile/plans` | Plans | admin only |
+| `/profile/subscriptions` | Subscriptions | admin only |
+| `*` | redirect → `/dashboard` | |
 
 ## API Conventions
 
@@ -76,9 +107,10 @@ Subscription gate: `user.subscription_valid !== false` — passed as `subscribed
 ## Key Components
 
 - **TickerStrip** — live price ticker at top, polls `/api/spot`
-- **MainNav** — top nav, hamburger → opens `SettingsDrawer`
-- **SettingsDrawer** — profile/broker/account settings in a slide-over
-- **Dashboard** — positions table, recommendations, P&L summary, instrument search typeahead
+- **MainNav** — top nav + mobile bottom nav, 4 peer tabs (Dashboard/Positions/Games/Profile), avatar dropdown (Profile link + Sign out)
+- **Dashboard** — Recommended Positions (admin-authored, with instrument search typeahead for building recs) + live games teaser
+- **Positions** — the user's own open/closed positions, account switcher, new-trade ticket
+- **profile/*** — account settings screens (identity, plan, accounts, gems for clients; brokers/users/plans/subscriptions for admins), replacing the old `SettingsDrawer`
 - **Games** — paper trading games list + GameDetail
 
 ## PWA
@@ -87,7 +119,7 @@ Configured in `vite.config.js`. Service worker caches static assets; `/api/*` us
 
 ## Conventions
 
-- No CSS framework — colocated `.css` files per component
+- No CSS framework — colocated `.css` files per component (Tailwind/shadcn is the one exception, `.sc-scope`-gated, new pages only — see Stack above)
 - TanStack Query keys: `['me']`, `['recs']`, `['trades']`, `['games']`, etc.
-- `fmtRs(v)` / `fmtPnl(v)` helper functions for INR formatting in Dashboard
-- App version from `package.json` via `__APP_VERSION__` Vite define — shown in profile menu
+- `fmtRs(v)` / `fmtPnl(v)` / `fmtQty(...)` / `fmtIstShort(ts)` helpers in `src/utils/format.js`, shared across screens
+- App version from `package.json` via `__APP_VERSION__` Vite define — shown in the avatar dropdown and on `/profile`

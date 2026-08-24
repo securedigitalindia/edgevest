@@ -55,8 +55,8 @@ export function useCreateAccountTrade() {
   })
 }
 
-export function useTrades(params) {
-  return useQuery({ queryKey: ['trades', params], queryFn: () => listTrades(params), refetchInterval: 10000 })
+export function useTrades(params, enabled = true) {
+  return useQuery({ queryKey: ['trades', params], queryFn: () => listTrades(params), refetchInterval: 10000, enabled })
 }
 
 export function useTradeHistory(params, enabled = true) {

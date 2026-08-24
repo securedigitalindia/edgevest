@@ -1,0 +1,125 @@
+/* Full-width page shell — Positions gets a dedicated page, not a shared-grid
+   column, so the account-summary bar and tables have real room to breathe. */
+.positions-layout { max-width:1100px; margin:0 auto; padding:0 24px 24px; }
+@media (max-width:768px) { .positions-layout { padding:0 12px 16px; } }
+
+/* "+ New Trade" toggle — same chip shape as RecsPanel's segment filter (.seg-chip),
+   green since it's a create action rather than a filter. */
+.pos-tab-new { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; border:1.5px solid #bbf7d0; background:#fff; color:var(--green); cursor:pointer; transition:all .15s; }
+.pos-tab-new:hover  { border-color:var(--green); }
+.pos-tab-new.active { background:var(--green); border-color:var(--green); color:#fff; }
+
+/* Trade / history cards — same visual language as RecItem (Dashboard.css):
+   colored left-accent border, leg-row/leg-group leg display, divided-column
+   stats-strip footer. Ported (not reinvented) so the two sibling "position
+   card" experiences stay consistent; a visual tweak to one family should be
+   mirrored in the other. */
+.trade-card        { border:1px solid var(--border); border-left:4px solid #22c55e; border-radius:8px; margin-bottom:12px; overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.06); transition:box-shadow .15s; }
+.trade-card:hover  { box-shadow:0 4px 14px rgba(0,0,0,.1); }
+.trade-card-closed { border-left-color:#94a3b8; }
+
+.rec-header  { padding:12px 14px 10px; border-bottom:1px solid var(--border); }
+.rec-symbol  { font-weight:800; font-size:16px; color:#0f172a; }
+.rec-ts      { font-size:11px; color:var(--muted); margin-top:4px; }
+.rec-seg-tag { font-size:10px; padding:2px 7px; border-radius:10px; background:#f1f5f9; color:#64748b; font-weight:600; }
+
+/* Account chip — distinct from .rec-seg-tag (F&O/Equity): this is which
+   brokerage account a trade belongs to, not what kind of instrument it is.
+   Positions-only, since RecItem (Dashboard) has no per-account concept. */
+.acct-chip { font-size:11px; padding:2px 8px; border-radius:20px; background:#f1f5f9; color:var(--muted); border:1px solid var(--border); }
+.rec-legs    { padding:10px 14px 2px; }
+
+/* Side pill */
+.leg-pill      { display:inline-flex; align-items:center; justify-content:center; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; min-width:40px; flex-shrink:0; }
+.leg-pill-buy  { background:#dcfce7; color:#15803d; }
+.leg-pill-sell { background:#fee2e2; color:#dc2626; }
+
+/* Leg row (one row per leg inside a leg-group) */
+.rec-leg-row  { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f1f5f9; }
+.rec-leg-row:last-child { border-bottom:none; }
+.rec-leg-name { flex:1; min-width:0; }
+.rec-leg-sym  { font-size:13px; font-weight:700; color:#1e293b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rec-leg-contract { font-size:11px; color:var(--muted); margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rec-leg-meta { font-size:12px; color:#475569; white-space:nowrap; }
+
+/* Leg group (Entry / Adjustment N sections) */
+.leg-group        { margin-bottom:8px; padding-left:10px; }
+.leg-group-entry  { border-left:3px solid #93c5fd; }
+.leg-group-adj    { border-left:3px solid #fcd34d; }
+.leg-grp-hdr       { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; padding-bottom:4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.leg-grp-note      { font-size:11px; font-weight:600; color:#92400e; text-transform:none; letter-spacing:0; }
+
+/* Stats footer (Margin / Unrealised / Realized P&L) */
+.rec-stats-strip { display:flex; border-top:1px solid var(--border); }
+.rec-stat        { flex:1; min-width:0; padding:8px 12px; text-align:center; border-right:1px solid var(--border); }
+.rec-stat:last-child { border-right:none; }
+.rec-stat-lbl    { font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; }
+.rec-stat-val    { font-size:14px; font-weight:700; color:var(--text); margin-top:2px; }
+
+.pnl-pos { color:var(--green); }
+.pnl-neg { color:var(--red); }
+.pnl-neu { color:var(--muted); }
+
+.adj-badge { font-size:11px; padding:2px 7px; border-radius:20px; background:#fef9c3; color:#854d0e; font-weight:600; }
+
+/* Inline exit form */
+.inline-action { padding:12px; border-top-width:2px; border-top-style:solid; }
+.inline-action h4 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
+.action-exit  { border-top-color:#fee2e2; background:#fff9f9; }
+.action-exit h4 { color:var(--red); }
+
+/* Pending adj banner */
+.pending-adj-banner { padding:8px 12px; border-top:2px solid #fbbf24; background:#fffbeb; font-size:12px; }
+
+.add-account-link { background:none; border:none; padding:0; font-size:12px; color:var(--blue); cursor:pointer; white-space:nowrap; text-decoration:underline; text-underline-offset:2px; flex-shrink:0; }
+.add-account-link:hover { color:var(--blue-dark,#1d4ed8); }
+
+/* Open/History filter row — bare flex row above the summary/trade list,
+   replaces the old card-header that used to also hold the account select. */
+.pos-filter-row { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+
+/* Account picker — own section above everything else on the page (design:
+   https://claude.ai/code/artifact/c7bf2132-d2e0-4f58-98a6-9305fbddf7cd, Option C) */
+.acct-picker { margin-bottom:10px; }
+.acct-picker-row { display:flex; align-items:center; gap:10px; padding:12px 14px; }
+.acct-picker-row.clickable { cursor:pointer; }
+.acct-picker-row.clickable:hover { background:#f8fafc; }
+.acct-picker-icon { width:34px; height:34px; border-radius:8px; background:#eff6ff; color:var(--blue); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.acct-picker-icon.game { background:#f0fdf4; color:var(--green); }
+.acct-picker-text { flex:1; min-width:0; }
+.acct-picker-name { font-size:13px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.acct-picker-caption { font-size:11px; color:var(--muted); margin-top:1px; }
+.acct-picker-chevron { color:#94a3b8; flex-shrink:0; }
+.acct-picker-expanded { border-top:1px solid #f1f5f9; max-height:260px; overflow-y:auto; }
+.acct-picker-expanded .acct-picker-row { padding:10px 14px; background:#f8fafc; }
+.acct-picker-add { display:flex; align-items:center; gap:6px; width:100%; padding:10px 14px; background:none; border:none; border-top:1px solid #f1f5f9; color:var(--blue); font-size:12px; font-weight:600; cursor:pointer; }
+.acct-picker-add:hover { background:#f8fafc; }
+
+/* Capital / P&L summary — hero Total P&L + used-capital bar */
+.cap-summary { padding:16px 16px 14px; margin-bottom:10px; }
+.cap-summary-hero { display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:14px; gap:12px; }
+.cap-summary-lbl { font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px; }
+.cap-summary-pnl-row { display:flex; align-items:center; gap:6px; }
+.cap-summary-pnl { font-size:28px; font-weight:800; letter-spacing:-.5px; }
+.cap-summary-sub { font-size:14px; font-weight:700; text-align:right; }
+.cap-summary-bar-labels { display:flex; justify-content:space-between; font-size:11px; margin-bottom:6px; color:#94a3b8; }
+.cap-summary-bar-labels strong { color:#334155; font-weight:600; }
+.cap-summary-bar-track { height:8px; border-radius:5px; background:#f1f5f9; overflow:hidden; }
+.cap-summary-bar-fill { height:100%; border-radius:5px; background:linear-gradient(90deg,#3b82f6,#60a5fa); }
+
+/* Form leg rows (exit form) */
+.form-leg-row      { display:grid; grid-template-columns:1fr 70px 100px; gap:8px; align-items:end; margin-bottom:8px; }
+.form-leg-row-exit { grid-template-columns:1fr 130px; }
+.form-leg-row > * { min-width:0; }
+.form-leg-info     { display:flex; gap:8px; align-items:flex-start; min-width:0; }
+.form-leg-info > div { min-width:0; }
+
+/* New trade ticket (tab view) */
+.new-trade-ticket  { padding:4px 0 4px; }
+.new-trade-divider { height:1px; background:var(--border); margin:12px 0; }
+.new-trade-footer  { display:flex; align-items:center; gap:10px; padding-top:12px; border-top:1px solid var(--border); margin-top:4px; }
+
+@media (max-width:640px) {
+  /* Form leg rows: slightly tighter columns */
+  .form-leg-row { grid-template-columns:1fr 64px 88px; gap:6px; }
+}

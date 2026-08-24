@@ -1,166 +1,18 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useRecs, useRecPrices, useCreateRec, useDeleteRec, useExitRec, useAdjustRec, useCreateAccountTrade,
-         useTrades, useTradeHistory, useExitTrade, useApplyAdjTrade, useDeleteTrade,
-         useAccounts, useAccountPortfolio } from '../hooks/useTrades'
+         useAccounts } from '../hooks/useTrades'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getCredits, getPlans, subscribeWithCredits, listGames, submitEntry, getPortfolio } from '../api/games'
 import { loadRazorpayScript } from '../api/billing'
 import { useCreateOrder, useVerifyPayment } from '../hooks/useBilling'
 import useAuthStore from '../store/authStore'
-import { searchInstruments } from '../api/trades'
 import { useToast } from '../components/common/Toast'
+import LegBuilder from '../components/trades/LegBuilder'
+import { newLeg, collectLegs } from '../components/trades/legHelpers'
+import LegGroup from '../components/trades/LegDisplay'
+import { fmtRs, fmtPnl, fmtQty, fmtIstShort, fmtContract } from '../utils/format'
 import './Dashboard.css'
-
-const ADJ_COLORS = ['#fffbeb', '#eff6ff', '#f0fdf4', '#fdf4ff']
-
-function fmtRs(v, dec = 0) {
-  if (v == null) return '—'
-  return '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: dec })
-}
-function fmtPnl(v) {
-  if (v == null) return '—'
-  const n = Number(v)
-  return (n >= 0 ? '+₹' : '−₹') + Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })
-}
-function fmtQty(lots, lotSize, type) {
-  if (!lots) return '—'
-  if (type === 'EQ') return `${lots} sh`
-  const qty = lotSize ? lots * lotSize : lots
-  return lotSize ? `${lots}L (${qty})` : `${lots}L`
-}
-
-function collectLegs(legs, toast) {
-  const out = []; let symbol = null
-  for (const leg of legs) {
-    if (!leg.instrument) { toast('Select an instrument for each leg', 'err'); return null }
-    const lots  = parseInt(leg.lots)
-    const price = parseFloat(leg.price)
-    if (!lots || lots < 1)    { toast('Enter valid lots for each leg', 'err'); return null }
-    if (!price || price <= 0) { toast('Enter valid price for each leg', 'err'); return null }
-    symbol = leg.instrument.symbol
-    const l = { side: leg.side, type: leg.instrument.instrument_type, lots, price }
-    if (leg.instrument.instrument_key) l.instrument_key = leg.instrument.instrument_key
-    if (leg.instrument.strike)         l.strike         = leg.instrument.strike
-    if (leg.instrument.expiry_str)     l.expiry         = leg.instrument.expiry_str
-    if (leg.instrument.lot_size)       l.lot_size       = leg.instrument.lot_size
-    out.push(l)
-  }
-  return { symbol, legs: out }
-}
-
-// ─── Instrument search typeahead ─────────────────────────────────────────────
-
-function InstrumentSearch({ value, onSelect }) {
-  const [query, setQuery]     = useState('')
-  const [results, setResults] = useState([])
-  const [open, setOpen]       = useState(false)
-  const [focused, setFocused] = useState(-1)
-  const timerRef = useRef(null)
-  const wrapRef  = useRef(null)
-
-  useEffect(() => {
-    function onClickOut(e) { if (!wrapRef.current?.contains(e.target)) setOpen(false) }
-    document.addEventListener('click', onClickOut)
-    return () => document.removeEventListener('click', onClickOut)
-  }, [])
-
-  function handleChange(e) {
-    const q = e.target.value
-    setQuery(q); setFocused(-1)
-    clearTimeout(timerRef.current)
-    if (q.length < 2) { setOpen(false); setResults([]); return }
-    timerRef.current = setTimeout(async () => {
-      const res = await searchInstruments(q)
-      setResults(res); setOpen(res.length > 0)
-    }, 300)
-  }
-
-  function handleKey(e) {
-    if (!open) return
-    if      (e.key === 'ArrowDown') { e.preventDefault(); setFocused(f => Math.min(f + 1, results.length - 1)) }
-    else if (e.key === 'ArrowUp')   { e.preventDefault(); setFocused(f => Math.max(f - 1, 0)) }
-    else if (e.key === 'Enter' && focused >= 0) { e.preventDefault(); pick(results[focused]) }
-    else if (e.key === 'Escape')    setOpen(false)
-  }
-
-  function pick(item) { setOpen(false); setQuery(''); setResults([]); onSelect(item) }
-
-  if (value) return (
-    <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:6,marginBottom:6}}>
-      <span style={{fontSize:12,color:'#1d4ed8',fontWeight:500,flex:1}}>{value.label}</span>
-      <button style={{background:'none',border:'none',color:'#93c5fd',cursor:'pointer',fontSize:14}} onClick={() => onSelect(null)}>✕</button>
-    </div>
-  )
-
-  return (
-    <div ref={wrapRef} style={{position:'relative',marginBottom:6}}>
-      <input placeholder="Search: nifty 25000 ce  /  banknifty fut"
-             value={query} onChange={handleChange} onKeyDown={handleKey} autoComplete="off" />
-      {open && (
-        <div style={{position:'absolute',top:'100%',left:0,right:0,zIndex:200,background:'#fff',
-                     border:'1px solid var(--border)',borderTop:'none',borderRadius:'0 0 8px 8px',
-                     maxHeight:180,overflowY:'auto',boxShadow:'0 6px 16px rgba(0,0,0,.1)'}}>
-          {results.map((r, i) => (
-            <div key={i} style={{padding:'8px 12px',cursor:'pointer',fontSize:13,
-                                 borderBottom:'1px solid #f1f5f9',
-                                 background:i===focused?'#eff6ff':'#fff'}}
-                 onMouseEnter={() => setFocused(i)} onClick={() => pick(r)}>{r.label}</div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Leg builder ─────────────────────────────────────────────────────────────
-
-function newLeg() { return { id: Date.now() + Math.random(), instrument: null, side: 'SELL', lots: '', price: '' } }
-
-function LegBuilder({ legs, onChange }) {
-  function add()            { onChange([...legs, newLeg()]) }
-  function remove(id)       { onChange(legs.filter(l => l.id !== id)) }
-  function update(id, f, v) { onChange(legs.map(l => l.id === id ? { ...l, [f]: v } : l)) }
-
-  return (
-    <div>
-      <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:10}}>
-        {legs.map((leg, i) => (
-          <div key={leg.id} style={{border:'1px solid var(--border)',borderRadius:8,padding:'10px 10px 8px',background:'#fafafa',position:'relative'}}>
-            <div style={{fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>Leg {i + 1}</div>
-            {legs.length > 1 && (
-              <button style={{position:'absolute',top:8,right:8,background:'none',border:'none',color:'#cbd5e1',fontSize:16,padding:0,cursor:'pointer'}}
-                      onClick={() => remove(leg.id)}>✕</button>
-            )}
-            <InstrumentSearch value={leg.instrument} onSelect={ins => update(leg.id, 'instrument', ins)} />
-            {leg.instrument && (
-              <div style={{display:'grid',gridTemplateColumns:'80px 70px 1fr',gap:8}}>
-                <div>
-                  <label>Side</label>
-                  <select value={leg.side} onChange={e => update(leg.id, 'side', e.target.value)}>
-                    <option>BUY</option><option>SELL</option>
-                  </select>
-                </div>
-                <div>
-                  <label>{leg.instrument.instrument_type === 'EQ' ? 'Qty' : 'Lots'}</label>
-                  <input type="number" min="1" placeholder="1" value={leg.lots}
-                         onChange={e => update(leg.id, 'lots', e.target.value)} />
-                </div>
-                <div>
-                  <label>Price</label>
-                  <input type="number" step="0.05" placeholder="0.00" value={leg.price}
-                         onChange={e => update(leg.id, 'price', e.target.value)} />
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-      <button style={{width:'100%',padding:8,border:'1.5px dashed #cbd5e1',borderRadius:6,background:'none',color:'var(--muted)',cursor:'pointer',fontSize:13,marginTop:2}}
-              onClick={add}>+ Add Leg</button>
-    </div>
-  )
-}
 
 // ─── Create recommendation form (admin) ──────────────────────────────────────
 
@@ -219,79 +71,9 @@ function PnlBar({ label, value, base }) {
   )
 }
 
-// ─── Leg display ─────────────────────────────────────────────────────────────
-
-function fmtContract(l) {
-  return [l.strike ? Number(l.strike).toLocaleString('en-IN') : null, l.instrument_type, l.expiry_str]
-    .filter(Boolean).join(' ')
-}
-
-function OpenLeg({ leg: l, symbol, prices }) {
-  const ltp    = prices && l.instrument_key ? prices[l.instrument_key] : null
-  const qty    = (l.lots || 0) * (l.lot_size || 1)
-  const legPnl = ltp != null && l.price != null
-    ? (l.side === 'SELL' ? (l.price - ltp) * qty : (ltp - l.price) * qty)
-    : null
-  return (
-    <div className="rec-leg-row">
-      <span className={`leg-pill ${l.side === 'BUY' ? 'leg-pill-buy' : 'leg-pill-sell'}`}>{l.side}</span>
-      <div className="rec-leg-name">
-        <div className="rec-leg-sym">
-          {l.symbol || symbol}
-          {!!l.auto_adjust && <span title="auto-roll" style={{color:'#6366f1',fontSize:10,marginLeft:4}}>↻</span>}
-        </div>
-        {fmtContract(l) && <div className="rec-leg-contract">{fmtContract(l)}</div>}
-      </div>
-      <div style={{textAlign:'right',flexShrink:0}}>
-        <div className="rec-leg-meta">{fmtQty(l.lots, l.lot_size, l.instrument_type)} · {fmtRs(l.price, 2)}{ltp != null ? ` → ${fmtRs(ltp, 2)}` : ''}</div>
-        {legPnl != null && <div style={{fontSize:12,fontWeight:700,color:legPnl>=0?'var(--green)':'var(--red)'}}>{fmtPnl(legPnl)}</div>}
-      </div>
-    </div>
-  )
-}
-
-function ExitedLeg({ entry: e, exitLeg: x, symbol }) {
-  const qty    = (e.lots || 0) * (e.lot_size || 1)
-  const legPnl = e.price != null && x?.price != null
-    ? (e.side === 'SELL' ? (e.price - x.price) * qty : (x.price - e.price) * qty)
-    : null
-  return (
-    <div className="rec-leg-row">
-      <span className={`leg-pill ${e.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{e.side}</span>
-      <div className="rec-leg-name">
-        <div className="rec-leg-sym">{e.symbol || symbol}</div>
-        {fmtContract(e) && <div className="rec-leg-contract">{fmtContract(e)}</div>}
-      </div>
-      <div style={{textAlign:'right',flexShrink:0}}>
-        <div className="rec-leg-meta">{fmtQty(e.lots,e.lot_size,e.instrument_type)} · {fmtRs(e.price,2)} → {x ? fmtRs(x.price,2) : '—'}</div>
-        {legPnl != null && <div style={{fontSize:12,fontWeight:700,color:legPnl>=0?'var(--green)':'var(--red)'}}>{fmtPnl(legPnl)}</div>}
-      </div>
-    </div>
-  )
-}
-
-function LegGroup({ title, note, legs, symbol, type = 'entry', exitLegs, prices }) {
-  return (
-    <div className={`leg-group leg-group-${type}`}>
-      {(title || note) && (
-        <div className="leg-grp-hdr">
-          {title}
-          {note && <span className="leg-grp-note">{note}</span>}
-        </div>
-      )}
-      {legs.map((l, i) =>
-        exitLegs
-          // Match by instrument_key, not array position — exit_legs is netted
-          // per instrument (original + adjustment on the same instrument share
-          // one exit row), so it can have fewer rows than the flattened legs
-          // list. Position-based indexing here silently drops adjustment rows
-          // whenever an adjustment reuses the original's instrument.
-          ? <ExitedLeg key={i} entry={l} exitLeg={exitLegs.find(x => x.instrument_key && x.instrument_key === l.instrument_key)} symbol={symbol} />
-          : <OpenLeg   key={i} leg={l} symbol={symbol} prices={prices} />
-      )}
-    </div>
-  )
-}
+// fmtContract, OpenLeg, ExitedLeg, LegGroup live in components/trades/LegDisplay.jsx
+// — shared with Positions.jsx's TradeCard/HistoryCard, which render the same
+// kind of data (a position's legs).
 
 function RecLegs({ rec, prices }) {
   const exitLegs = rec.status === 'exited' ? rec.exit_legs : null
@@ -316,7 +98,8 @@ function RecLegs({ rec, prices }) {
 
 // ─── Push to account form (client) ───────────────────────────────────────────
 
-function PushForm({ rec, prices, onClose, openDrawer, onPushed }) {
+function PushForm({ rec, prices, onClose, onPushed }) {
+  const navigate = useNavigate()
   const { data: allAccounts = [] } = useAccounts()
   const realAccounts = allAccounts.filter(a => !a.game_id)
   const gameAccounts = allAccounts.filter(a => a.game_id && a.game_status === 'active')
@@ -367,7 +150,7 @@ function PushForm({ rec, prices, onClose, openDrawer, onPushed }) {
               </optgroup>
             )}
           </select>
-          {openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
+          <button type="button" className="add-account-link" onClick={() => navigate('/profile/accounts')}>+ Add</button>
         </div>
       </div>
       {rec.legs.map((l, i) => (
@@ -482,7 +265,7 @@ function ExitRecForm({ rec, onClose }) {
 
 // ─── Single recommendation item ───────────────────────────────────────────────
 
-function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
+function RecItem({ rec, prices, onPushed, highlight }) {
   const user    = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
   const toast   = useToast()
@@ -638,7 +421,7 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
                   {pushOpen ? 'Cancel' : '+ Add to My Account'}
                 </button>
               </div>
-              {pushOpen && <PushForm rec={rec} prices={prices} onClose={() => setPushOpen(false)} openDrawer={openDrawer} onPushed={onPushed} />}
+              {pushOpen && <PushForm rec={rec} prices={prices} onClose={() => setPushOpen(false)} onPushed={onPushed} />}
             </>
       )}
 
@@ -651,7 +434,8 @@ function RecItem({ rec, prices, openDrawer, onPushed, highlight }) {
 
 const SEGMENTS = ['all', 'F&O', 'Equity', 'ETF', 'Commodities']
 
-function RecsPanel({ isAdmin, openDrawer, onPushed }) {
+function RecsPanel({ isAdmin }) {
+  const navigate = useNavigate()
   const [status,  setStatus]  = useState('open')
   const [segment, setSegment] = useState('all')
   const { data: allRecs = [], isLoading, refetch } = useRecs()
@@ -691,6 +475,14 @@ function RecsPanel({ isAdmin, openDrawer, onPushed }) {
   )]
   const { data: prices = {} } = useRecPrices(instrKeys)
 
+  // A trade was just pushed to one of the user's accounts — Positions is now
+  // its own route rather than a sibling panel, so hop over there to show it.
+  // Carry the account id along (?account=) so Positions selects that account
+  // instead of defaulting to the first one — restores the auto-switch this
+  // page used to do in-place before the split (see Positions.jsx's read of
+  // this param).
+  function handlePushed(acctId) { navigate(acctId ? `/positions?account=${acctId}` : '/positions') }
+
   return (
     <div>
       {isAdmin && <CreateRecForm />}
@@ -702,7 +494,7 @@ function RecsPanel({ isAdmin, openDrawer, onPushed }) {
             <div style={{fontSize:28,marginBottom:10}}>🏦</div>
             <div style={{fontSize:14,fontWeight:700,marginBottom:6}}>Set up your accounts</div>
             <div style={{fontSize:13,color:'var(--muted)',marginBottom:18}}>Add your brokerage accounts to start pushing trades from recommendations.</div>
-            <button className="btn btn-primary" onClick={() => openDrawer('accounts')}>Open Account Settings →</button>
+            <button className="btn btn-primary" onClick={() => navigate('/profile/accounts')}>Open Account Settings →</button>
           </div>
         </div>
       )}
@@ -732,532 +524,7 @@ function RecsPanel({ isAdmin, openDrawer, onPushed }) {
           {!isLoading && !filtered.length && (
             <div className="empty">No {segment !== 'all' ? segment + ' ' : ''}{status !== 'all' ? status + ' ' : ''}recommendations.</div>
           )}
-          {filtered.map(r => <RecItem key={r.id} rec={r} prices={prices} openDrawer={openDrawer} onPushed={onPushed} highlight={r.id === highlightId} />)}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Pending adj section (inside trade card, client applies) ─────────────────
-
-const ADJ_TYPE_LABEL = { auto_roll:'Auto Roll', replace_legs:'Replace Legs', add_legs:'Add Legs', partial_exit:'Partial Exit', exit:'Full Exit', adjustment:'Adjustment' }
-
-function PendingAdjSection({ trade }) {
-  const [prices, setPrices] = useState({})
-  const doApply = useApplyAdjTrade(trade.id)
-  const toast   = useToast()
-
-  async function applyAdj(a) {
-    const legs = []
-    for (let i = 0; i < (a.legs || []).length; i++) {
-      const price = parseFloat(prices[`${a.id}-${i}`] || '')
-      if (!price || price <= 0) { toast(`Enter price for leg ${i+1}`, 'err'); return }
-      const rl = a.legs[i]
-      legs.push({ action:'entry', side:rl.side, instrument_type:rl.instrument_type,
-                  instrument_key:rl.instrument_key, strike:rl.strike, expiry_str:rl.expiry_str,
-                  lots:rl.lots, lot_size:rl.lot_size, price })
-    }
-    const res = await doApply.mutateAsync({ adjustment_id: a.id, adj_type: a.adj_type, legs })
-    if (res.ok) toast('Adjustment applied to your position ✓', 'ok')
-    else toast(res.error || 'Failed', 'err')
-  }
-
-  return (
-    <div className="pending-adj-banner">
-      <div style={{fontWeight:700,fontSize:11,textTransform:'uppercase',letterSpacing:.4,marginBottom:6,color:'#92400e'}}>
-        Pending Adjustments — apply to your position
-      </div>
-      {trade.pending_adjustments.map(a => (
-        <div key={a.id} style={{border:'1px solid #fde68a',borderRadius:6,marginBottom:8,overflow:'hidden'}}>
-          <div style={{padding:'6px 10px',background:'#fef3c7',display:'flex',gap:8,alignItems:'center'}}>
-            <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:10,background:'#e0e7ff',color:'#3730a3'}}>{ADJ_TYPE_LABEL[a.adj_type]||a.adj_type}</span>
-            {a.note && <span style={{fontSize:11,color:'#92400e'}}>{a.note}</span>}
-          </div>
-          <div style={{padding:10,background:'#fff'}}>
-            {(a.legs||[]).map((l,i) => {
-              const st = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : ''
-              return (
-                <div key={i} className="form-leg-row form-leg-row-exit">
-                  <div className="form-leg-info">
-                    <span className={`leg-pill ${l.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{l.side}</span>
-                    <div>
-                      <div className="rec-leg-sym">{st}{l.instrument_type} · {fmtQty(l.lots,l.lot_size,l.instrument_type)}</div>
-                      <div className="rec-leg-contract">Rec @ {fmtRs(l.price,2)}</div>
-                    </div>
-                  </div>
-                  <div>
-                    <label>Your price</label>
-                    <input type="number" step="0.05" placeholder="0.00"
-                           value={prices[`${a.id}-${i}`]||''}
-                           onChange={e => setPrices(p => ({...p,[`${a.id}-${i}`]:e.target.value}))} />
-                  </div>
-                </div>
-              )
-            })}
-            <button className="btn btn-primary btn-sm" onClick={() => applyAdj(a)} disabled={doApply.isPending}>
-              Apply to My Position
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ─── Account position trade card ─────────────────────────────────────────────
-
-function TradeCard({ trade: t, isAdmin, prices }) {
-  const [exitOpen, setExitOpen] = useState(false)
-  const [exitPx,   setExitPx]   = useState((t.current_legs || t.legs || []).map(() => ''))
-  const [exitNote, setExitNote] = useState('')
-  const doExit = useExitTrade(t.id)
-  const doDel  = useDeleteTrade()
-  const toast  = useToast()
-
-  async function submitExit() {
-    const legs   = t.current_legs || t.legs || []
-    const exitPrices = exitPx.slice(0, legs.length).map(parseFloat)
-    if (exitPrices.some(p => !p || p <= 0)) { toast('Enter valid exit price for each leg', 'err'); return }
-    const res = await doExit.mutateAsync({ prices: exitPrices, note: exitNote })
-    if (res.ok) { toast('Trade closed — Telegram alert sent ✓', 'ok'); setExitOpen(false) }
-    else toast(res.error || 'Exit failed', 'err')
-  }
-
-  async function handleDel() {
-    if (!confirm('Delete this trade? This cannot be undone.')) return
-    const res = await doDel.mutateAsync(t.id)
-    if (res.ok) toast('Trade deleted ✓', 'ok')
-    else toast(res.error || 'Failed', 'err')
-  }
-
-  const mkLegRows = (legs, bg) => legs.map((l, i) => {
-    const strike     = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : ''
-    const exp        = l.expiry_str ? ` ${l.expiry_str}` : ''
-    const instrument = l.instrument_type === 'EQ' ? t.symbol : `${strike}${l.instrument_type}${exp}`
-    const ltp        = prices && l.instrument_key ? prices[l.instrument_key] : null
-    const qty        = (l.lots || 0) * (l.lot_size || 1)
-    const legPnl     = ltp != null && l.price != null
-      ? (l.side === 'SELL' ? (l.price - ltp) * qty : (ltp - l.price) * qty)
-      : null
-    const bgStyle = bg ? {background:bg} : {}
-    return (
-      <tr key={i} className="leg-row" style={bgStyle}>
-        <td data-label="Side"><span className={`leg-pill ${l.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{l.side}</span></td>
-        <td data-label="Instrument">{instrument}</td>
-        <td data-label="Qty">{fmtQty(l.lots, l.lot_size, l.instrument_type)}</td>
-        <td data-label="Entry">{fmtRs(l.price, 2)}</td>
-        <td data-label="LTP" className="ltp-cell" style={bgStyle}>{ltp != null ? fmtRs(ltp, 2) : '—'}</td>
-        <td data-label="P&L" style={bgStyle} className={legPnl != null ? (legPnl >= 0 ? 'pnl-pos' : 'pnl-neg') : 'pnl-neu'}>
-          {legPnl != null ? fmtPnl(legPnl) : '—'}
-        </td>
-      </tr>
-    )
-  })
-
-  return (
-    <div className="trade-card">
-      <div style={{padding:'9px 14px',background:'#f8fafc',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-        <span style={{fontWeight:700,fontSize:14}}>{t.symbol}</span>
-        <span className="badge badge-open">Open</span>
-        {t.pending_adj_count > 0 && (
-          <span style={{fontSize:11,padding:'2px 7px',borderRadius:20,background:'#fef3c7',color:'#92400e',fontWeight:600}}>⚠ {t.pending_adj_count} adj pending</span>
-        )}
-        {t.pending_exit && (
-          <span style={{fontSize:11,padding:'2px 7px',borderRadius:20,background:'#fee2e2',color:'#b91c1c',fontWeight:600}}>🔔 exit pending</span>
-        )}
-        <span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#f1f5f9',color:'var(--muted)',border:'1px solid var(--border)'}}>{t.account_label}</span>
-        <span style={{fontSize:11,color:'var(--muted)',marginLeft:'auto'}}>{t.entry_ist}</span>
-      </div>
-
-      <div className="legs-table-wrap">
-      <table className="legs-table">
-        <thead><tr><th>Side</th><th>Instrument</th><th>Qty</th><th>Entry</th><th>LTP</th><th>P&amp;L</th></tr></thead>
-        <tbody>
-          <tr style={{background:'#f8fafc'}}>
-            <td colSpan={6} style={{padding:'4px 12px 2px',borderBottom:'none',fontSize:10,fontWeight:600,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5}}>Entry</td>
-          </tr>
-          {mkLegRows(t.legs, '#f8fafc')}
-          {(t.applied_adjustments||[]).map((a, ai) => {
-            const bg = ADJ_COLORS[ai % ADJ_COLORS.length]
-            return [
-              <tr key={`ah-${a.id}`} style={{background:bg}}>
-                <td colSpan={6} style={{padding:'4px 12px 2px',borderBottom:'none',fontSize:10,fontWeight:600,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5,borderTop:'1px solid #f1f5f9'}}>
-                  Adjustment {ai+1}{a.note?` · ${a.note}`:''}
-                </td>
-              </tr>,
-              ...mkLegRows(a.legs||[], bg)
-            ]
-          })}
-        </tbody>
-      </table>
-      </div>
-
-      {t.margin != null && (
-        <div className="pnl-bar">
-          <span className="pnl-bar-lbl">Margin</span>
-          <span style={{fontWeight:700}}>₹{Math.round(t.margin).toLocaleString('en-IN')}</span>
-        </div>
-      )}
-      {(() => {
-        let net = 0, allKnown = true
-        const allLegs = [...(t.legs || []), ...(t.applied_adjustments || []).flatMap(a => a.legs || [])]
-        for (const l of allLegs) {
-          const ltp = prices && l.instrument_key && prices[l.instrument_key]
-          if (!ltp) { allKnown = false; break }
-          const qty = (l.lots || 0) * (l.lot_size || 1)
-          net += l.side === 'SELL' ? (l.price - ltp) * qty : (ltp - l.price) * qty
-        }
-        return (
-          <div className="pnl-bar">
-            <span className="pnl-bar-lbl">Unrealised P&amp;L</span>
-            {allKnown
-              ? <span style={{fontWeight:700,color:net>=0?'var(--green)':'var(--red)'}}>{fmtPnl(net)}</span>
-              : <span className="pnl-neu" style={{fontWeight:700}}>—</span>
-            }
-          </div>
-        )
-      })()}
-
-      {(t.pending_adjustments||[]).length > 0 && <PendingAdjSection trade={t} />}
-
-      {t.pending_exit && (
-        <div style={{padding:'10px 14px',borderTop:'2px solid #ef4444',background:'#fff1f2',display:'flex',alignItems:'flex-start',gap:10}}>
-          <span style={{fontSize:16,lineHeight:1,flexShrink:0}}>🔔</span>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontWeight:700,fontSize:12,color:'#b91c1c',textTransform:'uppercase',letterSpacing:.4,marginBottom:2}}>
-              Recommendation Exited
-            </div>
-            <div style={{fontSize:12,color:'#7f1d1d'}}>
-              The recommendation for this trade has been closed. Please exit your position.
-            </div>
-          </div>
-          <button className="btn btn-danger btn-sm" style={{flexShrink:0}} onClick={() => setExitOpen(true)}>
-            Exit Now
-          </button>
-        </div>
-      )}
-
-      {!isAdmin && <>
-        <div style={{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:8}}>
-          <button className="btn btn-danger btn-sm" onClick={() => setExitOpen(v=>!v)}>Exit Trade</button>
-          <button className="btn btn-ghost btn-sm" style={{color:'var(--red)',borderColor:'#fca5a5'}} onClick={handleDel}>Delete</button>
-        </div>
-        {exitOpen && (
-          <div className="inline-action action-exit">
-            <h4>Exit Trade</h4>
-            {(t.current_legs||t.legs||[]).map((l,i) => {
-              const strike   = l.strike ? `${Number(l.strike).toLocaleString('en-IN')} ` : ''
-              const exitSide = l.side === 'BUY' ? 'SELL' : 'BUY'
-              return (
-                <div key={i} className="form-leg-row form-leg-row-exit">
-                  <div className="form-leg-info">
-                    <span className={`leg-pill ${exitSide==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{exitSide}</span>
-                    <div>
-                      <div className="rec-leg-sym">{strike}{l.instrument_type} · {fmtQty(l.lots,l.lot_size,l.instrument_type)}</div>
-                      <div className="rec-leg-contract">entry {fmtRs(l.price,2)}</div>
-                    </div>
-                  </div>
-                  <div>
-                    <label>Price</label>
-                    <input type="number" step="0.05" placeholder="0.00"
-                           value={exitPx[i]||''} onChange={e=>setExitPx(ps=>ps.map((p,j)=>j===i?e.target.value:p))} />
-                  </div>
-                </div>
-              )
-            })}
-            <div style={{display:'flex',gap:8,marginTop:12,alignItems:'center'}}>
-              <div style={{flex:1}}>
-                <input placeholder="Note (optional)" value={exitNote} onChange={e=>setExitNote(e.target.value)} />
-              </div>
-              <button className="btn btn-danger btn-sm" onClick={submitExit} disabled={doExit.isPending}>Confirm Exit</button>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setExitOpen(false)}>Cancel</button>
-            </div>
-          </div>
-        )}
-      </>}
-    </div>
-  )
-}
-
-// ─── Trade history card ────────────────────────────────────────────────────────
-
-function HistoryCard({ trade: t }) {
-  const pnl    = t.realized_pnl || 0
-  const pnlCls = pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : 'pnl-neu'
-
-  const origLegs  = (t.entry_legs||[]).filter(l => !l.adjustment_id)
-  const adjGroups = []
-  ;(t.entry_legs||[]).filter(l => l.adjustment_id).forEach(l => {
-    let g = adjGroups.find(g => g.adj_id === l.adjustment_id)
-    if (!g) { g = { adj_id: l.adjustment_id, legs: [] }; adjGroups.push(g) }
-    g.legs.push(l)
-  })
-
-  const mkRow = (entry, exitLeg, bg) => {
-    const strike     = entry.strike ? `${Number(entry.strike).toLocaleString('en-IN')} ` : ''
-    const instrument = entry.instrument_type === 'EQ' ? t.symbol : `${strike}${entry.instrument_type}`
-    const legPnl = (entry.price != null && exitLeg?.price != null)
-      ? (() => { const qty=(entry.lots||0)*(entry.lot_size||1); return entry.side==='SELL'?(entry.price-exitLeg.price)*qty:(exitLeg.price-entry.price)*qty })()
-      : null
-    return (
-      <tr key={`${entry.id}`} className="leg-row" style={bg?{background:bg}:{}}>
-        <td data-label="Side"><span className={`leg-pill ${entry.side==='BUY'?'leg-pill-buy':'leg-pill-sell'}`}>{entry.side}</span></td>
-        <td data-label="Instrument">{instrument}</td>
-        <td data-label="Qty">{fmtQty(entry.lots, entry.lot_size, entry.instrument_type)}</td>
-        <td data-label="Entry">{fmtRs(entry.price, 2)}</td>
-        <td data-label="Exit">{exitLeg?.price != null ? fmtRs(exitLeg.price, 2) : '—'}</td>
-        <td data-label="P&L">{legPnl!=null?<span style={{color:legPnl>=0?'var(--green)':'var(--red)',fontWeight:600}}>{fmtPnl(legPnl)}</span>:'—'}</td>
-      </tr>
-    )
-  }
-
-  // Pre-compute exit leg pairings
-  const origLen = origLegs.length
-  const adjOffsets = adjGroups.map((_, ai) =>
-    origLen + adjGroups.slice(0, ai).reduce((s, g2) => s + g2.legs.length, 0)
-  )
-
-  return (
-    <div className="trade-card trade-card-closed">
-      <div style={{padding:'9px 14px',background:'#f8fafc',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-        <span style={{fontWeight:700,fontSize:14}}>{t.symbol}</span>
-        <span className="badge badge-exited">Closed</span>
-        <span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#f1f5f9',color:'var(--muted)',border:'1px solid var(--border)'}}>{t.account_label}</span>
-        <span style={{fontSize:11,color:'var(--muted)',marginLeft:'auto',display:'flex',flexDirection:'column',alignItems:'flex-end',gap:1}}>
-          <span>In: {t.entry_ist}</span><span>Out: {t.exit_ist}</span>
-        </span>
-      </div>
-      <div className="legs-table-wrap">
-      <table className="legs-table">
-        <thead><tr><th>Side</th><th>Instrument</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&amp;L</th></tr></thead>
-        <tbody>
-          <tr style={{background:'#f8fafc'}}>
-            <td colSpan={6} style={{padding:'4px 14px 2px',borderBottom:'none',fontSize:10,fontWeight:600,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5}}>Entry</td>
-          </tr>
-          {origLegs.map((e, i) => mkRow(e, t.exit_legs?.[i], '#f8fafc'))}
-          {adjGroups.map((g, ai) => {
-            const bg     = ADJ_COLORS[ai % ADJ_COLORS.length]
-            const offset = adjOffsets[ai]
-            return [
-              <tr key={`ah-${g.adj_id}`} style={{background:bg}}>
-                <td colSpan={6} style={{padding:'4px 14px 2px',borderBottom:'none',fontSize:10,fontWeight:600,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5,borderTop:'1px solid #f1f5f9'}}>Adjustment {ai+1}</td>
-              </tr>,
-              ...g.legs.map((e, j) => mkRow(e, t.exit_legs?.[offset + j], bg))
-            ]
-          })}
-        </tbody>
-      </table>
-      </div>
-      <div className="pnl-bar">
-        <span className="pnl-bar-lbl">Realized P&amp;L</span>
-        <span className={pnlCls} style={{fontWeight:700}}>{fmtPnl(pnl)}</span>
-      </div>
-    </div>
-  )
-}
-
-// ─── Positions / history panel (right column) ────────────────────────────────
-
-function AccountSummaryBar({ accountId }) {
-  const { data } = useAccountPortfolio(accountId)
-  const pf = data?.portfolio
-  if (!pf || pf.capital == null) return null
-  const pnl        = pf.pnl ?? 0
-  const upnl       = pf.unrealized_pnl ?? 0
-  const usedCap    = pf.used_capital ?? 0
-  const pnlColor   = pnl >= 0 ? 'var(--green)' : 'var(--red)'
-  const upColor    = upnl >= 0 ? 'var(--green)' : 'var(--red)'
-  return (
-    <div className="acct-summary-bar">
-      <div className="acct-summary-stat">
-        <div className="acct-summary-val">{fmtRs(pf.capital)}</div>
-        <div className="acct-summary-lbl">Capital</div>
-      </div>
-      {usedCap > 0 && <>
-        <div className="acct-summary-sep" />
-        <div className="acct-summary-stat">
-          <div className="acct-summary-val" style={{color:'#f59e0b'}}>{fmtRs(usedCap)}</div>
-          <div className="acct-summary-lbl">Used (Margin)</div>
-        </div>
-      </>}
-      <div className="acct-summary-sep" />
-      <div className="acct-summary-stat">
-        <div className="acct-summary-val" style={{color:upColor}}>{upnl >= 0 ? '+' : ''}{fmtRs(upnl)}</div>
-        <div className="acct-summary-lbl">Unrealized</div>
-      </div>
-      <div className="acct-summary-sep" />
-      <div className="acct-summary-stat">
-        <div className="acct-summary-val" style={{color:pnlColor,fontWeight:700}}>{pnl >= 0 ? '+' : ''}{fmtRs(pnl)}</div>
-        <div className="acct-summary-lbl">Total P&amp;L</div>
-      </div>
-    </div>
-  )
-}
-
-function NewTradeForm({ accounts, gameAccounts, onDone, openDrawer }) {
-  const [acctId, setAcctId] = useState('')
-  const [legs, setLegs]     = useState([newLeg()])
-  const [note, setNote]     = useState('')
-  const push  = useCreateAccountTrade()
-  const toast = useToast()
-
-  async function submit() {
-    if (!acctId) return toast('Select an account', 'err')
-    const collected = collectLegs(legs, toast)
-    if (!collected) return
-    const res = await push.mutateAsync({ account_id: parseInt(acctId), symbol: collected.symbol, legs: collected.legs, note })
-    if (res.ok) { toast('Trade added!', 'ok'); onDone(parseInt(acctId)) }
-    else toast(res.error || 'Failed', 'err')
-  }
-
-  return (
-    <div className="new-trade-ticket anim-pop">
-      <div className="form-row">
-        <label>Account</label>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <select value={acctId} onChange={e => setAcctId(e.target.value)}>
-            <option value="">Select account…</option>
-            {accounts.length > 0 && (
-              <optgroup label="Broker Accounts">
-                {accounts.map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {(gameAccounts||[]).length > 0 && (
-              <optgroup label="Game Accounts">
-                {(gameAccounts||[]).map(a => <option key={a.id} value={a.id}>{a.label || `Game #${a.game_id}`}</option>)}
-              </optgroup>
-            )}
-          </select>
-          {openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
-        </div>
-      </div>
-      <div className="new-trade-divider" />
-      <LegBuilder legs={legs} onChange={setLegs} />
-      <div className="form-row" style={{marginTop:4}}>
-        <label>Note <span style={{fontWeight:400,textTransform:'none',letterSpacing:0,color:'#94a3b8'}}>(optional)</span></label>
-        <input placeholder="e.g. breakout entry, stoploss 24500…" value={note} onChange={e => setNote(e.target.value)} />
-      </div>
-      <div className="new-trade-footer">
-        <button className="btn btn-success" style={{flex:1,justifyContent:'center',fontWeight:600}}
-          onClick={submit} disabled={push.isPending}>
-          {push.isPending ? 'Adding…' : 'Add Trade'}
-        </button>
-        <button className="btn btn-ghost" onClick={onDone} style={{color:'var(--muted)'}}>Cancel</button>
-      </div>
-    </div>
-  )
-}
-
-function TradesPanel({ isAdmin, openDrawer, switchToAcct, onSwitchDone }) {
-  const [posTab, setPosTab]         = useState('open')
-  const { data: accounts = [] }     = useAccounts()
-
-  const realAccounts = accounts.filter(a => !a.game_id)
-  const gameAccounts = accounts.filter(a => a.game_id && a.game_status === 'active')
-
-  const [acctFilter, setAcctFilter] = useState(() => localStorage.getItem('ev_acct') || '')
-  function setAcct(id) {
-    setAcctFilter(id)
-    if (id) localStorage.setItem('ev_acct', id)
-    else localStorage.removeItem('ev_acct')
-  }
-
-  useEffect(() => {
-    if (!accounts.length) return  // wait for accounts to load before validating
-    const allValid = [...realAccounts, ...gameAccounts].map(a => String(a.id))
-    if (!acctFilter || !allValid.includes(acctFilter)) {
-      setAcct(realAccounts.length ? String(realAccounts[0].id) : '')
-    }
-  }, [accounts])  // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-switch to newly-pushed account (e.g. game account after push)
-  useEffect(() => {
-    if (!switchToAcct) return
-    const allIds = [...realAccounts, ...gameAccounts].map(a => a.id)
-    if (allIds.includes(switchToAcct)) {
-      setAcct(String(switchToAcct))
-      setPosTab('open')
-    }
-    onSwitchDone?.()
-  }, [switchToAcct])  // eslint-disable-line react-hooks/exhaustive-deps
-
-  const params   = acctFilter ? { account_id: acctFilter } : undefined
-  const { data: trades = [], isLoading, refetch }  = useTrades(params)
-  const { data: history = [], isLoading: histLoad, refetch: refetchHist } = useTradeHistory(params, posTab === 'history')
-
-  const instrKeys = [...new Set(trades.flatMap(t => {
-    const allLegs = [...(t.legs || []), ...(t.applied_adjustments || []).flatMap(a => a.legs || [])]
-    return allLegs.map(l => l.instrument_key).filter(Boolean)
-  }))]
-  const { data: prices = {} } = useRecPrices(instrKeys)
-
-  const title = isAdmin ? 'All Positions' : 'My Positions'
-
-  function acctLabel(a) {
-    const base = a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`
-    return a.user_name ? `${a.user_name} · ${base}` : base
-  }
-
-  return (
-    <div>
-      <div className="card">
-        <div className="card-header" style={{gap:0}}>
-          <div style={{display:'flex',gap:2}}>
-            <button className={`pos-tab${posTab==='open'?' active':''}`} onClick={()=>setPosTab('open')}>{title}</button>
-            <button className={`pos-tab${posTab==='history'?' active':''}`} onClick={()=>setPosTab('history')}>History</button>
-            {!isAdmin && (
-              <button className={`pos-tab pos-tab-new${posTab==='new'?' active':''}`} onClick={()=>setPosTab('new')}>+ New Trade</button>
-            )}
-          </div>
-
-          {posTab !== 'new' && (
-            <div className="trades-header-right">
-              {(realAccounts.length > 0 || gameAccounts.length > 0) ? (
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <select value={acctFilter} onChange={e=>setAcct(e.target.value)}
-                          style={{width:'auto',fontSize:12,padding:'4px 8px'}}>
-                    {realAccounts.length > 0 && (
-                      <optgroup label="Broker Accounts">
-                        {realAccounts.map(a => <option key={a.id} value={a.id}>{acctLabel(a)}</option>)}
-                      </optgroup>
-                    )}
-                    {gameAccounts.length > 0 && (
-                      <optgroup label="Game Accounts">
-                        {gameAccounts.map(a => <option key={a.id} value={a.id}>{a.label || `Game #${a.game_id}`}</option>)}
-                      </optgroup>
-                    )}
-                  </select>
-                  {!isAdmin && openDrawer && <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add</button>}
-                </div>
-              ) : (
-                !isAdmin && openDrawer &&
-                  <button type="button" className="add-account-link" onClick={() => openDrawer('accounts')}>+ Add account</button>
-              )}
-              <div className="trades-header-divider" />
-              <button className="btn btn-ghost btn-sm" onClick={()=>posTab==='open'?refetch():refetchHist()}>↻</button>
-            </div>
-          )}
-        </div>
-        <div className="card-body" style={{padding:10}}>
-          {posTab !== 'new' && acctFilter && <AccountSummaryBar accountId={parseInt(acctFilter)} />}
-          {posTab === 'new' && (
-            <NewTradeForm accounts={realAccounts} gameAccounts={gameAccounts} onDone={id => { if (id) setAcct(String(id)); setPosTab('open'); refetch() }} openDrawer={openDrawer} />
-          )}
-          {posTab === 'open' && (
-            isLoading ? <div className="empty">Loading…</div> :
-            !trades.length ? <div className="empty">No open positions.</div> :
-            trades.map(t => <TradeCard key={t.id} trade={t} isAdmin={isAdmin} prices={prices} />)
-          )}
-          {posTab === 'history' && (
-            histLoad ? <div className="empty">Loading…</div> :
-            !history.length ? <div className="empty">No closed trades.</div> :
-            history.map(t => <HistoryCard key={t.id} trade={t} />)
-          )}
+          {filtered.map(r => <RecItem key={r.id} rec={r} prices={prices} onPushed={handlePushed} highlight={r.id === highlightId} />)}
         </div>
       </div>
     </div>
@@ -1430,12 +697,6 @@ const TYPE_ICON   = { price_prediction:'🔮', mcq:'📝', leaderboard:'📈' }
 const TYPE_LABEL  = { price_prediction:'Prediction', mcq:'Quiz', leaderboard:'Trading Challenge' }
 const TYPE_COLOR  = { price_prediction:'#6366f1', mcq:'#8b5cf6', leaderboard:'#22c55e' }
 
-function fmtIstShort(ts) {
-  if (!ts) return ''
-  const d = new Date(ts.endsWith('Z') ? ts : ts + 'Z')
-  return d.toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true })
-}
-
 function GamePortfolioStrip({ gid }) {
   const { data } = useQuery({ queryKey: ['portfolio', gid], queryFn: () => getPortfolio(gid), refetchInterval: 10000 })
   const pf = data?.portfolio
@@ -1584,20 +845,16 @@ function GamesStrip() {
   )
 }
 
-export default function Dashboard({ openDrawer, subscribed }) {
+export default function Dashboard({ subscribed }) {
   const user    = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
-  const [switchToAcct, setSwitchToAcct] = useState(null)
 
   return (
     <div className="dash-layout">
       {isAdmin || subscribed
-        ? <RecsPanel isAdmin={isAdmin} openDrawer={openDrawer} onPushed={id => setSwitchToAcct(id)} />
+        ? <RecsPanel isAdmin={isAdmin} />
         : <NoSubscriptionGate />}
-      <div>
-        <TradesPanel isAdmin={isAdmin} openDrawer={openDrawer} switchToAcct={switchToAcct} onSwitchDone={() => setSwitchToAcct(null)} />
-        <GamesStrip />
-      </div>
+      <GamesStrip />
     </div>
   )
 }

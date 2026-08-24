@@ -6,15 +6,17 @@ import { useQuery } from '@tanstack/react-query'
 import { getCredits } from '../../api/games'
 import './MainNav.css'
 
-export default function MainNav({ onOpenDrawer, subscribed }) {
+export default function MainNav({ subscribed }) {
   const user      = useAuthStore(s => s.user)
   const location  = useLocation()
   const navigate  = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef   = useRef(null)
   const isClient  = user?.role === 'client'
-  const isAdmin   = user?.role === 'super_admin' || user?.role === 'admin'
-  const activeTab = location.pathname.startsWith('/games') ? 'games' : 'dashboard'
+  const activeTab = location.pathname.startsWith('/games')     ? 'games' :
+                    location.pathname.startsWith('/positions') ? 'positions' :
+                    location.pathname.startsWith('/profile')   ? 'profile' :
+                    'dashboard'
 
   const { data: credits } = useQuery({
     queryKey: ['credits'],
@@ -40,7 +42,9 @@ export default function MainNav({ onOpenDrawer, subscribed }) {
         </div>
         <div className="nav-tabs">
           <button className={`main-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard')}>Dashboard</button>
+          <button className={`main-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions')}>Positions</button>
           <button className={`main-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games')}>Games</button>
+          <button className={`main-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile')}>Profile</button>
         </div>
         <div className="nav-right">
           {isClient && (
@@ -63,7 +67,7 @@ export default function MainNav({ onOpenDrawer, subscribed }) {
                   <span className={`role-chip role-chip-${user.role}`}>{user.role.replace('_',' ').toUpperCase()}</span>
                 </div>
                 {isClient && <div className="prof-menu-credits">💎 {credits?.balance ?? '—'} credits</div>}
-                <div className="prof-menu-item" style={{cursor:'pointer'}} onClick={() => { setMenuOpen(false); onOpenDrawer('profile') }}>Profile</div>
+                <div className="prof-menu-item" style={{cursor:'pointer'}} onClick={() => { setMenuOpen(false); navigate('/profile') }}>Profile</div>
                 <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
                 <div style={{padding:'6px 14px',fontSize:10,color:'#475569',letterSpacing:.3}}>EdgeVest v{__APP_VERSION__}</div>
                 <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
@@ -71,7 +75,6 @@ export default function MainNav({ onOpenDrawer, subscribed }) {
               </div>
             )}
           </div>
-          <button className="hdr-btn" onClick={()=>{ setMenuOpen(false); onOpenDrawer() }} title="Settings">⚙</button>
         </div>
       </nav>
 
@@ -81,13 +84,17 @@ export default function MainNav({ onOpenDrawer, subscribed }) {
           <span className="bottom-nav-tab-icon">📊</span>
           Dashboard
         </button>
+        <button className={`bottom-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions')}>
+          <span className="bottom-nav-tab-icon">💼</span>
+          Positions
+        </button>
         <button className={`bottom-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games')}>
           <span className="bottom-nav-tab-icon">🎮</span>
           Games
         </button>
-        <button className="bottom-nav-tab" onClick={() => onOpenDrawer()}>
-          <span className="bottom-nav-tab-icon">⚙️</span>
-          Settings
+        <button className={`bottom-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile')}>
+          <span className="bottom-nav-tab-icon">👤</span>
+          Profile
         </button>
       </div>
     </>
