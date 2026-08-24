@@ -8,7 +8,7 @@ import time
 from db.queries import (
     get_active_plans, create_payment_order, get_pending_order_for_user_plan,
     get_payment_order_by_razorpay_id, activate_subscription_from_payment,
-    get_stale_pending_orders, get_active_or_recent_subscription_source,
+    get_stale_pending_orders, get_covering_subscription_order,
     mark_order_reconciled, mark_order_duplicate_refunded,
 )
 from . import razorpay_client
@@ -70,8 +70,9 @@ def reconcile_pending_orders(grace_minutes: int = 10) -> dict:
     themselves fail to deliver): for every order never synced via
     verify-payment and past the grace period, ask Razorpay directly what
     really happened, then either late-activate a genuinely-paid order or
-    auto-refund it if the user already has this exact plan covered by a
-    different paid order (a genuine duplicate purchase).
+    auto-refund it if the user already has an unexpired subscription for
+    this exact plan (a genuine duplicate purchase, as opposed to a renewal —
+    which only happens once the prior subscription has actually lapsed).
     """
     stale  = get_stale_pending_orders(grace_minutes)
     report = {"synced": [], "duplicate_refunded": [], "still_pending": [], "errors": []}
@@ -89,14 +90,14 @@ def reconcile_pending_orders(grace_minutes: int = 10) -> dict:
             report["still_pending"].append(order["id"])
             continue
 
-        dup_source = get_active_or_recent_subscription_source(
+        covering_order = get_covering_subscription_order(
             order["user_id"], order["plan_id"], exclude_payment_order_id=order["id"],
         )
-        if dup_source:
+        if covering_order:
             try:
                 refund = razorpay_client.refund_payment(captured["id"], captured["amount"])
                 mark_order_duplicate_refunded(
-                    order["id"], captured["id"], dup_source["razorpay_order_id"], refund["id"],
+                    order["id"], captured["id"], covering_order["razorpay_order_id"], refund["id"],
                 )
                 report["duplicate_refunded"].append(order["id"])
             except Exception as e:

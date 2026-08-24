@@ -2523,22 +2523,47 @@ def get_stale_pending_orders(older_than_minutes: int) -> list[dict]:
         conn.close()
 
 
-def get_active_or_recent_subscription_source(user_id: int, plan_id: int,
-                                              exclude_payment_order_id: int) -> dict | None:
-    """Is there already a DIFFERENT paid order covering this exact user+plan?
-    If so, a later-discovered paid order for the same pair is a duplicate."""
+def get_covering_subscription_order(user_id: int, plan_id: int,
+                                     exclude_payment_order_id: int) -> dict | None:
+    """Is this exact plan already covered by an unexpired subscription right
+    now? If so, a later-discovered paid order for the same user+plan is a
+    duplicate (the user already got what they paid for) rather than a
+    renewal (which only happens once the prior subscription has lapsed).
+
+    Checks subscriptions.end_date directly rather than trusting
+    subscriptions.status='active' — that field is only flipped to 'expired'
+    by expire_stale_subscriptions(), called opportunistically from a few
+    server.py routes, so it can lag behind the actual date and isn't safe
+    to rely on from an independent reconcile cron.
+
+    Returns the payment_orders row that activated the covering subscription
+    (for the admin-facing duplicate_of_order_id audit link), if one can be
+    found — the covering subscription itself may have come from a payment
+    row that's since been superseded/deleted, or from gem redemption rather
+    than Razorpay, in which case only {"covered": True} is returned with the
+    rest of the fields None.
+    """
     conn = get_connection()
     try:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        sub = conn.execute("""
+            SELECT id FROM subscriptions
+            WHERE user_id = ? AND plan_id = ? AND end_date >= ?
+            ORDER BY end_date DESC LIMIT 1
+        """, (user_id, plan_id, today)).fetchone()
+        if not sub:
+            return None
+
         row = conn.execute("""
             SELECT id, razorpay_order_id, razorpay_payment_id, amount, currency, created_at
             FROM payment_orders
             WHERE user_id = ? AND plan_id = ? AND status = 'paid' AND id != ?
-            ORDER BY id ASC LIMIT 1
+            ORDER BY id DESC LIMIT 1
         """, (user_id, plan_id, exclude_payment_order_id)).fetchone()
-        if not row:
-            return None
         cols = ["id", "razorpay_order_id", "razorpay_payment_id", "amount", "currency", "created_at"]
-        return dict(zip(cols, row))
+        result = dict(zip(cols, row)) if row else {c: None for c in cols}
+        result["covered"] = True
+        return result
     finally:
         conn.close()
 
