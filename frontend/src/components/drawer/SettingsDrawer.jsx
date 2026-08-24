@@ -569,6 +569,7 @@ function PlansTab() {
   const [duration, setDuration] = useState('30')
   const [desc,     setDesc]     = useState('')
   const [editGem,  setEditGem]  = useState({})  // { [planId]: gemCostStr }
+  const [editPrice, setEditPrice] = useState({}) // { [planId]: priceStr }
 
   async function create() {
     if (!name.trim()) { toast('Enter plan name', 'err'); return }
@@ -580,6 +581,12 @@ function PlansTab() {
   async function saveGemCost(id) {
     const res = await updatePlan.mutateAsync({ id, gem_cost: parseInt(editGem[id] || 0) })
     if (res.ok) { toast('Gem cost updated ✓', 'ok'); setEditGem(prev => { const n = {...prev}; delete n[id]; return n }) }
+    else toast(res.error || 'Failed', 'err')
+  }
+
+  async function savePrice(id) {
+    const res = await updatePlan.mutateAsync({ id, price: parseInt(editPrice[id] || 0) })
+    if (res.ok) { toast('Price updated ✓', 'ok'); setEditPrice(prev => { const n = {...prev}; delete n[id]; return n }) }
     else toast(res.error || 'Failed', 'err')
   }
 
@@ -602,7 +609,24 @@ function PlansTab() {
                 {p.price === 0 && <span style={{fontSize:10,background:'#dcfce7',color:'#166534',padding:'1px 6px',borderRadius:10,fontWeight:700}}>Free</span>}
                 {!p.active && <span style={{fontSize:10,background:'#f1f5f9',color:'#94a3b8',padding:'1px 6px',borderRadius:10,fontWeight:700}}>Inactive</span>}
               </div>
-              <div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>₹{p.price} · {p.duration_days} days{p.description?` · ${p.description}`:''}</div>
+              <div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>{p.duration_days} days{p.description?` · ${p.description}`:''}</div>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
+                <span style={{fontSize:11,color:'var(--muted)'}}>₹ Price:</span>
+                {p.id in editPrice ? (
+                  <>
+                    <input type="number" min="0" value={editPrice[p.id]}
+                           onChange={e => setEditPrice(prev => ({...prev, [p.id]: e.target.value}))}
+                           style={{width:60,fontSize:11,padding:'2px 4px',border:'1px solid var(--border)',borderRadius:4}} />
+                    <button className="btn btn-primary btn-sm" style={{fontSize:10,padding:'2px 8px'}} onClick={() => savePrice(p.id)}>Save</button>
+                    <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 6px'}} onClick={() => setEditPrice(prev => { const n={...prev}; delete n[p.id]; return n })}>✕</button>
+                  </>
+                ) : (
+                  <span style={{fontSize:11,cursor:'pointer',color: p.price > 0 ? 'var(--text)' : 'var(--muted)'}}
+                        onClick={() => setEditPrice(prev => ({...prev, [p.id]: String(p.price || 0)}))}>
+                    {p.price > 0 ? `₹${p.price}` : <span style={{textDecoration:'underline dotted'}}>Set</span>}
+                  </span>
+                )}
+              </div>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
                 <span style={{fontSize:11,color:'var(--muted)'}}>💎 Gems:</span>
                 {p.id in editGem ? (
