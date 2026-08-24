@@ -20,20 +20,17 @@ from flask_cors import CORS
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
 
-# CORS — frontend is on a separate origin (S3/CloudFront or Vite dev server)
+# CORS — frontend is on a separate origin (S3/CloudFront or Vite dev server).
+# allow_private_network=True sends Access-Control-Allow-Private-Network: true
+# on preflights — Chrome requires this explicit opt-in before letting a
+# public-address page (dev.edgevest.in) fetch a loopback target
+# (dev-api.edgevest.in resolves to 127.0.0.1); being HTTPS/a secure context
+# satisfies one PNA requirement but not this one. Harmless elsewhere: browsers
+# only check it during a PNA preflight, which only triggers against a target
+# in a more-private address space than the caller (never true for prod/staging).
 _CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 if _CORS_ORIGINS:
-    CORS(app, origins=_CORS_ORIGINS, supports_credentials=True)
-
-# Private Network Access: Chrome requires this explicit opt-in header before
-# allowing a public-address page (dev.edgevest.in) to fetch a loopback target
-# (dev-api.edgevest.in resolves to 127.0.0.1) — being HTTPS/a secure context
-# satisfies one PNA requirement but not this one; flask-cors doesn't set it.
-# Harmless to send always: browsers only look at it during a PNA preflight.
-@app.after_request
-def _allow_private_network(resp):
-    resp.headers["Access-Control-Allow-Private-Network"] = "true"
-    return resp
+    CORS(app, origins=_CORS_ORIGINS, supports_credentials=True, allow_private_network=True)
 
 # Trust the X-Forwarded-Proto header from nginx so url_for() generates https:// URLs
 # and OAuth redirect URIs are correct in prod
