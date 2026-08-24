@@ -48,7 +48,7 @@
 .mcq-opt-card.sel .mcq-opt-letter         { background:#3b82f6; color:#fff; }
 .mcq-opt-card.correct-ans .mcq-opt-letter { background:#16a34a; color:#fff; }
 .mcq-opt-card.wrong-ans .mcq-opt-letter   { background:#dc2626; color:#fff; }
-.mcq-opt-text { flex:1; color:#334155; line-height:1.4; }
+.mcq-opt-text { flex:1; min-width:0; color:#334155; line-height:1.4; }
 .mcq-opt-icon { font-size:16px; flex-shrink:0; }
 
 /* Participants */
@@ -65,7 +65,7 @@
 .participant-row.me { background:#eff6ff; }
 .p-avatar { width:28px; height:28px; border-radius:50%; background:#e2e8f0; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#475569; flex-shrink:0; }
 .participant-row.me .p-avatar { background:#3b82f6; color:#fff; }
-.p-name { font-size:13px; font-weight:500; color:#1e293b; flex:1; }
+.p-name { font-size:13px; font-weight:500; color:#1e293b; flex:1; min-width:0; }
 .participant-row.me .p-name { font-weight:700; color:#1d4ed8; }
 .p-you-badge { font-size:9px; font-weight:700; background:#3b82f6; color:#fff; padding:1px 6px; border-radius:10px; margin-left:5px; }
 .p-time { font-size:11px; color:#94a3b8; flex-shrink:0; }

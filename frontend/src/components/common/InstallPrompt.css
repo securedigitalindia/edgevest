@@ -10,7 +10,7 @@
   padding: 8px 16px;
 }
 
-.install-prompt span { flex: 1; }
+.install-prompt span { flex: 1; min-width: 0; }
 
 .install-prompt-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 
