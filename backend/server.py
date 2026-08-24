@@ -20,17 +20,10 @@ from flask_cors import CORS
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
 
-# CORS — frontend is on a separate origin (S3/CloudFront or Vite dev server).
-# allow_private_network=True sends Access-Control-Allow-Private-Network: true
-# on preflights — Chrome requires this explicit opt-in before letting a
-# public-address page (dev.edgevest.in) fetch a loopback target
-# (dev-api.edgevest.in resolves to 127.0.0.1); being HTTPS/a secure context
-# satisfies one PNA requirement but not this one. Harmless elsewhere: browsers
-# only check it during a PNA preflight, which only triggers against a target
-# in a more-private address space than the caller (never true for prod/staging).
+# CORS — frontend is on a separate origin (S3/CloudFront or Vite dev server)
 _CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 if _CORS_ORIGINS:
-    CORS(app, origins=_CORS_ORIGINS, supports_credentials=True, allow_private_network=True)
+    CORS(app, origins=_CORS_ORIGINS, supports_credentials=True)
 
 # Trust the X-Forwarded-Proto header from nginx so url_for() generates https:// URLs
 # and OAuth redirect URIs are correct in prod
@@ -1284,26 +1277,11 @@ def _preload():
 
 
 if __name__ == "__main__":
-    # Opt-in only (DEV_HTTPS=1) — must NOT trigger just because the cert files
-    # exist. Stays on the SAME port (5555), just swaps http for https — PNA
-    # only cares that the target is a secure context, not which port it's on,
-    # and keeping the port unchanged means no sudo (5555 is unprivileged) and
-    # no mismatch with npm run dev's Vite proxy (still targets plain HTTP on
-    # 5555 for local same-origin dev, unaffected either way). Only .env.dev's
-    # VITE_API_URL scheme (http -> https) needs to change to actually use
-    # this — normal local dev (npm run dev) should never set DEV_HTTPS.
-    _use_https = os.environ.get("DEV_HTTPS") == "1"
-    _cert_dir  = os.path.join(os.path.dirname(__file__), "certs")
-    _cert_file = os.path.join(_cert_dir, "dev-api.edgevest.in.pem")
-    _key_file  = os.path.join(_cert_dir, "dev-api.edgevest.in-key.pem")
-    _ssl_ctx   = (_cert_file, _key_file) if _use_https and os.path.exists(_cert_file) and os.path.exists(_key_file) else None
-    _run_port  = PORT
-
     print(f"\n{'='*52}")
     print("  Drishti  —  Trade Manager")
-    print(f"  {'https' if _ssl_ctx else 'http'}://localhost:{_run_port}")
+    print(f"  http://localhost:{PORT}")
     print(f"{'='*52}\n")
 
     _preload()
 
-    app.run(host="127.0.0.1", port=_run_port, debug=False, use_reloader=False, threaded=True, ssl_context=_ssl_ctx)
+    app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False, threaded=True)
