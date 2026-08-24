@@ -1277,11 +1277,25 @@ def _preload():
 
 
 if __name__ == "__main__":
+    # Opt-in only (DEV_HTTPS=1) — must NOT trigger just because the cert files
+    # exist. npm run dev's Vite proxy and .env.dev's VITE_API_URL both have
+    # port 5555 hardcoded; switching to 443 by default would silently break
+    # both the moment mkcert certs are generated. Use DEV_HTTPS=1 specifically
+    # when testing the deployed dev.edgevest.in build against a real HTTPS
+    # backend (PNA requires the target to be a secure context, not just the
+    # calling page) — normal local dev (npm run dev) should never set this.
+    _use_https = os.environ.get("DEV_HTTPS") == "1"
+    _cert_dir  = os.path.join(os.path.dirname(__file__), "certs")
+    _cert_file = os.path.join(_cert_dir, "dev-api.edgevest.in.pem")
+    _key_file  = os.path.join(_cert_dir, "dev-api.edgevest.in-key.pem")
+    _ssl_ctx   = (_cert_file, _key_file) if _use_https and os.path.exists(_cert_file) and os.path.exists(_key_file) else None
+    _run_port  = 443 if _ssl_ctx else PORT
+
     print(f"\n{'='*52}")
     print("  Drishti  —  Trade Manager")
-    print(f"  http://localhost:{PORT}")
+    print(f"  {'https' if _ssl_ctx else 'http'}://localhost:{_run_port}")
     print(f"{'='*52}\n")
 
     _preload()
 
-    app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False, threaded=True)
+    app.run(host="127.0.0.1", port=_run_port, debug=False, use_reloader=False, threaded=True, ssl_context=_ssl_ctx)

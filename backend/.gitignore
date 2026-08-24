@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 data/
 .env.*
+certs/
 *.db
 *.db-shm
 *.db-wal
