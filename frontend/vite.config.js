@@ -51,6 +51,7 @@ export default defineConfig(({ command }) => ({
   ],
   server: {
     port: 5173,
+    host: true,   // bind to LAN too, not just localhost — lets a phone on the same Wi-Fi reach npm run dev
     proxy: {
       '/api': { target: 'http://localhost:5555', changeOrigin: true },
       '/auth': { target: 'http://localhost:5555', changeOrigin: true },
