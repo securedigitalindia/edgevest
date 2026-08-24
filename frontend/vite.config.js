@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import tailwindcss from '@tailwindcss/vite'
 import { readFileSync } from 'fs'
+import { fileURLToPath, URL } from 'url'
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
@@ -13,8 +15,14 @@ export default defineConfig(({ command }) => ({
     // npm run build:dev keeps the absolute dev-api.edgevest.in URL from .env.dev.
     ...(command === 'serve' ? { 'import.meta.env.VITE_API_URL': JSON.stringify('/api') } : {}),
   },
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   plugins: [
     react(),
+    tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icons/*.png'],

@@ -1,0 +1,87 @@
+/* Tailwind + shadcn/ui, scoped to new pages only — see docs/prd or ask about
+   the "Add Tailwind + shadcn/ui" plan for the full rationale. Two deliberate
+   deviations from shadcn's normal `init` output, closing the two collision
+   risks actually identified when this was set up:
+
+   1. Only the theme + utilities layers are imported, not preflight — this
+      app already has its own global reset in index.css that every existing
+      page (and these new ones) already renders against; Tailwind's own
+      element-selector reset would otherwise silently reflow raw <button>/
+      <select>/<h2> etc. on pages that never use a single Tailwind class.
+   2. shadcn's palette variables (--card, --border, --muted, --radius, ...)
+      are defined under .sc-scope, not :root — index.css already defines
+      --card/--border/--muted/--radius globally with different values, used
+      throughout every existing stylesheet. Defining shadcn's under :root
+      would silently redefine those out from under every old page.
+
+   NOT covered: Tailwind's utility class SELECTORS themselves (.flex,
+   .hidden, .truncate, etc.) are unscoped — only their color/theme values
+   come from .sc-scope. No existing className in this codebase collides
+   today (checked at setup time), but if an old page ever reused a bare
+   utility-like name (e.g. class="flex"), it would start picking up
+   Tailwind's styling. Scoping utilities themselves to .sc-scope would need
+   a build-time prefix (`components.json`'s `prefix` option) — not done
+   here since it would also rename every class shadcn's own components use.
+
+   Usage: wrap a new page's root element in `<div className="sc-scope">` to
+   activate this palette, then use Tailwind utilities + components from
+   src/components/ui/* freely inside it. */
+
+/* Explicit order (not just import order) so Tailwind's utilities always win
+   over index.css's `@layer base` — see that file's header comment. */
+@layer base, theme, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@theme inline {
+  --color-background: var(--sc-background);
+  --color-foreground: var(--sc-foreground);
+  --color-card: var(--sc-card);
+  --color-card-foreground: var(--sc-card-foreground);
+  --color-popover: var(--sc-popover);
+  --color-popover-foreground: var(--sc-popover-foreground);
+  --color-primary: var(--sc-primary);
+  --color-primary-foreground: var(--sc-primary-foreground);
+  --color-secondary: var(--sc-secondary);
+  --color-secondary-foreground: var(--sc-secondary-foreground);
+  --color-muted: var(--sc-muted);
+  --color-muted-foreground: var(--sc-muted-foreground);
+  --color-accent: var(--sc-accent);
+  --color-accent-foreground: var(--sc-accent-foreground);
+  --color-destructive: var(--sc-destructive);
+  --color-destructive-foreground: var(--sc-destructive-foreground);
+  --color-border: var(--sc-border);
+  --color-input: var(--sc-input);
+  --color-ring: var(--sc-ring);
+  --radius-sm: calc(var(--sc-radius) - 4px);
+  --radius-md: calc(var(--sc-radius) - 2px);
+  --radius-lg: var(--sc-radius);
+  --radius-xl: calc(var(--sc-radius) + 4px);
+}
+
+/* slate base palette, primary/destructive mapped to this app's existing
+   --blue/--red (index.css) so new pages read as the same product, not a
+   visually distinct sub-app. */
+.sc-scope {
+  --sc-background: #ffffff;
+  --sc-foreground: #1e293b;
+  --sc-card: #ffffff;
+  --sc-card-foreground: #1e293b;
+  --sc-popover: #ffffff;
+  --sc-popover-foreground: #1e293b;
+  --sc-primary: #3b82f6;
+  --sc-primary-foreground: #ffffff;
+  --sc-secondary: #f1f5f9;
+  --sc-secondary-foreground: #1e293b;
+  --sc-muted: #f1f5f9;
+  --sc-muted-foreground: #64748b;
+  --sc-accent: #f1f5f9;
+  --sc-accent-foreground: #1e293b;
+  --sc-destructive: #dc2626;
+  --sc-destructive-foreground: #ffffff;
+  --sc-border: #e2e8f0;
+  --sc-input: #e2e8f0;
+  --sc-ring: #93c5fd;
+  --sc-radius: 0.625rem;
+}
