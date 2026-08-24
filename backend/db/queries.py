@@ -578,6 +578,17 @@ def get_user_by_google_id(google_id: str) -> dict | None:
     return dict(zip(["id","google_id","email","name","picture","role","mobile","note","active"], row))
 
 
+def get_user_by_email(email: str) -> dict | None:
+    conn = get_connection()
+    row  = conn.execute(
+        "SELECT id,google_id,email,name,picture,role,mobile,note,active FROM users WHERE email=?",
+        (email,)
+    ).fetchone()
+    conn.close()
+    if not row: return None
+    return dict(zip(["id","google_id","email","name","picture","role","mobile","note","active"], row))
+
+
 def upsert_user(google_id: str, email: str, name: str, picture: str) -> dict:
     """Create or update a Google user. First-ever user becomes super_admin."""
     from datetime import datetime, timezone

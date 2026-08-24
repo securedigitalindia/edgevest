@@ -214,6 +214,35 @@ def auth_callback():
         expire_stale_subscriptions()
     return redirect(_post_auth_redirect())
 
+@app.route("/auth/dev-login")
+def auth_dev_login():
+    """
+    Dev-only Google-OAuth bypass — logs in as an existing user by email
+    directly, no redirect_uri involved. Needed because Google rejects any
+    non-public-TLD redirect_uri (raw LAN IPs, .local, etc.), so a phone on
+    the same Wi-Fi as the dev laptop can never complete the real Google
+    flow against a localhost-bound backend. 404s outside FLASK_ENV=dev.
+    """
+    if os.environ.get("FLASK_ENV") != "dev":
+        abort(404)
+    email = request.args.get("email")
+    if not email:
+        return jsonify(error="email required"), 400
+    from db.queries import get_user_by_email
+    user = get_user_by_email(email)
+    if not user:
+        return jsonify(error=f"no user with email {email}"), 404
+    session.clear()
+    session.permanent = True
+    next_origin = request.args.get("next")
+    if next_origin in _CORS_ORIGINS:
+        session["post_login_redirect"] = next_origin
+    session["user"] = user
+    if user["role"] == "client":
+        from db.queries import expire_stale_subscriptions
+        expire_stale_subscriptions()
+    return redirect(_post_auth_redirect())
+
 @app.route("/logout")
 def logout():
     next_origin = request.args.get("next")

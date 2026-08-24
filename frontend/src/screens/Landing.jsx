@@ -1,4 +1,26 @@
+import { useState } from 'react'
 import { authUrl } from '../api/client'
+
+// Dev-only Google-login bypass — Google rejects any redirect_uri that isn't a
+// public-TLD domain (raw LAN IPs, .local, etc.), so a phone on the same
+// Wi-Fi as the dev laptop can never complete real Google OAuth against a
+// localhost-bound backend. Logs in as an existing user by email instead;
+// server.py's /auth/dev-login 404s outside FLASK_ENV=dev regardless.
+function DevLogin() {
+  const [email, setEmail] = useState('')
+  if (import.meta.env.MODE !== 'dev') return null
+  return (
+    <div style={{marginTop:18,display:'flex',gap:8,justifyContent:'center',alignItems:'center'}}>
+      <input value={email} onChange={e => setEmail(e.target.value)} placeholder="dev login: email"
+             style={{fontSize:12,padding:'6px 10px',border:'1px solid #e2e8f0',borderRadius:6,width:200}} />
+      <a href={email ? authUrl('/auth/dev-login') + `&email=${encodeURIComponent(email)}` : undefined}
+         style={{fontSize:12,padding:'6px 12px',border:'1px solid #e2e8f0',borderRadius:6,color:'#64748b',
+                 textDecoration:'none',pointerEvents:email ? 'auto' : 'none',opacity:email ? 1 : .5}}>
+        Dev login
+      </a>
+    </div>
+  )
+}
 
 const GOOGLE_SVG = (
   <svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" style={{width:18,height:18,flexShrink:0}}>
@@ -44,6 +66,7 @@ export default function Landing() {
           </a>
         </div>
         <p style={{fontSize:12,color:'#94a3b8',marginTop:14}}>By continuing you agree to our terms. Invite-only access.</p>
+        <DevLogin />
       </section>
 
       {/* Segments strip */}
