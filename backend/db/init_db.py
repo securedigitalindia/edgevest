@@ -700,6 +700,16 @@ def init_db():
     if "margin" not in _atl_cols:
         cur.execute("ALTER TABLE account_trade_legs ADD COLUMN margin REAL")
 
+    _po_cols = {r[1] for r in cur.execute("SELECT * FROM pragma_table_info('payment_orders')")}
+    for col, ddl in [
+        ("duplicate_of_order_id", "ALTER TABLE payment_orders ADD COLUMN duplicate_of_order_id TEXT"),
+        ("refund_id",             "ALTER TABLE payment_orders ADD COLUMN refund_id             TEXT"),
+        ("refunded_at",           "ALTER TABLE payment_orders ADD COLUMN refunded_at           TEXT"),
+        ("reconciled_at",         "ALTER TABLE payment_orders ADD COLUMN reconciled_at         TEXT"),
+    ]:
+        if col not in _po_cols:
+            cur.execute(ddl)
+
     print("  ✓  Schema migrations applied")
 
     # ── Games system ──────────────────────────────────────────

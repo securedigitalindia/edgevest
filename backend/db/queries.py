@@ -2480,3 +2480,108 @@ def activate_subscription_from_payment(user_id: int, plan_id: int, razorpay_orde
         return {"ok": True}
     finally:
         conn.close()
+
+
+def get_pending_order_for_user_plan(user_id: int, plan_id: int, max_age_minutes: int = 30) -> dict | None:
+    """Reuse an existing not-yet-paid order instead of minting a new Razorpay
+    order every time a user retries a stalled checkout attempt."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT id, user_id, plan_id, razorpay_order_id, razorpay_payment_id,
+                   amount, currency, status, created_at, updated_at
+            FROM payment_orders
+            WHERE user_id = ? AND plan_id = ? AND status = 'created' AND created_at >= ?
+            ORDER BY id DESC LIMIT 1
+        """, (user_id, plan_id, cutoff)).fetchone()
+        if not row:
+            return None
+        cols = ["id", "user_id", "plan_id", "razorpay_order_id", "razorpay_payment_id",
+                "amount", "currency", "status", "created_at", "updated_at"]
+        return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+
+def get_stale_pending_orders(older_than_minutes: int) -> list[dict]:
+    """All orders never synced via verify-payment, past the given grace period."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT id, user_id, plan_id, razorpay_order_id, razorpay_payment_id,
+                   amount, currency, status, created_at, updated_at
+            FROM payment_orders
+            WHERE status = 'created' AND created_at < ?
+            ORDER BY id ASC
+        """, (cutoff,)).fetchall()
+        cols = ["id", "user_id", "plan_id", "razorpay_order_id", "razorpay_payment_id",
+                "amount", "currency", "status", "created_at", "updated_at"]
+        return [dict(zip(cols, r)) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_active_or_recent_subscription_source(user_id: int, plan_id: int,
+                                              exclude_payment_order_id: int) -> dict | None:
+    """Is there already a DIFFERENT paid order covering this exact user+plan?
+    If so, a later-discovered paid order for the same pair is a duplicate."""
+    conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT id, razorpay_order_id, razorpay_payment_id, amount, currency, created_at
+            FROM payment_orders
+            WHERE user_id = ? AND plan_id = ? AND status = 'paid' AND id != ?
+            ORDER BY id ASC LIMIT 1
+        """, (user_id, plan_id, exclude_payment_order_id)).fetchone()
+        if not row:
+            return None
+        cols = ["id", "razorpay_order_id", "razorpay_payment_id", "amount", "currency", "created_at"]
+        return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+
+def mark_order_reconciled(payment_order_id: int) -> None:
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE payment_orders SET reconciled_at=? WHERE id=?", (now_str, payment_order_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_order_duplicate_refunded(payment_order_id: int, razorpay_payment_id: str,
+                                   duplicate_of_order_id: str, refund_id: str) -> None:
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection()
+    try:
+        conn.execute("""
+            UPDATE payment_orders
+            SET status='duplicate_refunded', razorpay_payment_id=?, duplicate_of_order_id=?,
+                refund_id=?, refunded_at=?, reconciled_at=?, updated_at=?
+            WHERE id=?
+        """, (razorpay_payment_id, duplicate_of_order_id, refund_id, now_str, now_str, now_str, payment_order_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_flagged_duplicate_orders(limit: int = 50) -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT po.id, po.user_id, u.email, po.plan_id, p.name AS plan_name,
+                   po.razorpay_order_id, po.razorpay_payment_id, po.amount, po.currency,
+                   po.duplicate_of_order_id, po.refund_id, po.refunded_at, po.created_at
+            FROM payment_orders po
+            JOIN users u ON u.id = po.user_id
+            JOIN subscription_plans p ON p.id = po.plan_id
+            WHERE po.status = 'duplicate_refunded'
+            ORDER BY po.id DESC LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()

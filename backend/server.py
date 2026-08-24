@@ -16,7 +16,6 @@ from flask import (Flask, request, jsonify,
                    session, redirect, url_for, abort, g)
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
-import razorpay
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
@@ -25,12 +24,6 @@ app.secret_key = os.environ["SECRET_KEY"]
 _CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 if _CORS_ORIGINS:
     CORS(app, origins=_CORS_ORIGINS, supports_credentials=True)
-
-# Razorpay — None if keys aren't set for this env, so billing routes degrade
-# to a clean 500 instead of crashing the whole app on import.
-RAZORPAY_KEY_ID     = os.environ.get("RAZORPAY_KEY_ID", "")
-RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
-razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET)) if RAZORPAY_KEY_ID else None
 
 # Trust the X-Forwarded-Proto header from nginx so url_for() generates https:// URLs
 # and OAuth redirect URIs are correct in prod
@@ -1279,72 +1272,13 @@ def api_subscribe_with_credits():
     return jsonify(result), (200 if result["ok"] else 400)
 
 
-@app.route("/api/billing/create-order", methods=["POST"])
-@require_login
-def api_billing_create_order():
-    if not razorpay_client:
-        return jsonify(ok=False, error="Payments not configured"), 500
-    data    = request.json or {}
-    plan_id = data.get("plan_id")
-    if not plan_id:
-        return jsonify(ok=False, error="plan_id required"), 400
-    from db.queries import get_active_plans, create_payment_order
-    plans = {p["id"]: p for p in get_active_plans()}
-    plan  = plans.get(int(plan_id))
-    if not plan:
-        return jsonify(ok=False, error="Invalid or inactive plan"), 400
-    if plan["price"] <= 0:
-        return jsonify(ok=False, error="This plan has no price to pay"), 400
-
-    amount_paise = int(plan["price"]) * 100
-    if amount_paise < 100:
-        return jsonify(ok=False, error="Amount too small"), 400
-
-    uid = current_user()["id"]
-    import time
-    try:
-        order = razorpay_client.order.create({
-            "amount":   amount_paise,
-            "currency": "INR",
-            "receipt":  f"plan{plan['id']}_user{uid}_{int(time.time())}",
-        })
-    except razorpay.errors.BadRequestError as e:
-        return jsonify(ok=False, error=str(e)), 400
-    except Exception as e:
-        return jsonify(ok=False, error=str(e)), 500
-
-    create_payment_order(uid, plan["id"], order["id"], plan["price"], "INR")
-    return jsonify(
-        ok=True, order_id=order["id"], amount=amount_paise, currency="INR",
-        key_id=RAZORPAY_KEY_ID, plan_name=plan["name"],
-    )
-
-
-@app.route("/api/billing/verify-payment", methods=["POST"])
-@require_login
-def api_billing_verify_payment():
-    if not razorpay_client:
-        return jsonify(ok=False, error="Payments not configured"), 500
-    data = request.json or {}
-    required = ("razorpay_order_id", "razorpay_payment_id", "razorpay_signature")
-    if not all(data.get(k) for k in required):
-        return jsonify(ok=False, error="Missing payment fields"), 400
-
-    try:
-        razorpay_client.utility.verify_payment_signature(data)
-    except razorpay.errors.SignatureVerificationError:
-        return jsonify(ok=False, error="Signature verification failed"), 400
-
-    from db.queries import get_payment_order_by_razorpay_id, activate_subscription_from_payment
-    order = get_payment_order_by_razorpay_id(data["razorpay_order_id"])
-    uid   = current_user()["id"]
-    if not order or order["user_id"] != uid:
-        return jsonify(ok=False, error="Order not found"), 400
-
-    result = activate_subscription_from_payment(
-        uid, order["plan_id"], data["razorpay_order_id"], data["razorpay_payment_id"], order["amount"],
-    )
-    return jsonify(result), (200 if result["ok"] else 400)
+# Payments (Razorpay checkout, reconciliation cron, duplicate auto-refund) —
+# lives in its own package, backend/payments/, registered as a blueprint.
+# Built as a factory since require_login/require_role/current_user are
+# defined in this file — importing them at payments/routes.py's module load
+# time would be a circular import, so they're passed in at registration.
+from payments.routes import create_payments_blueprint
+app.register_blueprint(create_payments_blueprint(require_login, require_role, current_user))
 
 
 @app.route("/api/profile", methods=["GET", "POST"])
