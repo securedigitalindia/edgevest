@@ -7,7 +7,6 @@ import { getCredits } from '../../api/games'
 import { DashboardIcon, PositionsIcon, GameIcon, ProfileIcon, GemIcon } from '../common/Icons'
 import './MainNav.css'
 
-
 export default function MainNav({ subscribed }) {
   const user      = useAuthStore(s => s.user)
   const location  = useLocation()
@@ -19,6 +18,15 @@ export default function MainNav({ subscribed }) {
                     location.pathname.startsWith('/positions') ? 'positions' :
                     location.pathname.startsWith('/profile')   ? 'profile' :
                     'dashboard'
+  // Collapse repeated top-level tab clicks into one history entry — but only
+  // while already ON a top-level tab route (exact match; a drill-down like
+  // /profile/gems doesn't count). Replacing unconditionally (including from
+  // a drill-down page) was overwriting whatever page you'd drilled into
+  // instead of the stable "current tab" slot, so different click sequences
+  // could leave two separate history entries both rendering the same tab —
+  // back would then land on a visually-identical page twice in a row.
+  // Pushing when leaving a drill-down keeps that page reachable via back.
+  const atTopLevel = ['/dashboard', '/positions', '/games', '/profile'].includes(location.pathname)
 
   const { data: credits } = useQuery({
     queryKey: ['credits'],
@@ -54,14 +62,14 @@ export default function MainNav({ subscribed }) {
           <span className="nav-brand-name">Edge<span className="nav-brand-name-bold">Vest</span></span>
         </div>
         <div className="nav-tabs">
-          <button className={`main-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard', {replace:true})}>Dashboard</button>
-          <button className={`main-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions', {replace:true})}>Positions</button>
-          <button className={`main-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games', {replace:true})}>Games</button>
-          <button className={`main-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile', {replace:true})}>Profile</button>
+          <button className={`main-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard', {replace: atTopLevel})}>Dashboard</button>
+          <button className={`main-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions', {replace: atTopLevel})}>Positions</button>
+          <button className={`main-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games', {replace: atTopLevel})}>Games</button>
+          <button className={`main-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile', {replace: atTopLevel})}>Profile</button>
         </div>
         <div className="nav-right">
           {isClient && (
-            <div className="nav-credits-pill" onClick={() => navigate('/games', {replace:true})} title="Your credits">
+            <div className="nav-credits-pill" onClick={() => navigate('/games', {replace: atTopLevel})} title="Your credits">
               <GemIcon size={12}/> <span>{credits?.balance ?? '—'}</span>
             </div>
           )}
@@ -80,7 +88,7 @@ export default function MainNav({ subscribed }) {
                   {!isClient && <span className={`role-chip role-chip-${user.role}`}>{user.role.replace('_',' ').toUpperCase()}</span>}
                 </div>
                 {isClient && <div className="prof-menu-credits" style={{display:'flex',alignItems:'center',gap:5}}><GemIcon size={12}/> {credits?.balance ?? '—'} credits</div>}
-                <div className="prof-menu-item" style={{cursor:'pointer'}} onClick={() => { setMenuOpen(false); navigate('/profile', {replace:true}) }}>Profile</div>
+                <div className="prof-menu-item" style={{cursor:'pointer'}} onClick={() => { setMenuOpen(false); navigate('/profile', {replace: atTopLevel}) }}>Profile</div>
                 <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
                 <div style={{padding:'6px 14px',fontSize:10,color:'#475569',letterSpacing:.3}}>EdgeVest v{__APP_VERSION__}</div>
                 <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
@@ -93,19 +101,19 @@ export default function MainNav({ subscribed }) {
 
       {/* Bottom tab bar — mobile only */}
       <div className="bottom-nav">
-        <button className={`bottom-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard', {replace:true})}>
+        <button className={`bottom-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard', {replace: atTopLevel})}>
           <span className="bottom-nav-tab-icon"><DashboardIcon /></span>
           Dashboard
         </button>
-        <button className={`bottom-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions', {replace:true})}>
+        <button className={`bottom-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions', {replace: atTopLevel})}>
           <span className="bottom-nav-tab-icon"><PositionsIcon /></span>
           Positions
         </button>
-        <button className={`bottom-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games', {replace:true})}>
+        <button className={`bottom-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games', {replace: atTopLevel})}>
           <span className="bottom-nav-tab-icon"><GameIcon size={20} /></span>
           Games
         </button>
-        <button className={`bottom-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile', {replace:true})}>
+        <button className={`bottom-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile', {replace: atTopLevel})}>
           <span className="bottom-nav-tab-icon"><ProfileIcon /></span>
           Profile
         </button>
