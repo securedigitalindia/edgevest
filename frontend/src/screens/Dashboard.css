@@ -29,11 +29,11 @@
 }
 .rec-item-highlight { animation:rec-highlight 2.8s ease-out forwards; }
 
-.rec-header  { padding:12px 14px 10px; border-bottom:1px solid var(--border); }
+.rec-header  { padding:12px 14px 6px; border-bottom:1px solid var(--border); }
 .rec-symbol  { font-weight:800; font-size:16px; color:#0f172a; }
 .rec-ts      { font-size:11px; color:var(--muted); margin-top:4px; overflow-wrap:break-word; }
 .rec-code    { font-weight:700; color:var(--blue); white-space:nowrap; }
-.rec-adj-strip { font-size:11px; color:var(--muted); border-top:1px solid var(--border); margin-top:8px; padding-top:6px; }
+.rec-adj-strip { font-size:11px; color:var(--muted); border-top:1px solid var(--border); margin-top:6px; padding-top:6px; }
 .rec-adj-text  { color:#92400e; font-weight:600; }
 .rec-seg-tag { font-size:10px; padding:2px 7px; border-radius:10px; background:#f1f5f9; color:#64748b; font-weight:600; }
 .rec-legs      { padding:10px 14px 2px; }
