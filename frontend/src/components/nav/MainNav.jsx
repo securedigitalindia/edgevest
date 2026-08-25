@@ -7,6 +7,7 @@ import { getCredits } from '../../api/games'
 import { DashboardIcon, PositionsIcon, GameIcon, ProfileIcon, GemIcon } from '../common/Icons'
 import './MainNav.css'
 
+
 export default function MainNav({ subscribed }) {
   const user      = useAuthStore(s => s.user)
   const location  = useLocation()
@@ -38,8 +39,19 @@ export default function MainNav({ subscribed }) {
     <>
       <nav className="main-nav">
         <div className="nav-brand">
-          <span className="nav-brand-icon">📊</span>
-          <span className="nav-brand-name">EdgeVest</span>
+          {/* icon-tile-blue from the brand kit (public/brand/), inlined for
+              crispness — signal-blue tile reads clearly on the dark navbar,
+              where the ink-tile variant would nearly disappear. */}
+          <svg className="nav-brand-icon" width="30" height="30" viewBox="0 0 104 104" aria-hidden="true">
+            <rect width="104" height="104" rx="26" fill="#1F7FD0"/>
+            <g transform="translate(21 21)">
+              <rect x="8" y="14" width="7" height="36" rx="3" fill="#0D1520"/>
+              <rect x="22" y="30" width="7" height="20" rx="3" fill="rgba(13,21,32,0.45)"/>
+              <rect x="36" y="20" width="7" height="30" rx="3" fill="rgba(255,255,255,0.82)"/>
+              <rect x="50" y="8" width="7" height="42" rx="3" fill="#ffffff"/>
+            </g>
+          </svg>
+          <span className="nav-brand-name">Edge<span className="nav-brand-name-bold">Vest</span></span>
         </div>
         <div className="nav-tabs">
           <button className={`main-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard', {replace:true})}>Dashboard</button>

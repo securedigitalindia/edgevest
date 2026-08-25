@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 232" width="420" height="232" role="img" aria-label="EdgeVest — the edge is the strategy">
+  <rect x="158" y="0" width="104" height="104" rx="26" fill="#101821"></rect>
+  <g transform="translate(179 21)">
+    <rect x="8" y="14" width="7" height="36" rx="3" fill="#ffffff"></rect>
+    <rect x="22" y="30" width="7" height="20" rx="3" fill="#5C6875"></rect>
+    <rect x="36" y="20" width="7" height="30" rx="3" fill="#5098E2"></rect>
+    <rect x="50" y="8" width="7" height="42" rx="3" fill="#5098E2"></rect>
+  </g>
+  <text x="210" y="169" text-anchor="middle" font-family="Sora, 'Helvetica Neue', Arial, sans-serif" font-size="46" font-weight="500" letter-spacing="0.46" fill="#101821">Edge<tspan font-weight="700">Vest</tspan></text>
+  <line x1="72" y1="203" x2="96" y2="203" stroke="#CFCDC6" stroke-width="1"></line>
+  <text x="210" y="207" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="11.5" letter-spacing="2.3" fill="#6D6B64">THE EDGE IS THE STRATEGY</text>
+  <line x1="324" y1="203" x2="348" y2="203" stroke="#CFCDC6" stroke-width="1"></line>
+</svg>

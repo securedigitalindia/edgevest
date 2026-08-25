@@ -1,0 +1,32 @@
+:root {
+  --ev-ink: #101821;
+  --ev-blue: #1F7FD0;
+  --ev-blue-light: #5098E2;
+  --ev-bar-grey: #7F8B98;
+  --ev-paper: #F7F6F3;
+  --ev-text-muted: #6D6B64;
+  --ev-rule: #CFCDC6;
+
+  --ev-font-display: 'Sora', 'Helvetica Neue', Arial, sans-serif;
+  --ev-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --ev-radius-tile: 0.25em; /* 26/104 of tile size */
+}
+
+/* Wordmark + tagline, if you set the lockup in live text instead of SVG */
+.ev-wordmark {
+  font-family: var(--ev-font-display);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--ev-ink);
+}
+.ev-wordmark b { font-weight: 700; }
+
+.ev-tagline {
+  font-family: var(--ev-font-mono);
+  font-size: 0.25em;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ev-text-muted);
+  white-space: nowrap;
+}
