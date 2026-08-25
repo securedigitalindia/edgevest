@@ -210,10 +210,11 @@ TRIGGERS = [
     # Exit:  Nifty falls exit_distance pts from entry level → close signal fired automatically
     # Dedup: one open position per level; no re-entry until the trade at that level exits
     {
-        "name":      "NIFTY500_MULTI",
-        "type":      "nifty_500_multiple",
-        "timeframe": "live",
-        "symbols":   ["NIFTY50"],
+        "name":       "NIFTY500_MULTI",
+        "type":       "nifty_500_multiple",
+        "timeframe":  "live",
+        "symbols":    ["NIFTY50"],
+        "risk_level": "high",  # naked short fut+PE combo — stamped on every trade this trigger opens/rolls
         "trades": [
             {
                 "type": "nifty_500_short_entry",

@@ -38,6 +38,7 @@ class BaseTrigger:
         self.type          = cfg["type"]
         self.symbol        = symbol
         self.timeframe     = cfg["timeframe"]
+        self.risk_level    = cfg.get("risk_level")          # low/mid/high/very_high, stamped on every recommended_trade this trigger opens
         self._trades_cfg   = cfg.get("trades", [])          # list; empty = basic alert
         self._cooldown_sec = cfg.get("cooldown_minutes", 0) * 60
         self._last_fired: float | None = None
@@ -432,6 +433,7 @@ class Nifty500MultipleTrigger(BaseTrigger):
                         margin_required=margin_required, margin_final=margin_final,
                         expiry_strs=[exp_str],
                         note="NIFTY 500-Multi Short",
+                        risk_level=self.risk_level,
                     )
                     add_trade_legs(trade_id, [
                         {
@@ -578,6 +580,7 @@ class Nifty500MultipleTrigger(BaseTrigger):
             new_exit_level   = trade["exit_level"],
             in_legs          = [pr[1] for pr in pairs],
             note             = trade.get("note"),
+            risk_level       = trade.get("risk_level"),
         )
         print(f"  [500-multi]  rolled trade {trade['id']} -> {new_trade_id}  "
               f"({len(pairs)} leg(s))", flush=True)

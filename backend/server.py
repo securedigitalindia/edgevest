@@ -17,7 +17,7 @@ from flask import (Flask, request, jsonify,
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
 
-APP_VERSION = "5.0.0"
+APP_VERSION = "5.1.0"
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
@@ -545,6 +545,7 @@ def api_recommendations():
         out.append({
             "id":              r["id"],
             "display_code":    r.get("display_code"),
+            "risk_level":      r.get("risk_level"),
             "note":            r.get("note"),
             "symbol":          r["symbol"],
             "trigger":         r["trigger_name"],
@@ -643,18 +644,24 @@ def api_rec_adjust(rec_id):
         return jsonify(ok=False, error=str(e)), 400
 
 
+RISK_LEVELS = {"low", "mid", "high", "very_high"}
+
+
 @app.route("/api/recommendations/create", methods=["POST"])
 @require_role("super_admin", "admin")
 def api_rec_create():
-    data   = request.json or {}
-    symbol = data.get("symbol", "")
-    legs   = _normalize_legs(data.get("legs", []))
-    note   = data.get("note", "")
+    data       = request.json or {}
+    symbol     = data.get("symbol", "")
+    legs       = _normalize_legs(data.get("legs", []))
+    note       = data.get("note", "")
+    risk_level = data.get("risk_level") or None
     if not symbol or not legs:
         return jsonify(ok=False, error="symbol and legs are required"), 400
+    if risk_level and risk_level not in RISK_LEVELS:
+        return jsonify(ok=False, error="Invalid risk_level"), 400
     try:
         from live.manual_trade import add_manual_trade
-        trade_id = add_manual_trade(symbol, legs, note)
+        trade_id = add_manual_trade(symbol, legs, note, risk_level)
         return jsonify(ok=True, trade_id=trade_id)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 400

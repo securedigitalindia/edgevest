@@ -15,22 +15,37 @@ import { fmtRs, fmtPnl, fmtQty, fmtIstShort, fmtContract } from '../utils/format
 import { BankIcon, GameIcon, GemIcon, LockIcon, RefreshIcon, TrophyIcon, PeopleIcon } from '../components/common/Icons'
 import './Dashboard.css'
 
+// ─── Risk level ────────────────────────────────────────────────────────────
+// Qualitative, admin-assigned at creation time — no query can compute it
+// after the fact, so trades created before this field existed just stay
+// unset (shown as — / filtered under "Unset") rather than being backfilled.
+
+const RISK_LEVELS = [
+  { value: 'low',       label: 'Low' },
+  { value: 'mid',       label: 'Mid' },
+  { value: 'high',      label: 'High' },
+  { value: 'very_high', label: 'Very High' },
+]
+const RISK_LABEL = Object.fromEntries(RISK_LEVELS.map(r => [r.value, r.label]))
+
 // ─── Create recommendation form (admin) ──────────────────────────────────────
 
 function CreateRecForm() {
-  const [legs, setLegs] = useState([newLeg()])
-  const [note, setNote] = useState('')
+  const [legs, setLegs]           = useState([newLeg()])
+  const [note, setNote]           = useState('')
+  const [riskLevel, setRiskLevel] = useState('')
   const create = useCreateRec()
   const toast  = useToast()
 
   async function submit() {
     if (!note.trim()) { toast('Title is required', 'err'); return }
+    if (!riskLevel) { toast('Risk level is required', 'err'); return }
     const data = collectLegs(legs, toast)
     if (!data) return
-    const res = await create.mutateAsync({ ...data, note })
+    const res = await create.mutateAsync({ ...data, note, risk_level: riskLevel })
     if (res.ok) {
       toast(`Recommendation created (id=${res.trade_id}) ✓`, 'ok')
-      setLegs([newLeg()]); setNote('')
+      setLegs([newLeg()]); setNote(''); setRiskLevel('')
     } else {
       toast(res.error || 'Create failed', 'err')
     }
@@ -43,6 +58,13 @@ function CreateRecForm() {
         <div className="form-row" style={{marginBottom:12}}>
           <label>Title <span style={{color:'var(--red)'}}>*</span></label>
           <input placeholder="e.g. Bull put spread on Nifty" value={note} onChange={e => setNote(e.target.value)} />
+        </div>
+        <div className="form-row" style={{marginBottom:12}}>
+          <label>Risk Level <span style={{color:'var(--red)'}}>*</span></label>
+          <select value={riskLevel} onChange={e => setRiskLevel(e.target.value)}>
+            <option value="">Select risk level…</option>
+            {RISK_LEVELS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
         </div>
         <LegBuilder legs={legs} onChange={setLegs} />
         <button className="btn btn-primary" style={{width:'100%',justifyContent:'center',marginTop:16}}
@@ -330,6 +352,7 @@ function RecItem({ rec, prices, onPushed, highlight }) {
             <span className="rec-symbol" style={{fontSize:15}}>{rec.note || rec.symbol}</span>
             <span className={`badge badge-${rec.status === 'open' ? 'open' : 'exited'}`}>{rec.status === 'open' ? 'Live' : rec.status}</span>
             {rec.segment && <span className="rec-seg-tag">{rec.segment}</span>}
+            {rec.risk_level && <span className={`risk-badge risk-${rec.risk_level}`}>{RISK_LABEL[rec.risk_level] || rec.risk_level}</span>}
             {rec.adj_count > 0 && <span className="adj-badge">{rec.adj_count} adj</span>}
           </div>
           <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
@@ -439,6 +462,7 @@ function RecsPanel({ isAdmin }) {
   const navigate = useNavigate()
   const [status,  setStatus]  = useState('open')
   const [segment, setSegment] = useState('all')
+  const [risk,    setRisk]    = useState('all')
   const { data: allRecs = [], isLoading, refetch } = useRecs()
   const { data: accounts = [] } = useAccounts()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -467,7 +491,10 @@ function RecsPanel({ isAdmin }) {
                                      allRecs.filter(r => r.status === 'open')
 
   const usedSegs = new Set(allRecs.map(r => r.segment))
-  const filtered = segment === 'all' ? recs : recs.filter(r => r.segment === segment)
+  const bySegment = segment === 'all' ? recs : recs.filter(r => r.segment === segment)
+  const filtered  = risk === 'all'    ? bySegment :
+                     risk === 'unset' ? bySegment.filter(r => !r.risk_level) :
+                                        bySegment.filter(r => r.risk_level === risk)
 
   // Poll live LTPs for open rec legs
   const instrKeys = [...new Set(
@@ -503,21 +530,29 @@ function RecsPanel({ isAdmin }) {
       <div className="card">
         <div className="card-header">
           <h2>Recommended Positions</h2>
-          <select style={{width:'auto',fontSize:12,padding:'4px 8px',marginLeft:12}}
-                  value={status} onChange={e => setStatus(e.target.value)}>
-            <option value="open">Open</option>
-            <option value="exited">Exited</option>
-            <option value="all">All</option>
-          </select>
           <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto',display:'inline-flex'}} onClick={refetch}><RefreshIcon/></button>
         </div>
 
-        <div style={{display:'flex',gap:6,flexWrap:'wrap',padding:'8px 10px 6px',borderBottom:'1px solid var(--border)',background:'#fafafa'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',padding:'8px 16px 6px',borderBottom:'1px solid var(--border)',background:'#fafafa'}}>
           {SEGMENTS.filter(s => s === 'all' || usedSegs.has(s)).map(s => (
             <button key={s} className={`seg-chip${segment===s?' active':''}`} onClick={() => setSegment(s)}>
               {s === 'all' ? 'All' : s}
             </button>
           ))}
+          <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
+            <select style={{width:'auto',fontSize:12,padding:'4px 8px'}}
+                    value={risk} onChange={e => setRisk(e.target.value)}>
+              <option value="all">All Risk</option>
+              <option value="unset">Unset</option>
+              {RISK_LEVELS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+            <select style={{width:'auto',fontSize:12,padding:'4px 8px'}}
+                    value={status} onChange={e => setStatus(e.target.value)}>
+              <option value="all">All</option>
+              <option value="open">Open</option>
+              <option value="exited">Exited</option>
+            </select>
+          </div>
         </div>
 
         <div className="card-body" style={{padding:10}}>

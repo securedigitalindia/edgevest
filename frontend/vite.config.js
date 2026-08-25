@@ -25,6 +25,11 @@ export default defineConfig(({ command }) => ({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Without this, `npm run dev` never injects a manifest link or
+      // registers a service worker at all — Chrome can't consider the page
+      // installable, so beforeinstallprompt never fires in dev, only in a
+      // real build (npm run build/preview) or a deployed env.
+      devOptions: { enabled: true, type: 'module' },
       includeAssets: ['favicon.ico', 'icons/*.png'],
       manifest: {
         name: 'EdgeVest',
