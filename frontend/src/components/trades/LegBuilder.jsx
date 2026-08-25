@@ -1,6 +1,9 @@
 import InstrumentSearch from './InstrumentSearch'
 import { newLeg } from './legHelpers'
 import { CloseIcon, PlusIcon } from '../common/Icons'
+import Dropdown from '../common/Dropdown'
+
+const SIDE_OPTIONS = [{ value: 'BUY', label: 'BUY' }, { value: 'SELL', label: 'SELL' }]
 
 // ─── Leg builder ─────────────────────────────────────────────────────────────
 
@@ -24,9 +27,7 @@ export default function LegBuilder({ legs, onChange }) {
               <div style={{display:'grid',gridTemplateColumns:'80px 70px 1fr',gap:8}}>
                 <div>
                   <label>Side</label>
-                  <select value={leg.side} onChange={e => update(leg.id, 'side', e.target.value)}>
-                    <option>BUY</option><option>SELL</option>
-                  </select>
+                  <Dropdown variant="form" value={leg.side} onChange={v => update(leg.id, 'side', v)} options={SIDE_OPTIONS} />
                 </div>
                 <div>
                   <label>{leg.instrument.instrument_type === 'EQ' ? 'Qty' : 'Lots'}</label>

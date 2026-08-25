@@ -6,11 +6,6 @@
 @media (max-width:960px) { .dash-layout { grid-template-columns:minmax(0,1fr); } }
 @media (max-width:768px)  { .dash-layout { padding:12px; gap:12px; } }
 
-/* Segment chips */
-.seg-chip { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; border:1.5px solid #e2e8f0; background:#fff; color:#64748b; cursor:pointer; transition:all .15s; }
-.seg-chip:hover { border-color:var(--blue); color:var(--blue); }
-.seg-chip.active { background:var(--blue); border-color:var(--blue); color:#fff; }
-
 /* Rec item */
 .rec-item         { border:1px solid var(--border); border-left-width:4px; border-radius:10px; margin-bottom:12px; overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.06); transition:box-shadow .15s; }
 .rec-item:hover   { box-shadow:0 4px 14px rgba(0,0,0,.1); }

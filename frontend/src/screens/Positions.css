@@ -3,8 +3,8 @@
 .positions-layout { max-width:1100px; margin:0 auto; padding:0 24px 24px; }
 @media (max-width:768px) { .positions-layout { padding:0 12px 16px; } }
 
-/* "+ New Trade" toggle — same chip shape as RecsPanel's segment filter (.seg-chip),
-   green since it's a create action rather than a filter. */
+/* "+ New Trade" toggle — pill-chip shape, green since it's a create action
+   rather than a filter. */
 .pos-tab-new { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; border:1.5px solid #bbf7d0; background:#fff; color:var(--green); cursor:pointer; transition:all .15s; }
 .pos-tab-new:hover  { border-color:var(--green); }
 .pos-tab-new.active { background:var(--green); border-color:var(--green); color:#fff; }
@@ -24,10 +24,13 @@
 .rec-code    { font-weight:700; color:var(--blue); white-space:nowrap; }
 .rec-seg-tag { font-size:10px; padding:2px 7px; border-radius:10px; background:#f1f5f9; color:#64748b; font-weight:600; }
 
-/* Account chip — distinct from .rec-seg-tag (F&O/Equity): this is which
-   brokerage account a trade belongs to, not what kind of instrument it is.
-   Positions-only, since RecItem (Dashboard) has no per-account concept. */
-.acct-chip { font-size:11px; padding:2px 8px; border-radius:20px; background:#f1f5f9; color:var(--muted); border:1px solid var(--border); }
+/* Risk level badge — mirrors Dashboard.css's traffic-light gradient */
+.risk-badge     { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
+.risk-low       { background:#dcfce7; color:#15803d; }
+.risk-mid       { background:#fef9c3; color:#854d0e; }
+.risk-high      { background:#ffedd5; color:#c2410c; }
+.risk-very_high { background:#fee2e2; color:#b91c1c; }
+
 .rec-legs    { padding:10px 14px 2px; }
 
 /* Side pill */

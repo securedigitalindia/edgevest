@@ -9,6 +9,7 @@ import { useCreateOrder, useVerifyPayment } from '../hooks/useBilling'
 import useAuthStore from '../store/authStore'
 import { useToast } from '../components/common/Toast'
 import LegBuilder from '../components/trades/LegBuilder'
+import Dropdown from '../components/common/Dropdown'
 import { newLeg, collectLegs } from '../components/trades/legHelpers'
 import LegGroup from '../components/trades/LegDisplay'
 import { fmtRs, fmtPnl, fmtQty, fmtIstShort, fmtContract } from '../utils/format'
@@ -61,10 +62,8 @@ function CreateRecForm() {
         </div>
         <div className="form-row" style={{marginBottom:12}}>
           <label>Risk Level <span style={{color:'var(--red)'}}>*</span></label>
-          <select value={riskLevel} onChange={e => setRiskLevel(e.target.value)}>
-            <option value="">Select risk level…</option>
-            {RISK_LEVELS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
+          <Dropdown variant="form" value={riskLevel} onChange={setRiskLevel}
+            placeholder="Select risk level…" options={RISK_LEVELS} />
         </div>
         <LegBuilder legs={legs} onChange={setLegs} />
         <button className="btn btn-primary" style={{width:'100%',justifyContent:'center',marginTop:16}}
@@ -156,23 +155,13 @@ function PushForm({ rec, prices, onClose, onPushed }) {
       <div className="form-row">
         <label>Account</label>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <select value={acctId} onChange={e => setAcctId(e.target.value)}>
-            <option value="">Select account…</option>
-            {realAccounts.length > 0 && (
-              <optgroup label="Broker Accounts">
-                {realAccounts.map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {gameAccounts.length > 0 && (
-              <optgroup label="Game Accounts">
-                {gameAccounts.map(a => <option key={a.id} value={a.id}>{a.label || `Game #${a.game_id}`}</option>)}
-              </optgroup>
-            )}
-          </select>
+          <Dropdown variant="form" value={acctId} onChange={setAcctId} placeholder="Select account…"
+            groups={[
+              { label: 'Broker Accounts', options: realAccounts.map(a => ({
+                  value: String(a.id), label: a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}` })) },
+              { label: 'Game Accounts', options: gameAccounts.map(a => ({
+                  value: String(a.id), label: a.label || `Game #${a.game_id}` })) },
+            ]} />
           <button type="button" className="add-account-link" onClick={() => navigate('/profile/accounts')}>+ Add</button>
         </div>
       </div>
@@ -534,24 +523,13 @@ function RecsPanel({ isAdmin }) {
         </div>
 
         <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',padding:'8px 16px 6px',borderBottom:'1px solid var(--border)',background:'#fafafa'}}>
-          {SEGMENTS.filter(s => s === 'all' || usedSegs.has(s)).map(s => (
-            <button key={s} className={`seg-chip${segment===s?' active':''}`} onClick={() => setSegment(s)}>
-              {s === 'all' ? 'All' : s}
-            </button>
-          ))}
+          <Dropdown value={segment} onChange={setSegment}
+            options={SEGMENTS.filter(s => s === 'all' || usedSegs.has(s)).map(s => ({value:s, label: s === 'all' ? 'All Segments' : s}))} />
           <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
-            <select style={{width:'auto',fontSize:12,padding:'4px 8px'}}
-                    value={risk} onChange={e => setRisk(e.target.value)}>
-              <option value="all">All Risk</option>
-              <option value="unset">Unset</option>
-              {RISK_LEVELS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
-            <select style={{width:'auto',fontSize:12,padding:'4px 8px'}}
-                    value={status} onChange={e => setStatus(e.target.value)}>
-              <option value="all">All</option>
-              <option value="open">Open</option>
-              <option value="exited">Exited</option>
-            </select>
+            <Dropdown value={risk} onChange={setRisk} align="right"
+              options={[{value:'all',label:'All Risk'}, {value:'unset',label:'Unset'}, ...RISK_LEVELS]} />
+            <Dropdown value={status} onChange={setStatus} align="right"
+              options={[{value:'all',label:'All'}, {value:'open',label:'Open'}, {value:'exited',label:'Exited'}]} />
           </div>
         </div>
 

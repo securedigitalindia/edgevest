@@ -1253,7 +1253,7 @@ def get_open_account_trades(account_id: int | None = None) -> list[dict]:
                a.label, a.account_no,
                u.name, u.mobile,
                b.name,
-               rt.symbol, rt.trigger_name, rt.display_code
+               rt.symbol, rt.trigger_name, rt.display_code, rt.risk_level
         FROM account_trades at
         LEFT JOIN accounts  a  ON a.id  = at.account_id
         LEFT JOIN users     u  ON u.id  = a.user_id
@@ -1275,6 +1275,7 @@ def get_open_account_trades(account_id: int | None = None) -> list[dict]:
         d["symbol"]         = r[n + 5]
         d["trigger_name"]   = r[n + 6]
         d["display_code"]   = r[n + 7]
+        d["risk_level"]     = r[n + 8]
         result.append(d)
     return result
 
@@ -1295,7 +1296,7 @@ def get_closed_account_trades(account_id: int | None = None, user_id: int | None
                a.label, a.account_no,
                u.name, u.mobile,
                b.name,
-               rt.symbol, rt.trigger_name, rt.display_code
+               rt.symbol, rt.trigger_name, rt.display_code, rt.risk_level
         FROM account_trades at
         LEFT JOIN accounts  a  ON a.id  = at.account_id
         LEFT JOIN users     u  ON u.id  = a.user_id
@@ -1317,6 +1318,7 @@ def get_closed_account_trades(account_id: int | None = None, user_id: int | None
         d["symbol"]        = r[n + 5]
         d["trigger_name"]  = r[n + 6]
         d["display_code"]  = r[n + 7]
+        d["risk_level"]    = r[n + 8]
 
         # Fetch legs for this trade
         leg_rows = conn.execute(

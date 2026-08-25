@@ -1,0 +1,48 @@
+.dd { position: relative; display: inline-block; }
+.dd-form { display: block; width: 100%; }
+
+/* Filter variant — compact pill trigger, used in filter bars */
+.dd-btn-filter {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+  padding: 5px 10px; border-radius: 20px;
+  border: 1.5px solid #e2e8f0; background: #fff; color: #475569;
+  cursor: pointer; transition: all .15s;
+}
+.dd-btn-filter:hover { border-color: var(--blue); color: var(--blue); }
+.dd-btn-filter.open  { border-color: var(--blue); color: var(--blue); background: #eff6ff; }
+
+/* Form variant — full-width block, matches the app's native input/select look */
+.dd-btn-form {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  width: 100%; font-size: 13px; font-family: inherit; text-align: left;
+  padding: 7px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: #fff; color: var(--text);
+  cursor: pointer; transition: border .15s;
+}
+.dd-btn-form svg { color: #94a3b8; flex-shrink: 0; }
+.dd-btn-form.placeholder { color: #94a3b8; }
+.dd-btn-form.open { border-color: var(--blue); box-shadow: 0 0 0 3px #eff6ff; }
+
+/* Portaled into document.body and positioned via inline style (fixed,
+   computed from the trigger's live bounding rect) — see Dropdown.jsx's
+   header comment for why a plain absolute/z-index approach isn't enough. */
+.dd-menu {
+  z-index: 1000;
+  max-height: 260px; overflow-y: auto; overscroll-behavior: contain;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 4px;
+}
+
+.dd-group-label {
+  padding: 6px 10px 2px; font-size: 10px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .5px;
+}
+
+.dd-item {
+  padding: 7px 10px; font-size: 13px; border-radius: 6px;
+  color: #334155; cursor: pointer; white-space: nowrap;
+}
+.dd-menu-form .dd-item { white-space: normal; }
+.dd-item:hover    { background: #f1f5f9; }
+.dd-item.selected { background: #eff6ff; color: var(--blue); font-weight: 600; }

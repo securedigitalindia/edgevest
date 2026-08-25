@@ -4,6 +4,7 @@ import useAuthStore from '../../store/authStore'
 import { useToast } from '../../components/common/Toast'
 import { useUsers, useSaveUserProfile } from '../../hooks/useSettings'
 import PageHeader from '../../components/common/PageHeader'
+import Dropdown from '../../components/common/Dropdown'
 import './Profile.css'
 
 function UserRow({ u, isSuperAdmin }) {
@@ -87,11 +88,11 @@ function UserRow({ u, isSuperAdmin }) {
           </div>
           {isSuperAdmin && (
             <div className="form-row" style={{marginBottom:8}}><label>Role</label>
-              <select value={role} onChange={e=>setRole(e.target.value)}>
-                <option value="client">Client</option>
-                <option value="admin">Admin</option>
-                <option value="super_admin">Super Admin</option>
-              </select>
+              <Dropdown variant="form" value={role} onChange={setRole} options={[
+                { value: 'client', label: 'Client' },
+                { value: 'admin', label: 'Admin' },
+                { value: 'super_admin', label: 'Super Admin' },
+              ]} />
             </div>
           )}
           <div style={{display:'flex',gap:6}}>

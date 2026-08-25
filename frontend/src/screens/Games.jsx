@@ -7,6 +7,7 @@ import useAuthStore from '../store/authStore'
 import GameDetail from '../components/games/GameDetail'
 import { useToast } from '../components/common/Toast'
 import { GameIcon, GemIcon, PeopleIcon, CloseIcon } from '../components/common/Icons'
+import Dropdown from '../components/common/Dropdown'
 import './Games.css'
 
 const STATUS_DOT = { draft:'#94a3b8', active:'#4ade80', closed:'#f87171', resolved:'#fbbf24' }
@@ -67,9 +68,10 @@ function QuestionBuilder({ questions, onChange }) {
           </div>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <label style={{margin:0,fontSize:11,textTransform:'none'}}>Correct:</label>
-            <select style={{width:70}} value={q.correct_opt} onChange={e=>update(i,'correct_opt',e.target.value)}>
-              {['A','B','C','D'].map(o => <option key={o}>{o}</option>)}
-            </select>
+            <div style={{width:70}}>
+              <Dropdown variant="form" value={q.correct_opt} onChange={v=>update(i,'correct_opt',v)}
+                options={['A','B','C','D'].map(o => ({value:o, label:o}))} />
+            </div>
           </div>
         </div>
       ))}
@@ -158,9 +160,8 @@ function GameForm({ existing, onDone }) {
         <input placeholder="Brief context for participants" value={desc} onChange={e=>setDesc(e.target.value)} /></div>
       {type !== 'mcq' && (
         <div className="form-row"><label>Symbol</label>
-          <select value={symbol} onChange={e=>setSymbol(e.target.value)}>
-            {SYMBOLS.map(s => <option key={s}>{s}</option>)}
-          </select>
+          <Dropdown variant="form" value={symbol} onChange={setSymbol}
+            options={SYMBOLS.map(s => ({value:s, label:s}))} />
         </div>
       )}
 

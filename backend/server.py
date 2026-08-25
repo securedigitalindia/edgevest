@@ -17,7 +17,7 @@ from flask import (Flask, request, jsonify,
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
 
-APP_VERSION = "5.1.0"
+APP_VERSION = "5.2.0"
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
@@ -711,6 +711,7 @@ def api_account_trades():
             "trigger":             t["trigger_name"],
             "rec_id":              t["recommended_trade_id"],
             "display_code":        t.get("display_code"),
+            "risk_level":          t.get("risk_level"),
             "account_id":          t["account_id"],
             "account_label":       t["account_label"] or t["broker_name"] or f"Account {t['account_id']}",
             "segment":             segment,
@@ -881,6 +882,7 @@ def api_account_trades_history():
             "trigger":       t["trigger_name"],
             "rec_id":        t["recommended_trade_id"],
             "display_code":  t.get("display_code"),
+            "risk_level":    t.get("risk_level"),
             "account_id":    t["account_id"],
             "account_label": t["account_label"] or t["broker_name"] or f"Account {t['account_id']}",
             "trader_name":   t["trader_name"],

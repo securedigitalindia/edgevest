@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { useToast } from '../../components/common/Toast'
 import { useBrokers, useAccounts, useAddAccount, useUpdateAccountCapital } from '../../hooks/useTrades'
 import { BankIcon, PlusIcon } from '../../components/common/Icons'
+import Dropdown from '../../components/common/Dropdown'
 import { fmtRs } from '../../utils/format'
 import PageHeader from '../../components/common/PageHeader'
 import useAuthStore from '../../store/authStore'
@@ -130,10 +131,8 @@ export default function MyAccounts() {
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             <div className="form-row">
               <label>Broker</label>
-              <select value={brokerId} onChange={e=>setBrokerId(e.target.value)}>
-                <option value="">Select…</option>
-                {brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+              <Dropdown variant="form" value={brokerId} onChange={setBrokerId} placeholder="Select…"
+                options={brokers.map(b => ({ value: String(b.id), label: b.name }))} />
             </div>
             <div className="form-row">
               <label>Account No.</label>

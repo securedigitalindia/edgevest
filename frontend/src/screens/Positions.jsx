@@ -5,6 +5,7 @@ import { useTrades, useTradeHistory, useExitTrade, useApplyAdjTrade, useDeleteTr
 import useAuthStore from '../store/authStore'
 import { useToast } from '../components/common/Toast'
 import PageHeader from '../components/common/PageHeader'
+import Dropdown from '../components/common/Dropdown'
 import LegBuilder from '../components/trades/LegBuilder'
 import { newLeg, collectLegs } from '../components/trades/legHelpers'
 import LegGroup from '../components/trades/LegDisplay'
@@ -111,13 +112,13 @@ function TradeCard({ trade: t, isAdmin, prices }) {
           <span className="rec-symbol">{t.symbol}</span>
           <span className="badge badge-open">Open</span>
           {t.segment && <span className="rec-seg-tag">{t.segment}</span>}
+          {t.risk_level && <span className={`risk-badge risk-${t.risk_level}`}>{RISK_LABEL[t.risk_level] || t.risk_level}</span>}
           {t.pending_adj_count > 0 && (
             <span className="adj-badge" style={{display:'inline-flex',alignItems:'center',gap:4}}><WarningIcon size={10}/> {t.pending_adj_count} adj pending</span>
           )}
           {t.pending_exit && (
             <span className="badge badge-danger" style={{display:'inline-flex',alignItems:'center',gap:4}}><BellIcon size={10}/> exit pending</span>
           )}
-          <span className="acct-chip">{t.account_label}</span>
         </div>
         <div className="rec-ts">{t.entry_ist}{(t.display_code || t.rec_id) && <> · <span className="rec-code">#{t.display_code || t.rec_id}</span></>}</div>
       </div>
@@ -247,7 +248,7 @@ function HistoryCard({ trade: t }) {
             <span className="rec-symbol">{t.symbol}</span>
             <span className="badge badge-exited">Closed</span>
             {t.segment && <span className="rec-seg-tag">{t.segment}</span>}
-            <span className="acct-chip">{t.account_label}</span>
+            {t.risk_level && <span className={`risk-badge risk-${t.risk_level}`}>{RISK_LABEL[t.risk_level] || t.risk_level}</span>}
           </div>
           <div className="rec-ts" style={{textAlign:'right'}}>
             {t.entry_ist} → {t.exit_ist}
@@ -426,23 +427,13 @@ function NewTradeForm({ accounts, gameAccounts, onDone }) {
       <div className="form-row">
         <label>Account</label>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <select value={acctId} onChange={e => setAcctId(e.target.value)}>
-            <option value="">Select account…</option>
-            {accounts.length > 0 && (
-              <optgroup label="Broker Accounts">
-                {accounts.map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {(gameAccounts||[]).length > 0 && (
-              <optgroup label="Game Accounts">
-                {(gameAccounts||[]).map(a => <option key={a.id} value={a.id}>{a.label || `Game #${a.game_id}`}</option>)}
-              </optgroup>
-            )}
-          </select>
+          <Dropdown variant="form" value={acctId} onChange={setAcctId} placeholder="Select account…"
+            groups={[
+              { label: 'Broker Accounts', options: accounts.map(a => ({
+                  value: String(a.id), label: a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}` })) },
+              { label: 'Game Accounts', options: (gameAccounts||[]).map(a => ({
+                  value: String(a.id), label: a.label || `Game #${a.game_id}` })) },
+            ]} />
           <button type="button" className="add-account-link" onClick={() => navigate('/profile/accounts')}>
             <span className="add-leg-badge" style={{width:16,height:16}}><PlusIcon size={9}/></span>
             Add
@@ -470,6 +461,17 @@ function NewTradeForm({ accounts, gameAccounts, onDone }) {
 
 const SEGMENTS = ['all', 'F&O', 'Equity', 'ETF', 'Commodities']
 
+// Mirrors Dashboard.jsx's RISK_LEVELS/RISK_LABEL — kept as a separate
+// per-screen constant rather than a shared import, matching how SEGMENTS
+// above is already duplicated rather than extracted.
+const RISK_LEVELS = [
+  { value: 'low',       label: 'Low' },
+  { value: 'mid',       label: 'Mid' },
+  { value: 'high',      label: 'High' },
+  { value: 'very_high', label: 'Very High' },
+]
+const RISK_LABEL = Object.fromEntries(RISK_LEVELS.map(r => [r.value, r.label]))
+
 export default function Positions() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -478,6 +480,7 @@ export default function Positions() {
 
   const [posTab, setPosTab]                 = useState('open')
   const [segment, setSegment]               = useState('all')
+  const [risk,    setRisk]                  = useState('all')
   const { data: accounts = [], isLoading: acctsLoading } = useAccounts()
 
   const realAccounts = accounts.filter(a => !a.game_id)
@@ -553,8 +556,14 @@ export default function Positions() {
 
   const list        = posTab === 'history' ? history : trades
   const usedSegs    = new Set(list.map(t => t.segment))
-  const filteredTrades  = segment === 'all' ? trades  : trades.filter(t => t.segment === segment)
-  const filteredHistory = segment === 'all' ? history : history.filter(t => t.segment === segment)
+
+  const bySegment = segment === 'all' ? { trades, history } :
+    { trades: trades.filter(t => t.segment === segment), history: history.filter(t => t.segment === segment) }
+  const byRisk = risk === 'all'    ? bySegment :
+                 risk === 'unset' ? { trades: bySegment.trades.filter(t => !t.risk_level), history: bySegment.history.filter(t => !t.risk_level) } :
+                                     { trades: bySegment.trades.filter(t => t.risk_level === risk), history: bySegment.history.filter(t => t.risk_level === risk) }
+  const filteredTrades  = byRisk.trades
+  const filteredHistory = byRisk.history
 
   function acctLabel(a) {
     const base = a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`
@@ -586,17 +595,13 @@ export default function Positions() {
 
         {posTab !== 'new' && (
           <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',padding:'8px 16px 6px',borderBottom:'1px solid var(--border)',background:'#fafafa'}}>
-            {SEGMENTS.filter(s => s === 'all' || usedSegs.has(s)).map(s => (
-              <button key={s} className={`seg-chip${segment===s?' active':''}`} onClick={() => setSegment(s)}>
-                {s === 'all' ? 'All' : s}
-              </button>
-            ))}
+            <Dropdown value={segment} onChange={setSegment}
+              options={SEGMENTS.filter(s => s === 'all' || usedSegs.has(s)).map(s => ({value:s, label: s === 'all' ? 'All Segments' : s}))} />
             <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
-              <select style={{width:'auto',fontSize:12,padding:'4px 8px'}}
-                      value={posTab} onChange={e=>setPosTab(e.target.value)}>
-                <option value="open">Open</option>
-                <option value="history">History</option>
-              </select>
+              <Dropdown value={risk} onChange={setRisk} align="right"
+                options={[{value:'all',label:'All Risk'}, {value:'unset',label:'Unset'}, ...RISK_LEVELS]} />
+              <Dropdown value={posTab} onChange={setPosTab} align="right"
+                options={[{value:'open',label:'Open'}, {value:'history',label:'History'}]} />
               <button className="btn btn-ghost btn-sm" style={{display:'inline-flex'}} onClick={()=>posTab==='open'?refetch():refetchHist()}><RefreshIcon/></button>
             </div>
           </div>
