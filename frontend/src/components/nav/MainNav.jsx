@@ -65,7 +65,7 @@ export default function MainNav({ subscribed }) {
               <div className="prof-menu" onClick={e=>e.stopPropagation()}>
                 <div className="prof-menu-head">
                   <div className="prof-menu-name">{user.name}</div>
-                  <span className={`role-chip role-chip-${user.role}`}>{user.role.replace('_',' ').toUpperCase()}</span>
+                  {!isClient && <span className={`role-chip role-chip-${user.role}`}>{user.role.replace('_',' ').toUpperCase()}</span>}
                 </div>
                 {isClient && <div className="prof-menu-credits" style={{display:'flex',alignItems:'center',gap:5}}><GemIcon size={12}/> {credits?.balance ?? '—'} credits</div>}
                 <div className="prof-menu-item" style={{cursor:'pointer'}} onClick={() => { setMenuOpen(false); navigate('/profile', {replace:true}) }}>Profile</div>

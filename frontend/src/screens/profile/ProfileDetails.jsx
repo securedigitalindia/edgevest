@@ -92,7 +92,9 @@ export default function ProfileDetails() {
           <div>
             <div style={{fontSize:15,fontWeight:700,color:'#1e293b'}}>{user.name}</div>
             <div style={{fontSize:12,color:'#64748b',marginTop:2}}>{user.email}</div>
-            <span className={`role-chip role-chip-${user.role}`} style={{marginTop:5,display:'inline-block'}}>{user.role.replace('_',' ').toUpperCase()}</span>
+            {user.role !== 'client' && (
+              <span className={`role-chip role-chip-${user.role}`} style={{marginTop:5,display:'inline-block'}}>{user.role.replace('_',' ').toUpperCase()}</span>
+            )}
           </div>
         </div>
 

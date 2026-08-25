@@ -38,7 +38,9 @@ export default function ProfileHub() {
         <div>
           <div className="phub-name">{user.name}</div>
           <div className="phub-email">{user.email}</div>
-          <span className={`role-chip role-chip-${user.role}`} style={{marginTop:5,display:'inline-block'}}>{user.role.replace('_',' ').toUpperCase()}</span>
+          {user.role !== 'client' && (
+            <span className={`role-chip role-chip-${user.role}`} style={{marginTop:5,display:'inline-block'}}>{user.role.replace('_',' ').toUpperCase()}</span>
+          )}
         </div>
       </div>
 
