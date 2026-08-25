@@ -360,6 +360,11 @@ class Nifty500MultipleTrigger(BaseTrigger):
                     for leg in entry_legs
                 ]
                 close_recommended_trade(trade["id"], ltp, now_utc, exit_legs=exit_legs)
+                try:
+                    from live.manual_trade import auto_exit_linked_account_trades
+                    auto_exit_linked_account_trades(trade["id"], exit_legs, now_utc)
+                except Exception as e:
+                    print(f"  [500-multi]  auto-exit linked account trades failed: {e}", flush=True)
 
                 # Telegram display
                 exit_params = {
@@ -577,6 +582,12 @@ class Nifty500MultipleTrigger(BaseTrigger):
         print(f"  [500-multi]  rolled trade {trade['id']} -> {new_trade_id}  "
               f"({len(pairs)} leg(s))", flush=True)
 
+        try:
+            from live.manual_trade import recalculate_recommendation_margin
+            recalculate_recommendation_margin(new_trade_id)
+        except Exception as e:
+            print(f"  [500-multi]  margin recalc skipped for rolled trade {new_trade_id}: {e}", flush=True)
+
         self._roll_linked_account_trades(trade["id"], new_trade_id, pairs, now_utc)
 
         p = entry_cfg["params"] if entry_cfg else {}
@@ -639,6 +650,14 @@ class Nifty500MultipleTrigger(BaseTrigger):
 
             if not exit_legs:
                 continue
+
+            # Always fully close the old account_trade once the roll itself
+            # matched anything — a new account_trade is created right below
+            # regardless, so there's no benefit to leaving a leg stranded
+            # open on the old (already-exited) trade just because it
+            # couldn't be matched; same as roll_recommended_trade() always
+            # fully closing the old recommendation even if a leg's price
+            # was unavailable to roll.
             mark_account_trade_closed(at["id"], exit_legs, now_utc, note="Rolled forward")
             create_account_trade(
                 at["account_id"], entry_legs, recommended_trade_id=new_trade_id,

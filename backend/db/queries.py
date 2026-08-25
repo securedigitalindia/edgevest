@@ -1252,7 +1252,7 @@ def get_open_account_trades(account_id: int | None = None) -> list[dict]:
                a.label, a.account_no,
                u.name, u.mobile,
                b.name,
-               rt.symbol, rt.trigger_name
+               rt.symbol, rt.trigger_name, rt.display_code
         FROM account_trades at
         LEFT JOIN accounts  a  ON a.id  = at.account_id
         LEFT JOIN users     u  ON u.id  = a.user_id
@@ -1273,6 +1273,7 @@ def get_open_account_trades(account_id: int | None = None) -> list[dict]:
         d["broker_name"]    = r[n + 4]
         d["symbol"]         = r[n + 5]
         d["trigger_name"]   = r[n + 6]
+        d["display_code"]   = r[n + 7]
         result.append(d)
     return result
 
@@ -1293,7 +1294,7 @@ def get_closed_account_trades(account_id: int | None = None, user_id: int | None
                a.label, a.account_no,
                u.name, u.mobile,
                b.name,
-               rt.symbol, rt.trigger_name
+               rt.symbol, rt.trigger_name, rt.display_code
         FROM account_trades at
         LEFT JOIN accounts  a  ON a.id  = at.account_id
         LEFT JOIN users     u  ON u.id  = a.user_id
@@ -1314,6 +1315,7 @@ def get_closed_account_trades(account_id: int | None = None, user_id: int | None
         d["broker_name"]   = r[n + 4]
         d["symbol"]        = r[n + 5]
         d["trigger_name"]  = r[n + 6]
+        d["display_code"]  = r[n + 7]
 
         # Fetch legs for this trade
         leg_rows = conn.execute(
@@ -1344,8 +1346,14 @@ def mark_account_trade_closed(
     exit_legs: list[dict],
     now_utc: str,
     note: str = "",
+    mark_exited: bool = True,
 ) -> None:
-    """Persist exit legs and mark account_trade as exited."""
+    """
+    Persist exit legs. Marks account_trade as exited by default; pass
+    mark_exited=False for a partial exit (e.g. auto-exiting only the legs a
+    recommendation could price) that should leave the trade 'open' with its
+    remaining unmatched legs still active.
+    """
     conn = get_connection()
     conn.executemany("""
         INSERT INTO account_trade_legs
@@ -1359,10 +1367,11 @@ def mark_account_trade_closed(
          _float_or_none(l.get("price")), now_utc, None)
         for l in exit_legs
     ])
-    conn.execute(
-        "UPDATE account_trades SET status='exited', exit_time=?, note=COALESCE(?,note) WHERE id=?",
-        (now_utc, note or None, account_trade_id)
-    )
+    if mark_exited:
+        conn.execute(
+            "UPDATE account_trades SET status='exited', exit_time=?, note=COALESCE(?,note) WHERE id=?",
+            (now_utc, note or None, account_trade_id)
+        )
     conn.commit()
     conn.close()
 

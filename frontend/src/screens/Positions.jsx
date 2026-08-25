@@ -8,7 +8,7 @@ import PageHeader from '../components/common/PageHeader'
 import LegBuilder from '../components/trades/LegBuilder'
 import { newLeg, collectLegs } from '../components/trades/legHelpers'
 import LegGroup from '../components/trades/LegDisplay'
-import { BankIcon, GameIcon, ChevronIcon, PlusIcon, TrendIcon, BellIcon, WarningIcon, RefreshIcon } from '../components/common/Icons'
+import { BankIcon, GameIcon, ChevronIcon, PlusIcon, TrendIcon, BellIcon, WarningIcon, RefreshIcon, CloseIcon } from '../components/common/Icons'
 import { fmtRs, fmtPnl, fmtQty } from '../utils/format'
 import './Positions.css'
 
@@ -119,7 +119,7 @@ function TradeCard({ trade: t, isAdmin, prices }) {
           )}
           <span className="acct-chip">{t.account_label}</span>
         </div>
-        <div className="rec-ts">{t.entry_ist}</div>
+        <div className="rec-ts">{t.entry_ist}{(t.display_code || t.rec_id) && <> · <span className="rec-code">#{t.display_code || t.rec_id}</span></>}</div>
       </div>
 
       <div className="rec-legs">
@@ -170,9 +170,6 @@ function TradeCard({ trade: t, isAdmin, prices }) {
               The recommendation for this trade has been closed. Please exit your position.
             </div>
           </div>
-          <button className="btn btn-danger btn-sm" style={{flexShrink:0}} onClick={() => setExitOpen(true)}>
-            Exit Now
-          </button>
         </div>
       )}
 
@@ -253,8 +250,8 @@ function HistoryCard({ trade: t }) {
             <span className="acct-chip">{t.account_label}</span>
           </div>
           <div className="rec-ts" style={{textAlign:'right'}}>
-            <div>In: {t.entry_ist}</div>
-            <div>Out: {t.exit_ist}</div>
+            {t.entry_ist} → {t.exit_ist}
+            {(t.display_code || t.rec_id) && <> · <span className="rec-code">#{t.display_code || t.rec_id}</span></>}
           </div>
         </div>
       </div>
@@ -446,7 +443,10 @@ function NewTradeForm({ accounts, gameAccounts, onDone }) {
               </optgroup>
             )}
           </select>
-          <button type="button" className="add-account-link" onClick={() => navigate('/profile/accounts')}>+ Add</button>
+          <button type="button" className="add-account-link" onClick={() => navigate('/profile/accounts')}>
+            <span className="add-leg-badge" style={{width:16,height:16}}><PlusIcon size={9}/></span>
+            Add
+          </button>
         </div>
       </div>
       <div className="new-trade-divider" />
@@ -468,6 +468,8 @@ function NewTradeForm({ accounts, gameAccounts, onDone }) {
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
+const SEGMENTS = ['all', 'F&O', 'Equity', 'ETF', 'Commodities']
+
 export default function Positions() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -475,6 +477,7 @@ export default function Positions() {
   const isAdmin  = user?.role === 'super_admin' || user?.role === 'admin'
 
   const [posTab, setPosTab]                 = useState('open')
+  const [segment, setSegment]               = useState('all')
   const { data: accounts = [], isLoading: acctsLoading } = useAccounts()
 
   const realAccounts = accounts.filter(a => !a.game_id)
@@ -548,6 +551,11 @@ export default function Positions() {
 
   const title = isAdmin ? 'All Positions' : 'My Positions'
 
+  const list        = posTab === 'history' ? history : trades
+  const usedSegs    = new Set(list.map(t => t.segment))
+  const filteredTrades  = segment === 'all' ? trades  : trades.filter(t => t.segment === segment)
+  const filteredHistory = segment === 'all' ? history : history.filter(t => t.segment === segment)
+
   function acctLabel(a) {
     const base = a.label || [a.broker, a.account_no].filter(Boolean).join(' · ') || `Account ${a.id}`
     return a.user_name ? `${a.user_name} · ${base}` : base
@@ -560,43 +568,60 @@ export default function Positions() {
       <AccountPicker realAccounts={realAccounts} gameAccounts={gameAccounts}
         acctFilter={acctFilter} setAcct={setAcct} isAdmin={isAdmin} acctLabel={acctLabel} />
 
-      <div className="pos-filter-row">
-        <select style={{width:'auto',fontSize:12,padding:'4px 8px'}}
-                value={posTab === 'new' ? 'open' : posTab} onChange={e=>setPosTab(e.target.value)}>
-          <option value="open">Open</option>
-          <option value="history">History</option>
-        </select>
+      {acctFilter && <CapitalSummary accountId={parseInt(acctFilter)} />}
+
+      <div className="card">
         {!isAdmin && (
-          <button className={`pos-tab-new${posTab==='new'?' active':''}`} onClick={()=>setPosTab(posTab === 'new' ? 'open' : 'new')}>
-            + New Trade
-          </button>
+          <div className="card-header">
+            <button className={`pos-tab-new${posTab==='new'?' active':''}`}
+                    onClick={()=>setPosTab(posTab === 'new' ? 'open' : 'new')}>
+              + New Trade
+            </button>
+            {posTab === 'new' && (
+              <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto',display:'inline-flex'}}
+                      onClick={()=>setPosTab('open')}><CloseIcon/></button>
+            )}
+          </div>
         )}
+
         {posTab !== 'new' && (
-          <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto',display:'inline-flex'}} onClick={()=>posTab==='open'?refetch():refetchHist()}><RefreshIcon/></button>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',padding:'8px 16px 6px',borderBottom:'1px solid var(--border)',background:'#fafafa'}}>
+            {SEGMENTS.filter(s => s === 'all' || usedSegs.has(s)).map(s => (
+              <button key={s} className={`seg-chip${segment===s?' active':''}`} onClick={() => setSegment(s)}>
+                {s === 'all' ? 'All' : s}
+              </button>
+            ))}
+            <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
+              <select style={{width:'auto',fontSize:12,padding:'4px 8px'}}
+                      value={posTab} onChange={e=>setPosTab(e.target.value)}>
+                <option value="open">Open</option>
+                <option value="history">History</option>
+              </select>
+              <button className="btn btn-ghost btn-sm" style={{display:'inline-flex'}} onClick={()=>posTab==='open'?refetch():refetchHist()}><RefreshIcon/></button>
+            </div>
+          </div>
         )}
+
+        <div className="card-body" style={{padding:10}}>
+          {posTab === 'new' && (
+            <NewTradeForm accounts={realAccounts} gameAccounts={gameAccounts} onDone={id => { if (id) setAcct(String(id)); setPosTab('open'); refetch() }} />
+          )}
+          {posTab === 'open' && (
+            isLoading ? <div className="empty">Loading…</div> :
+            !filteredTrades.length ? <div className="empty">No {segment !== 'all' ? segment + ' ' : ''}open positions.</div> :
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              {filteredTrades.map(t => <TradeCard key={t.id} trade={t} isAdmin={isAdmin} prices={prices} />)}
+            </div>
+          )}
+          {posTab === 'history' && (
+            histLoad ? <div className="empty">Loading…</div> :
+            !filteredHistory.length ? <div className="empty">No {segment !== 'all' ? segment + ' ' : ''}closed trades.</div> :
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              {filteredHistory.map(t => <HistoryCard key={t.id} trade={t} />)}
+            </div>
+          )}
+        </div>
       </div>
-
-      {posTab !== 'new' && acctFilter && <CapitalSummary accountId={parseInt(acctFilter)} />}
-
-      {posTab === 'new' && (
-        <div className="card"><div className="card-body">
-          <NewTradeForm accounts={realAccounts} gameAccounts={gameAccounts} onDone={id => { if (id) setAcct(String(id)); setPosTab('open'); refetch() }} />
-        </div></div>
-      )}
-      {posTab === 'open' && (
-        isLoading ? <div className="card"><div className="empty">Loading…</div></div> :
-        !trades.length ? <div className="card"><div className="empty">No open positions.</div></div> :
-        <div style={{display:'flex',flexDirection:'column',gap:12}}>
-          {trades.map(t => <TradeCard key={t.id} trade={t} isAdmin={isAdmin} prices={prices} />)}
-        </div>
-      )}
-      {posTab === 'history' && (
-        histLoad ? <div className="card"><div className="empty">Loading…</div></div> :
-        !history.length ? <div className="card"><div className="empty">No closed trades.</div></div> :
-        <div style={{display:'flex',flexDirection:'column',gap:12}}>
-          {history.map(t => <HistoryCard key={t.id} trade={t} />)}
-        </div>
-      )}
     </div>
   )
 }

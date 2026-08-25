@@ -75,6 +75,13 @@ input, select { font-family: inherit; }
 .btn-sm      { padding: 4px 10px; font-size: 12px; }
 .btn:disabled{ opacity: .45; cursor: not-allowed; }
 
+/* "Add Leg" — shared by LegBuilder (Dashboard's rec forms + Positions' New
+   Trade form): a colored circular plus badge reads as an add-affordance at
+   a glance, instead of a bare inline stroke icon easily mistaken for "+" text. */
+.add-leg-btn   { width: 100%; padding: 8px; border: 1.5px dashed #bbd6fb; border-radius: 6px; background: #f8fafd; color: var(--blue); cursor: pointer; font-size: 13px; font-weight: 600; margin-top: 2px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background .15s, border-color .15s; }
+.add-leg-btn:hover { background: #eff6ff; border-color: var(--blue); }
+.add-leg-badge { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--blue); color: #fff; flex-shrink: 0; }
+
 /* Forms */
 .form-row    { margin-bottom: 10px; }
 label        { font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .4px; }

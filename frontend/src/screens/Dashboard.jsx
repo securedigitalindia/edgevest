@@ -349,7 +349,7 @@ function RecItem({ rec, prices, onPushed, highlight }) {
           </div>
         </div>
         <div className="rec-ts">
-          {rec.entry_ist}{rec.exit_ist ? ` · Closed ${rec.exit_ist}` : ''} · <span style={{fontWeight:700,color:'var(--blue)'}}>#{rec.display_code || rec.id}</span>
+          {rec.entry_ist}{rec.exit_ist ? ` → ${rec.exit_ist}` : ''} · <span className="rec-code">#{rec.display_code || rec.id}</span>
         </div>
       </div>
 

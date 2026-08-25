@@ -14,13 +14,14 @@
    stats-strip footer. Ported (not reinvented) so the two sibling "position
    card" experiences stay consistent; a visual tweak to one family should be
    mirrored in the other. */
-.trade-card        { border:1px solid var(--border); border-left:4px solid #22c55e; border-radius:8px; margin-bottom:12px; overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.06); transition:box-shadow .15s; }
+.trade-card        { border:1px solid var(--border); border-left:4px solid #22c55e; border-radius:8px; overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.06); transition:box-shadow .15s; }
 .trade-card:hover  { box-shadow:0 4px 14px rgba(0,0,0,.1); }
 .trade-card-closed { border-left-color:#94a3b8; }
 
 .rec-header  { padding:12px 14px 10px; border-bottom:1px solid var(--border); }
 .rec-symbol  { font-weight:800; font-size:16px; color:#0f172a; }
-.rec-ts      { font-size:11px; color:var(--muted); margin-top:4px; }
+.rec-ts      { font-size:11px; color:var(--muted); margin-top:4px; overflow-wrap:break-word; }
+.rec-code    { font-weight:700; color:var(--blue); white-space:nowrap; }
 .rec-seg-tag { font-size:10px; padding:2px 7px; border-radius:10px; background:#f1f5f9; color:#64748b; font-weight:600; }
 
 /* Account chip — distinct from .rec-seg-tag (F&O/Equity): this is which
@@ -71,12 +72,8 @@
 /* Pending adj banner */
 .pending-adj-banner { padding:8px 12px; border-top:2px solid #fbbf24; background:#fffbeb; font-size:12px; }
 
-.add-account-link { background:none; border:none; padding:0; font-size:12px; color:var(--blue); cursor:pointer; white-space:nowrap; text-decoration:underline; text-underline-offset:2px; flex-shrink:0; }
+.add-account-link { display:flex; align-items:center; gap:5px; background:none; border:none; padding:0; font-size:12px; font-weight:600; color:var(--blue); cursor:pointer; white-space:nowrap; flex-shrink:0; }
 .add-account-link:hover { color:var(--blue-dark,#1d4ed8); }
-
-/* Open/History filter row — bare flex row above the summary/trade list,
-   replaces the old card-header that used to also hold the account select. */
-.pos-filter-row { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
 
 /* Account picker — own section above everything else on the page (design:
    https://claude.ai/code/artifact/c7bf2132-d2e0-4f58-98a6-9305fbddf7cd, Option C) */
@@ -115,7 +112,7 @@
 .form-leg-info > div { min-width:0; }
 
 /* New trade ticket (tab view) */
-.new-trade-ticket  { padding:4px 0 4px; }
+.new-trade-ticket  { padding:10px 8px 6px; }
 .new-trade-divider { height:1px; background:var(--border); margin:12px 0; }
 .new-trade-footer  { display:flex; align-items:center; gap:10px; padding-top:12px; border-top:1px solid var(--border); margin-top:4px; }
 

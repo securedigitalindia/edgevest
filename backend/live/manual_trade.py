@@ -328,6 +328,12 @@ def close_manual_trade(trade_id: int, prices: list[float], note: str = "") -> No
     # --- 6. Send alert ---
     _send_exit_alert(trade_id, symbol, entry_legs, exit_legs, spot_ltp, note, now_utc)
 
+    # --- 7. Auto-exit any linked account trades ---
+    try:
+        auto_exit_linked_account_trades(trade_id, exit_legs, now_utc)
+    except Exception as e:
+        print(f"  [close_manual_trade]  auto-exit linked account trades failed: {e}", flush=True)
+
     now_ist = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b %Y  %H:%M IST")
     print(f"  [close_manual_trade]  trade id={trade_id}  {symbol}  closed at {now_ist}",
           flush=True)
@@ -704,3 +710,109 @@ def close_account_trade(
 
     print(f"  [close_account_trade]  id={account_trade_id}  {symbol}  "
           f"account={account_label}  closed at {now_ist}", flush=True)
+
+
+def auto_exit_linked_account_trades(
+    recommended_trade_id: int,
+    rec_exit_legs: list[dict],
+    exit_time: str,
+) -> None:
+    """
+    Call right after close_recommended_trade() — auto-exits every still-open
+    account_trade linked to this recommendation, using the recommendation's
+    own exit prices. Matched to each account_trade's current legs by
+    instrument_key (same option/future contract, so the same market price
+    applies regardless of that account's own lot sizing).
+
+    A leg an account added independently (its own adjustment, absent from
+    the recommendation) has no price to auto-exit with — it's left open, and
+    that account_trade stays 'open' with just the unmatched leg(s)
+    remaining, same as today's pending-exit banner lets a client finish
+    manually via Exit Trade (now for a narrower set of legs).
+    """
+    price_by_ikey = {
+        l["instrument_key"]: l["price"]
+        for l in rec_exit_legs
+        if l.get("instrument_key") and l.get("price") is not None
+    }
+    if not price_by_ikey:
+        return
+
+    linked = [t for t in get_open_account_trades()
+              if t.get("recommended_trade_id") == recommended_trade_id]
+
+    for t in linked:
+        all_legs    = get_account_trade_legs(t["id"])
+        exited_keys = {l["instrument_key"] for l in all_legs if l["action"] == "exit"}
+        entry_legs  = [l for l in all_legs
+                       if l["action"] == "entry" and l["instrument_key"] not in exited_keys]
+
+        matched = [l for l in entry_legs if l["instrument_key"] in price_by_ikey]
+        if not matched:
+            continue  # this recommendation's exit can't price anything currently open here
+
+        exit_legs = [
+            {
+                "action":          "exit",
+                "side":            "BUY" if l["side"] == "SELL" else "SELL",
+                "instrument_type": l["instrument_type"],
+                "instrument_key":  l["instrument_key"],
+                "strike":          l["strike"],
+                "expiry_str":      l["expiry_str"],
+                "lots":            l["lots"],
+                "lot_size":        l["lot_size"],
+                "price":           price_by_ikey[l["instrument_key"]],
+            }
+            for l in matched
+        ]
+        full_exit = len(matched) == len(entry_legs)
+        mark_account_trade_closed(t["id"], exit_legs, exit_time, mark_exited=full_exit)
+
+        if not full_exit:
+            try:
+                recalculate_account_trade_margin(t["id"])
+            except Exception as e:
+                print(f"  [auto_exit_linked_account_trades]  margin recalc skipped: {e}", flush=True)
+
+        # Telegram alert (skip for game/virtual accounts)
+        try:
+            from db.init_db import get_connection as _gc
+            _conn   = _gc()
+            _row    = _conn.execute("SELECT game_id FROM accounts WHERE id = ?", (t["account_id"],)).fetchone()
+            _conn.close()
+            is_game = bool(_row and _row[0])
+
+            if not is_game:
+                symbol        = t.get("symbol") or "—"
+                account_label = t.get("account_label") or f"Account {t['account_id']}"
+                n_pos         = reduce(gcd, [l["lots"] for l in matched if l["lots"] > 0]) or 1
+                now_ist       = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
+
+                total_pnl = 0.0
+                lines = [
+                    f'🔔 <b>{_h(symbol)}</b>  ·  {_h(account_label)}  ·  Auto-exit (recommendation closed)',
+                    _DIV,
+                ]
+                for e, x in zip(matched, exit_legs):
+                    strike_str = f"{int(e['strike']):,} " if e.get("strike") else ""
+                    base_lots  = e["lots"] // n_pos
+                    qty        = (e["lots"] // n_pos) * (e["lot_size"] or 1)
+                    ep, xp     = e["price"] or 0, x["price"] or 0
+                    leg_pnl    = (ep - xp) * qty if e["side"] == "SELL" else (xp - ep) * qty
+                    total_pnl += leg_pnl * n_pos
+                    icon       = "🔴" if e["side"] == "SELL" else "🟢"
+                    lines.append(
+                        f"  {icon}  {e['side']:<4}  {strike_str}{e['instrument_type']}"
+                        f"  {base_lots}L   ₹{ep:,.0f} → ₹{xp:,.0f}"
+                        f"   <i>(₹{leg_pnl:+,.0f})</i>"
+                    )
+                lines += ["", _DIV, f"<b>Net P&amp;L  ₹{total_pnl:+,.0f}</b>"]
+                if not full_exit:
+                    lines.append("<i>Other leg(s) on this trade stay open — exit them manually.</i>")
+                lines.append(f"Exit at  {now_ist}")
+                send_telegram("\n".join(lines))
+        except Exception as e:
+            print(f"  [auto_exit_linked_account_trades]  Telegram alert failed (trade updated ok): {e}", flush=True)
+
+        print(f"  [auto_exit_linked_account_trades]  account_trade id={t['id']}  "
+              f"{'fully' if full_exit else 'partially'} exited via rec id={recommended_trade_id}", flush=True)

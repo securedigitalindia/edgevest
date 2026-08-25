@@ -1,6 +1,6 @@
 import InstrumentSearch from './InstrumentSearch'
 import { newLeg } from './legHelpers'
-import { CloseIcon } from '../common/Icons'
+import { CloseIcon, PlusIcon } from '../common/Icons'
 
 // ─── Leg builder ─────────────────────────────────────────────────────────────
 
@@ -43,8 +43,10 @@ export default function LegBuilder({ legs, onChange }) {
           </div>
         ))}
       </div>
-      <button style={{width:'100%',padding:8,border:'1.5px dashed #cbd5e1',borderRadius:6,background:'none',color:'var(--muted)',cursor:'pointer',fontSize:13,marginTop:2}}
-              onClick={add}>+ Add Leg</button>
+      <button className="add-leg-btn" onClick={add}>
+        <span className="add-leg-badge"><PlusIcon size={11}/></span>
+        Add Leg
+      </button>
     </div>
   )
 }
