@@ -119,18 +119,19 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
-## Status as of 2026-08-26 (`v5.2` — frontend released, backend pending)
+## Status as of 2026-08-26 (`v5.2` — released, frontend + backend)
 
 - ✅ `edgevest.in`/`www.edgevest.in` — serving `releases/v5.2`.
   `dev.edgevest.in`/`staging.edgevest.in` are on `v5.1` (last deployed there);
   nothing about `v5.2` requires redeploying them urgently, but they'll read
   as behind until someone runs `deploy.sh deploy dev v5.2` /
   `deploy.sh deploy staging v5.2`.
-- ⚠️ Prod backend — **not yet released for `v5.2`**. `backend/server.py`'s
-  `APP_VERSION` was bumped to `5.2.0` and committed/tagged alongside the
-  frontend per the versioning convention, but the EC2 steps below haven't
-  been run yet. No DB migration is needed for this release specifically
-  (`risk_level`'s schema change already shipped with `v5.1`).
+- ✅ Prod backend — released. `backend/server.py`'s `APP_VERSION` (`5.2.0`)
+  is live. Run from EC2 directly (no server access from this session), so
+  the individual steps above (env sync, `poller.py init`, restart) aren't
+  independently re-verifiable here — worth a quick manual double-check on
+  the box if anything looks off. No DB migration was needed for this release
+  specifically (`risk_level`'s schema change already shipped with `v5.1`).
 - ✅ `main` fast-forwarded to `dev` at this release (`2ad82c3`) as the first
   step of the branching-model change above — first time `main` has moved
   since the initial monorepo commit.
