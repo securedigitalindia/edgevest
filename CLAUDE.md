@@ -18,6 +18,7 @@ Whole-system reference docs, kept up to date with the actual codebase (not aspir
 - `docs/apis.md` — every Flask route: method, path, auth requirement, request/response shape.
 - `docs/architecture.md` — system design, backend/frontend split, environments & deployment, auth flow.
 - `docs/schema.md` — every SQLite table: columns, indexes, relationships.
+- `docs/release-checklist.md` — versioning convention, backend/frontend release steps, current outstanding release items.
 
 `docs/prd/*.md` is a separate folder for **feature-specific** PRDs (design docs written before/alongside one nontrivial feature) — check there for design context (schema decisions, non-goals, open questions) before building analysis or extensions on top of an existing feature. Don't confuse it with `docs/PRD.md` above, which is the whole-product doc.
 
