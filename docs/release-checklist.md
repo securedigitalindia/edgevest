@@ -100,19 +100,17 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
-## Status as of 2026-08-25 (`v5.0`)
+## Status as of 2026-08-25 (`v5.0` — released)
 
-- ✅ `dev.edgevest.in` and `staging.edgevest.in` — both on the versioned
-  deploy pattern, serving `releases/v5.0`, old pre-versioning files cleaned
-  out of both buckets.
-- ❌ `edgevest.in` (prod frontend) — still on the old flat/root S3 deploy,
-  not yet moved onto `frontend/deploy/deploy.sh`.
-- ❌ Prod backend — not yet on `v5.0`. `.env.production` on EC2 not yet
-  confirmed synced with `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` /
-  `PAYMENTS_CRON_SECRET` (added locally, never pushed to the server).
-  `PAYMENTS_CRON_SECRET` still needs to be made distinct from dev's before
-  going live. `payment_orders` table confirmed absent from prod's DB as of
-  the last backup (2026-08-24). No reconciliation cron scheduled anywhere.
+- ✅ `dev.edgevest.in`, `staging.edgevest.in`, `edgevest.in`/`www.edgevest.in`
+  — all on the versioned deploy pattern, serving `releases/v5.0`, old
+  pre-versioning files cleaned out of all three buckets. Verified live
+  (including the post-deploy PWA service-worker reload gotcha noted above).
+- ✅ Prod backend — released, per confirmation 2026-08-25. Run from EC2
+  directly (no server access from this session), so the individual steps
+  above (env sync, distinct `PAYMENTS_CRON_SECRET`, `poller.py init`,
+  reconciliation cron, restart) aren't independently re-verifiable here —
+  worth a quick manual double-check on the box if anything payments-related
+  looks off after release.
 - ⚠️ 34 Dependabot vulnerabilities (15 high, 18 moderate, 1 low) flagged on
-  every push to `dev` — not triaged yet, worth a look before or shortly
-  after this release.
+  every push to `dev` — not triaged yet, worth a look now that `v5.0` is out.
