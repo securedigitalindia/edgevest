@@ -2,13 +2,31 @@
 
 How to cut and ship an EdgeVest release — versioning convention, backend
 steps, frontend steps, and the current outstanding items as of the last time
-this doc was updated (2026-08-25, `v5.0`).
+this doc was updated (2026-08-26, `v5.2`).
+
+## Branching model
+
+- **Current (solo)**: everything happens directly on `dev`; tags (`v3.0`
+  through `v5.1`) were placed there, and `main` was intentionally left
+  untouched at the initial monorepo commit.
+- **As of `v5.2` (2026-08-26)**: `main` was fast-forwarded to match `dev`
+  (`git merge dev --ff-only`, clean — `main` had never diverged) as the first
+  step of moving to a real branching model for when more than one person is
+  contributing: new work branches off `main`, PRs into `dev`, and once a
+  batch of work on `dev` is ready to ship, `dev` merges into `main` (fast-
+  forward, same as this one, as long as nothing lands on `main` directly in
+  between) — **`main` becomes the source of truth, and release tags move to
+  `main` going forward** instead of `dev`.
+- Until other contributors are actually opening PRs against `dev`, this is
+  functionally the same solo workflow as before, just with the extra step of
+  fast-forwarding `main` at release time instead of never touching it.
 
 ## Versioning
 
-- Tags are placed directly on `dev` (`v3.0`, `v4.0`, `v5.0`, ...) — this repo
-  does not merge to `main` for releases; `main` sits untouched at the initial
-  monorepo commit.
+- Tags are placed on `main` (`v5.2` on) — `dev` is where work lands first;
+  `main` is fast-forwarded to `dev` at release time and the tag goes on
+  `main`. (Tags before `v5.2` — `v3.0` through `v5.1` — were placed on `dev`,
+  back when `main` was never touched; see Branching model above.)
 - Bump both of these together, in their own commit, before tagging:
   - `frontend/package.json` + `frontend/package-lock.json` (`"version"` field,
     top of the file and the `packages[""]` entry — **do not** blind
@@ -89,8 +107,9 @@ frontend/deploy/deploy.sh current  <prod|staging|dev>
 
 ## Order of operations for a full release
 
-1. Bump versions, commit, tag (see Versioning above).
-2. Push `dev` + the tag to origin.
+1. Bump versions, commit on `dev` (see Versioning above).
+2. Fast-forward `main` to `dev` (`git checkout main && git merge dev --ff-only`),
+   tag `main`, push `main` + `dev` + the tag to origin.
 3. Backend steps 1–7 above, on EC2, for prod.
 4. `frontend/deploy/deploy.sh deploy prod <tag>`.
 5. Smoke test prod end-to-end (login, a real small checkout, positions,
@@ -100,17 +119,23 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
-## Status as of 2026-08-25 (`v5.0` — released)
+## Status as of 2026-08-26 (`v5.2` — frontend released, backend pending)
 
-- ✅ `dev.edgevest.in`, `staging.edgevest.in`, `edgevest.in`/`www.edgevest.in`
-  — all on the versioned deploy pattern, serving `releases/v5.0`, old
-  pre-versioning files cleaned out of all three buckets. Verified live
-  (including the post-deploy PWA service-worker reload gotcha noted above).
-- ✅ Prod backend — released, per confirmation 2026-08-25. Run from EC2
-  directly (no server access from this session), so the individual steps
-  above (env sync, distinct `PAYMENTS_CRON_SECRET`, `poller.py init`,
-  reconciliation cron, restart) aren't independently re-verifiable here —
-  worth a quick manual double-check on the box if anything payments-related
-  looks off after release.
+- ✅ `edgevest.in`/`www.edgevest.in` — serving `releases/v5.2`.
+  `dev.edgevest.in`/`staging.edgevest.in` are on `v5.1` (last deployed there);
+  nothing about `v5.2` requires redeploying them urgently, but they'll read
+  as behind until someone runs `deploy.sh deploy dev v5.2` /
+  `deploy.sh deploy staging v5.2`.
+- ⚠️ Prod backend — **not yet released for `v5.2`**. `backend/server.py`'s
+  `APP_VERSION` was bumped to `5.2.0` and committed/tagged alongside the
+  frontend per the versioning convention, but the EC2 steps below haven't
+  been run yet. No DB migration is needed for this release specifically
+  (`risk_level`'s schema change already shipped with `v5.1`).
+- ✅ `main` fast-forwarded to `dev` at this release (`2ad82c3`) as the first
+  step of the branching-model change above — first time `main` has moved
+  since the initial monorepo commit.
+- Previous status (`v5.0`, 2026-08-25): `dev.edgevest.in`, `staging.edgevest.in`,
+  `edgevest.in`/`www.edgevest.in` all released and verified live on the
+  versioned deploy pattern; prod backend released same day.
 - ⚠️ 34 Dependabot vulnerabilities (15 high, 18 moderate, 1 low) flagged on
   every push to `dev` — not triaged yet, worth a look now that `v5.0` is out.
