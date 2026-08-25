@@ -22,6 +22,8 @@
 .rec-symbol  { font-weight:800; font-size:16px; color:#0f172a; }
 .rec-ts      { font-size:11px; color:var(--muted); margin-top:4px; overflow-wrap:break-word; }
 .rec-code    { font-weight:700; color:var(--blue); white-space:nowrap; }
+.rec-adj-strip { font-size:11px; color:var(--muted); border-top:1px solid var(--border); margin-top:8px; padding-top:6px; }
+.rec-adj-text  { color:#92400e; font-weight:600; }
 .rec-seg-tag { font-size:10px; padding:2px 7px; border-radius:10px; background:#f1f5f9; color:#64748b; font-weight:600; }
 
 /* Risk level badge — mirrors Dashboard.css's traffic-light gradient */
@@ -63,8 +65,6 @@
 .pnl-pos { color:var(--green); }
 .pnl-neg { color:var(--red); }
 .pnl-neu { color:var(--muted); }
-
-.adj-badge { font-size:11px; padding:2px 7px; border-radius:20px; background:#fef9c3; color:#854d0e; font-weight:600; }
 
 /* Inline exit form */
 .inline-action { padding:12px; border-top-width:2px; border-top-style:solid; }

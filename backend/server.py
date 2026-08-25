@@ -17,7 +17,7 @@ from flask import (Flask, request, jsonify,
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
 
-APP_VERSION = "5.2.0"
+APP_VERSION = "5.3.0"
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]

@@ -33,8 +33,10 @@
 .rec-symbol  { font-weight:800; font-size:16px; color:#0f172a; }
 .rec-ts      { font-size:11px; color:var(--muted); margin-top:4px; overflow-wrap:break-word; }
 .rec-code    { font-weight:700; color:var(--blue); white-space:nowrap; }
+.rec-adj-strip { font-size:11px; color:var(--muted); border-top:1px solid var(--border); margin-top:8px; padding-top:6px; }
+.rec-adj-text  { color:#92400e; font-weight:600; }
 .rec-seg-tag { font-size:10px; padding:2px 7px; border-radius:10px; background:#f1f5f9; color:#64748b; font-weight:600; }
-.rec-legs    { padding:10px 14px 2px; }
+.rec-legs      { padding:10px 14px 2px; }
 
 /* Risk level badge — traffic-light gradient, low (safest) to very_high */
 .risk-badge     { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
@@ -79,7 +81,6 @@
 .pnl-neu   { color:var(--muted); }
 
 /* Action bar & notices */
-.adj-badge      { font-size:11px; padding:2px 7px; border-radius:20px; background:#fef9c3; color:#854d0e; font-weight:600; }
 .rec-action-bar { display:flex; gap:8px; padding:8px 14px; border-top:1px solid var(--border); background:#fafafa; flex-wrap:wrap; }
 .rec-adj-notice { margin:10px 14px 12px; padding:10px 14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; display:flex; align-items:flex-start; gap:10px; }
 

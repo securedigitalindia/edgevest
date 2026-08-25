@@ -9,7 +9,7 @@ import Dropdown from '../components/common/Dropdown'
 import LegBuilder from '../components/trades/LegBuilder'
 import { newLeg, collectLegs } from '../components/trades/legHelpers'
 import LegGroup from '../components/trades/LegDisplay'
-import { BankIcon, GameIcon, ChevronIcon, PlusIcon, TrendIcon, BellIcon, WarningIcon, RefreshIcon, CloseIcon } from '../components/common/Icons'
+import { BankIcon, GameIcon, ChevronIcon, PlusIcon, TrendIcon, BellIcon, RefreshIcon, CloseIcon } from '../components/common/Icons'
 import { fmtRs, fmtPnl, fmtQty } from '../utils/format'
 import './Positions.css'
 
@@ -110,17 +110,20 @@ function TradeCard({ trade: t, isAdmin, prices }) {
       <div className="rec-header">
         <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
           <span className="rec-symbol">{t.symbol}</span>
-          <span className="badge badge-open">Open</span>
           {t.segment && <span className="rec-seg-tag">{t.segment}</span>}
           {t.risk_level && <span className={`risk-badge risk-${t.risk_level}`}>{RISK_LABEL[t.risk_level] || t.risk_level}</span>}
-          {t.pending_adj_count > 0 && (
-            <span className="adj-badge" style={{display:'inline-flex',alignItems:'center',gap:4}}><WarningIcon size={10}/> {t.pending_adj_count} adj pending</span>
-          )}
           {t.pending_exit && (
             <span className="badge badge-danger" style={{display:'inline-flex',alignItems:'center',gap:4}}><BellIcon size={10}/> exit pending</span>
           )}
+          <span className="status-dot status-dot-open" title="Open" />
         </div>
-        <div className="rec-ts">{t.entry_ist}{(t.display_code || t.rec_id) && <> · <span className="rec-code">#{t.display_code || t.rec_id}</span></>}</div>
+        <div className="rec-ts">{t.entry_ist}</div>
+        {(t.display_code || t.rec_id) && (
+          <div className="rec-adj-strip">
+            <span className="rec-code">#{t.display_code || t.rec_id}</span>
+            {t.pending_adj_count > 0 && <span className="rec-adj-text"> · {t.pending_adj_count} adjustment{t.pending_adj_count > 1 ? 's' : ''} pending</span>}
+          </div>
+        )}
       </div>
 
       <div className="rec-legs">
@@ -246,9 +249,9 @@ function HistoryCard({ trade: t }) {
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
             <span className="rec-symbol">{t.symbol}</span>
-            <span className="badge badge-exited">Closed</span>
             {t.segment && <span className="rec-seg-tag">{t.segment}</span>}
             {t.risk_level && <span className={`risk-badge risk-${t.risk_level}`}>{RISK_LABEL[t.risk_level] || t.risk_level}</span>}
+            <span className="status-dot status-dot-exited" title="Closed" />
           </div>
           <div className="rec-ts" style={{textAlign:'right'}}>
             {t.entry_ist} → {t.exit_ist}
@@ -559,9 +562,8 @@ export default function Positions() {
 
   const bySegment = segment === 'all' ? { trades, history } :
     { trades: trades.filter(t => t.segment === segment), history: history.filter(t => t.segment === segment) }
-  const byRisk = risk === 'all'    ? bySegment :
-                 risk === 'unset' ? { trades: bySegment.trades.filter(t => !t.risk_level), history: bySegment.history.filter(t => !t.risk_level) } :
-                                     { trades: bySegment.trades.filter(t => t.risk_level === risk), history: bySegment.history.filter(t => t.risk_level === risk) }
+  const byRisk = risk === 'all' ? bySegment :
+    { trades: bySegment.trades.filter(t => t.risk_level === risk), history: bySegment.history.filter(t => t.risk_level === risk) }
   const filteredTrades  = byRisk.trades
   const filteredHistory = byRisk.history
 
@@ -599,9 +601,18 @@ export default function Positions() {
               options={SEGMENTS.filter(s => s === 'all' || usedSegs.has(s)).map(s => ({value:s, label: s === 'all' ? 'All Segments' : s}))} />
             <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
               <Dropdown value={risk} onChange={setRisk} align="right"
-                options={[{value:'all',label:'All Risk'}, {value:'unset',label:'Unset'}, ...RISK_LEVELS]} />
+                options={[
+                  {value:'all', label:'All Risk'},
+                  ...RISK_LEVELS.map(r => ({
+                    value: r.value,
+                    label: <><span className={`status-dot status-dot-risk-${r.value}`} style={{marginRight:6}}/>{r.label}</>,
+                  })),
+                ]} />
               <Dropdown value={posTab} onChange={setPosTab} align="right"
-                options={[{value:'open',label:'Open'}, {value:'history',label:'History'}]} />
+                options={[
+                  {value:'open', label:<><span className="status-dot status-dot-open" style={{marginRight:6}}/>Open</>},
+                  {value:'history', label:<><span className="status-dot status-dot-exited" style={{marginRight:6}}/>History</>},
+                ]} />
               <button className="btn btn-ghost btn-sm" style={{display:'inline-flex'}} onClick={()=>posTab==='open'?refetch():refetchHist()}><RefreshIcon/></button>
             </div>
           </div>

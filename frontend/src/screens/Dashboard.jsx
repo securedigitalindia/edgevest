@@ -339,10 +339,10 @@ function RecItem({ rec, prices, onPushed, highlight }) {
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
           <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',flex:1,minWidth:0}}>
             <span className="rec-symbol" style={{fontSize:15}}>{rec.note || rec.symbol}</span>
-            <span className={`badge badge-${rec.status === 'open' ? 'open' : 'exited'}`}>{rec.status === 'open' ? 'Live' : rec.status}</span>
             {rec.segment && <span className="rec-seg-tag">{rec.segment}</span>}
             {rec.risk_level && <span className={`risk-badge risk-${rec.risk_level}`}>{RISK_LABEL[rec.risk_level] || rec.risk_level}</span>}
-            {rec.adj_count > 0 && <span className="adj-badge">{rec.adj_count} adj</span>}
+            <span className={`status-dot status-dot-${rec.status === 'open' ? 'open' : 'exited'}`}
+                  title={rec.status === 'open' ? 'Live' : 'Exited'} />
           </div>
           <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
             {collapsed && !isOpen && totalPnl != null && (
@@ -361,7 +361,11 @@ function RecItem({ rec, prices, onPushed, highlight }) {
           </div>
         </div>
         <div className="rec-ts">
-          {rec.entry_ist}{rec.exit_ist ? ` → ${rec.exit_ist}` : ''} · <span className="rec-code">#{rec.display_code || rec.id}</span>
+          {rec.entry_ist}{rec.exit_ist ? ` → ${rec.exit_ist}` : ''}
+        </div>
+        <div className="rec-adj-strip">
+          <span className="rec-code">#{rec.display_code || rec.id}</span>
+          {rec.adj_count > 0 && <span className="rec-adj-text"> · {rec.adj_count} adjustment{rec.adj_count > 1 ? 's' : ''}</span>}
         </div>
       </div>
 
@@ -481,9 +485,7 @@ function RecsPanel({ isAdmin }) {
 
   const usedSegs = new Set(allRecs.map(r => r.segment))
   const bySegment = segment === 'all' ? recs : recs.filter(r => r.segment === segment)
-  const filtered  = risk === 'all'    ? bySegment :
-                     risk === 'unset' ? bySegment.filter(r => !r.risk_level) :
-                                        bySegment.filter(r => r.risk_level === risk)
+  const filtered  = risk === 'all' ? bySegment : bySegment.filter(r => r.risk_level === risk)
 
   // Poll live LTPs for open rec legs
   const instrKeys = [...new Set(
@@ -527,9 +529,19 @@ function RecsPanel({ isAdmin }) {
             options={SEGMENTS.filter(s => s === 'all' || usedSegs.has(s)).map(s => ({value:s, label: s === 'all' ? 'All Segments' : s}))} />
           <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
             <Dropdown value={risk} onChange={setRisk} align="right"
-              options={[{value:'all',label:'All Risk'}, {value:'unset',label:'Unset'}, ...RISK_LEVELS]} />
+              options={[
+                {value:'all', label:'All Risk'},
+                ...RISK_LEVELS.map(r => ({
+                  value: r.value,
+                  label: <><span className={`status-dot status-dot-risk-${r.value}`} style={{marginRight:6}}/>{r.label}</>,
+                })),
+              ]} />
             <Dropdown value={status} onChange={setStatus} align="right"
-              options={[{value:'all',label:'All'}, {value:'open',label:'Open'}, {value:'exited',label:'Exited'}]} />
+              options={[
+                {value:'all', label:'All'},
+                {value:'open', label:<><span className="status-dot status-dot-open" style={{marginRight:6}}/>Open</>},
+                {value:'exited', label:<><span className="status-dot status-dot-exited" style={{marginRight:6}}/>Exited</>},
+              ]} />
           </div>
         </div>
 
