@@ -28,21 +28,27 @@ this doc was updated (2026-08-25, `v5.0`).
 
 1. **Get the code onto the box** — `git pull` (or checkout the release tag)
    at `/home/ubuntu/edgevest`.
-2. **Sync `backend/.env.production`** — this file is gitignored, so the copy
+2. **Install Python dependencies** — `source venv/bin/activate && pip install
+   -r requirements.txt`. `backend/edgevest-web` (the systemd `ExecStart`
+   script) only activates the venv and runs gunicorn; nothing installs
+   packages automatically. `razorpay>=1.4.0` was added to
+   `requirements.txt` alongside the payments module — if prod's venv was set
+   up before that, it won't have it yet.
+3. **Sync `backend/.env.production`** — this file is gitignored, so the copy
    on a dev laptop and the copy on EC2 are two independent files that never
    auto-sync. Diff and merge by hand; never overwrite the server's copy
    wholesale (it may hold entries — e.g. `CORS_ORIGINS` — that a laptop's
    copy doesn't).
    - Give prod its own `PAYMENTS_CRON_SECRET`, distinct from dev's. Generate
      one with `python3 -c "import secrets; print(secrets.token_hex(24))"`.
-3. **Migrate the database** — `python poller.py init`. This is the only
+4. **Migrate the database** — `python poller.py init`. This is the only
    command in this codebase that touches schema (`db/init_db.py`'s
    `init_db()`, `CREATE TABLE IF NOT EXISTS` everywhere — idempotent, safe to
    rerun, never touches existing data). `python poller.py sync` does **not**
    do this — that command runs `sync/daily_sync.py`'s end-of-day
    candle sync and never calls `init_db()`. Needed at least once for the
    `payment_orders` table, introduced by the Razorpay integration.
-4. **Set up the reconciliation cron**, if not already present — nothing in
+5. **Set up the reconciliation cron**, if not already present — nothing in
    this repo schedules `POST /api/payments/reconcile` (confirmed by grepping
    the repo for it — no crontab/systemd-timer file exists anywhere). Add one:
    ```
@@ -51,8 +57,8 @@ this doc was updated (2026-08-25, `v5.0`).
    Keep the interval longer than a single run can take — there's no lock
    against two overlapping runs both racing to resolve the same stale order
    (see `docs/architecture.md`'s payments section).
-5. **Restart the service** — `sudo systemctl restart edgevest-web`.
-6. **Verify** — hit `/api/me` (or similar) and confirm the new code is
+6. **Restart the service** — `sudo systemctl restart edgevest-web`.
+7. **Verify** — hit `/api/me` (or similar) and confirm the new code is
    actually serving. Since `RAZORPAY_KEY_ID` is a live key (`rzp_live_...`),
    plan a small real-money checkout smoke test rather than assuming
    test-mode behavior carries over.
@@ -85,7 +91,7 @@ frontend/deploy/deploy.sh current  <prod|staging|dev>
 
 1. Bump versions, commit, tag (see Versioning above).
 2. Push `dev` + the tag to origin.
-3. Backend steps 1–6 above, on EC2, for prod.
+3. Backend steps 1–7 above, on EC2, for prod.
 4. `frontend/deploy/deploy.sh deploy prod <tag>`.
 5. Smoke test prod end-to-end (login, a real small checkout, positions,
    games).
