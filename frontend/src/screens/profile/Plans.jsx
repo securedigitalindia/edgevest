@@ -4,6 +4,7 @@ import useAuthStore from '../../store/authStore'
 import { useToast } from '../../components/common/Toast'
 import { usePlans, useCreatePlan, useUpdatePlan, useTogglePlan } from '../../hooks/useSettings'
 import PageHeader from '../../components/common/PageHeader'
+import { GemIcon, CloseIcon } from '../../components/common/Icons'
 import './Profile.css'
 
 export default function Plans() {
@@ -74,7 +75,7 @@ export default function Plans() {
                              onChange={e => setEditPrice(prev => ({...prev, [p.id]: e.target.value}))}
                              style={{width:60,fontSize:11,padding:'2px 4px',border:'1px solid var(--border)',borderRadius:4}} />
                       <button className="btn btn-primary btn-sm" style={{fontSize:10,padding:'2px 8px'}} onClick={() => savePrice(p.id)}>Save</button>
-                      <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 6px'}} onClick={() => setEditPrice(prev => { const n={...prev}; delete n[p.id]; return n })}>✕</button>
+                      <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 6px',display:'inline-flex'}} onClick={() => setEditPrice(prev => { const n={...prev}; delete n[p.id]; return n })}><CloseIcon size={10}/></button>
                     </>
                   ) : (
                     <span style={{fontSize:11,cursor:'pointer',color: p.price > 0 ? 'var(--text)' : 'var(--muted)'}}
@@ -84,14 +85,14 @@ export default function Plans() {
                   )}
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:6}}>
-                  <span style={{fontSize:11,color:'var(--muted)'}}>💎 Gems:</span>
+                  <span style={{fontSize:11,color:'var(--muted)',display:'inline-flex',alignItems:'center',gap:3}}><GemIcon size={10}/> Gems:</span>
                   {p.id in editGem ? (
                     <>
                       <input type="number" min="0" value={editGem[p.id]}
                              onChange={e => setEditGem(prev => ({...prev, [p.id]: e.target.value}))}
                              style={{width:60,fontSize:11,padding:'2px 4px',border:'1px solid var(--border)',borderRadius:4}} />
                       <button className="btn btn-primary btn-sm" style={{fontSize:10,padding:'2px 8px'}} onClick={() => saveGemCost(p.id)}>Save</button>
-                      <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 6px'}} onClick={() => setEditGem(prev => { const n={...prev}; delete n[p.id]; return n })}>✕</button>
+                      <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:'2px 6px',display:'inline-flex'}} onClick={() => setEditGem(prev => { const n={...prev}; delete n[p.id]; return n })}><CloseIcon size={10}/></button>
                     </>
                   ) : (
                     <span style={{fontSize:11,cursor:'pointer',color: p.gem_cost > 0 ? 'var(--text)' : 'var(--muted)'}}
@@ -121,7 +122,7 @@ export default function Plans() {
               <input type="number" min="0" value={price} onChange={e=>setPrice(e.target.value)} />
             </div>
             <div className="form-row">
-              <label>Gem cost 💎</label>
+              <label style={{display:'flex',alignItems:'center',gap:4}}>Gem cost <GemIcon size={11}/></label>
               <input type="number" min="0" value={gemCost} onChange={e=>setGemCost(e.target.value)} />
             </div>
             <div className="form-row">

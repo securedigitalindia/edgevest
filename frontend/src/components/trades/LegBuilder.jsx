@@ -1,5 +1,6 @@
 import InstrumentSearch from './InstrumentSearch'
 import { newLeg } from './legHelpers'
+import { CloseIcon } from '../common/Icons'
 
 // ─── Leg builder ─────────────────────────────────────────────────────────────
 
@@ -15,8 +16,8 @@ export default function LegBuilder({ legs, onChange }) {
           <div key={leg.id} style={{border:'1px solid var(--border)',borderRadius:8,padding:'10px 10px 8px',background:'#fafafa',position:'relative'}}>
             <div style={{fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>Leg {i + 1}</div>
             {legs.length > 1 && (
-              <button style={{position:'absolute',top:8,right:8,background:'none',border:'none',color:'#cbd5e1',fontSize:16,padding:0,cursor:'pointer'}}
-                      onClick={() => remove(leg.id)}>✕</button>
+              <button style={{position:'absolute',top:8,right:8,background:'none',border:'none',color:'#cbd5e1',padding:0,cursor:'pointer',display:'inline-flex'}}
+                      onClick={() => remove(leg.id)}><CloseIcon/></button>
             )}
             <InstrumentSearch value={leg.instrument} onSelect={ins => update(leg.id, 'instrument', ins)} />
             {leg.instrument && (

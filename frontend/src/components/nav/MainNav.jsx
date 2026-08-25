@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../../store/authStore'
 import { useQuery } from '@tanstack/react-query'
 import { getCredits } from '../../api/games'
+import { DashboardIcon, PositionsIcon, GameIcon, ProfileIcon, GemIcon } from '../common/Icons'
 import './MainNav.css'
 
 export default function MainNav({ subscribed }) {
@@ -49,7 +50,7 @@ export default function MainNav({ subscribed }) {
         <div className="nav-right">
           {isClient && (
             <div className="nav-credits-pill" onClick={() => navigate('/games', {replace:true})} title="Your credits">
-              💎 <span>{credits?.balance ?? '—'}</span>
+              <GemIcon size={12}/> <span>{credits?.balance ?? '—'}</span>
             </div>
           )}
           <div className="prof-trigger" ref={menuRef} onClick={e=>{ e.stopPropagation(); setMenuOpen(o=>!o) }}>
@@ -66,7 +67,7 @@ export default function MainNav({ subscribed }) {
                   <div className="prof-menu-name">{user.name}</div>
                   <span className={`role-chip role-chip-${user.role}`}>{user.role.replace('_',' ').toUpperCase()}</span>
                 </div>
-                {isClient && <div className="prof-menu-credits">💎 {credits?.balance ?? '—'} credits</div>}
+                {isClient && <div className="prof-menu-credits" style={{display:'flex',alignItems:'center',gap:5}}><GemIcon size={12}/> {credits?.balance ?? '—'} credits</div>}
                 <div className="prof-menu-item" style={{cursor:'pointer'}} onClick={() => { setMenuOpen(false); navigate('/profile', {replace:true}) }}>Profile</div>
                 <div style={{height:1,background:'#2d3f55',margin:'2px 0'}} />
                 <div style={{padding:'6px 14px',fontSize:10,color:'#475569',letterSpacing:.3}}>EdgeVest v{__APP_VERSION__}</div>
@@ -81,19 +82,19 @@ export default function MainNav({ subscribed }) {
       {/* Bottom tab bar — mobile only */}
       <div className="bottom-nav">
         <button className={`bottom-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard', {replace:true})}>
-          <span className="bottom-nav-tab-icon">📊</span>
+          <span className="bottom-nav-tab-icon"><DashboardIcon /></span>
           Dashboard
         </button>
         <button className={`bottom-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions', {replace:true})}>
-          <span className="bottom-nav-tab-icon">💼</span>
+          <span className="bottom-nav-tab-icon"><PositionsIcon /></span>
           Positions
         </button>
         <button className={`bottom-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games', {replace:true})}>
-          <span className="bottom-nav-tab-icon">🎮</span>
+          <span className="bottom-nav-tab-icon"><GameIcon size={20} /></span>
           Games
         </button>
         <button className={`bottom-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile', {replace:true})}>
-          <span className="bottom-nav-tab-icon">👤</span>
+          <span className="bottom-nav-tab-icon"><ProfileIcon /></span>
           Profile
         </button>
       </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { searchInstruments } from '../../api/trades'
+import { CloseIcon } from '../common/Icons'
 
 // ─── Instrument search typeahead ─────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ export default function InstrumentSearch({ value, onSelect }) {
   if (value) return (
     <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:6,marginBottom:6}}>
       <span style={{fontSize:12,color:'#1d4ed8',fontWeight:500,flex:1}}>{value.label}</span>
-      <button style={{background:'none',border:'none',color:'#93c5fd',cursor:'pointer',fontSize:14}} onClick={() => onSelect(null)}>✕</button>
+      <button style={{background:'none',border:'none',color:'#93c5fd',cursor:'pointer',display:'inline-flex'}} onClick={() => onSelect(null)}><CloseIcon size={12}/></button>
     </div>
   )
 

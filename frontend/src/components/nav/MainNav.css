@@ -60,5 +60,5 @@
     letter-spacing: .2px;
   }
   .bottom-nav-tab.active { color: #3b82f6; }
-  .bottom-nav-tab-icon { font-size: 20px; line-height: 1; }
+  .bottom-nav-tab-icon { display: flex; align-items: center; justify-content: center; line-height: 1; }
 }

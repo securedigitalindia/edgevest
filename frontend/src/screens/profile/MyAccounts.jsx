@@ -113,7 +113,7 @@ export default function MyAccounts() {
         {isLoading && <div className="empty">Loading…</div>}
         {!isLoading && !realAccounts.length && (
           <div style={{textAlign:'center',padding:'28px 20px'}}>
-            <div style={{fontSize:28,marginBottom:10}}>🏦</div>
+            <div style={{color:'var(--muted)',display:'flex',justifyContent:'center',marginBottom:10}}><BankIcon size={30}/></div>
             <div style={{fontSize:14,fontWeight:700,marginBottom:6}}>No accounts yet</div>
             <div style={{fontSize:13,color:'var(--muted)'}}>Add a brokerage account below to start tracking your own positions.</div>
           </div>

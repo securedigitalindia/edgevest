@@ -1,4 +1,5 @@
 import { fmtRs, fmtPnl, fmtQty, fmtContract } from '../../utils/format'
+import { RefreshIcon } from '../common/Icons'
 
 // Shared leg-display primitives — used by Dashboard's RecItem (recommended
 // positions) and Positions' TradeCard/HistoryCard (account positions), so
@@ -16,7 +17,7 @@ export function OpenLeg({ leg: l, symbol, prices }) {
       <div className="rec-leg-name">
         <div className="rec-leg-sym">
           {l.symbol || symbol}
-          {!!l.auto_adjust && <span title="auto-roll" style={{color:'#6366f1',fontSize:10,marginLeft:4}}>↻</span>}
+          {!!l.auto_adjust && <span title="auto-roll" style={{color:'#6366f1',marginLeft:4,display:'inline-flex',verticalAlign:'middle'}}><RefreshIcon size={10}/></span>}
         </div>
         {fmtContract(l) && <div className="rec-leg-contract">{fmtContract(l)}</div>}
       </div>

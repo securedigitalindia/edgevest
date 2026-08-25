@@ -4,6 +4,7 @@ import { useGame, useSubmitEntry, useResolveGame, useActivateGame, useCloseGame,
 import useAuthStore from '../../store/authStore'
 import usePrices from '../../hooks/usePrices'
 import { useToast } from '../common/Toast'
+import { GemIcon, TrophyIcon, PeopleIcon, RefreshIcon } from '../common/Icons'
 import './GameDetail.css'
 
 const TYPE_LABEL = { price_prediction:'🔮 Prediction', mcq:'📝 Quiz', leaderboard:'📈 Leaderboard' }
@@ -51,9 +52,9 @@ export default function GameDetail({ id, onEdit }) {
 
         <div className="game-meta-bar">
           <span>⏰ Ends {fmtIst(game.end_time)}</span>
-          <span>💎 {game.reward_pool} credits pool</span>
-          <span>🏆 Top {game.winner_count} win</span>
-          <span>👥 {game.participant_count} participants</span>
+          <span style={{display:'inline-flex',alignItems:'center',gap:4}}><GemIcon size={12}/> {game.reward_pool} credits pool</span>
+          <span style={{display:'inline-flex',alignItems:'center',gap:4}}><TrophyIcon size={12}/> Top {game.winner_count} win</span>
+          <span style={{display:'inline-flex',alignItems:'center',gap:4}}><PeopleIcon size={12}/> {game.participant_count} participants</span>
         </div>
 
         {game.game_type === 'price_prediction' && <PredictionGame game={game} isAdmin={isAdmin} user={user} />}
@@ -112,7 +113,7 @@ function PredictionGame({ game, isAdmin, user }) {
             <div><div style={{fontSize:11,color:'#64748b'}}>Actual close</div><div style={{fontSize:14,fontWeight:600,color:'#1e293b'}}>{fmtRs(actual,2)}</div></div>
             <div><div style={{fontSize:11,color:'#64748b'}}>Difference</div><div style={{fontSize:14,fontWeight:600,color:diff<100?'#15803d':'#dc2626'}}>±{fmtRs(diff,2)}</div></div>
             {entry.rank  && <div><div style={{fontSize:11,color:'#64748b'}}>Your rank</div><div style={{fontSize:14,fontWeight:700,color:'#d97706'}}>#{entry.rank}</div></div>}
-            {entry.credits_won && <div><div style={{fontSize:11,color:'#64748b'}}>Credits won</div><div style={{fontSize:14,fontWeight:700,color:'#fbbf24'}}>💎 {entry.credits_won}</div></div>}
+            {entry.credits_won && <div><div style={{fontSize:11,color:'#64748b'}}>Credits won</div><div style={{fontSize:14,fontWeight:700,color:'#fbbf24',display:'flex',alignItems:'center',gap:4}}><GemIcon size={13}/> {entry.credits_won}</div></div>}
           </div>
         ) : (
           <div style={{marginTop:8,fontSize:12,color:'#64748b'}}>{entry.rank ? `Rank #${entry.rank}` : 'Waiting for results…'}</div>
@@ -228,7 +229,7 @@ function McqGame({ game, isAdmin }) {
           <div style={{display:'flex',gap:20,flexWrap:'wrap'}}>
             <div><div style={{fontSize:11,color:'#78350f'}}>Score</div><div style={{fontSize:22,fontWeight:800,color:'#1e293b'}}>{score != null ? Math.round(score) : '?'}<span style={{fontSize:14,color:'#94a3b8'}}>/{game.questions.length}</span></div></div>
             {rank && <div><div style={{fontSize:11,color:'#78350f'}}>Rank</div><div style={{fontSize:22,fontWeight:800,color:'#d97706'}}>#{rank}</div></div>}
-            {won  && <div><div style={{fontSize:11,color:'#78350f'}}>Credits won</div><div style={{fontSize:22,fontWeight:800,color:'#f59e0b'}}>💎{won}</div></div>}
+            {won  && <div><div style={{fontSize:11,color:'#78350f'}}>Credits won</div><div style={{fontSize:22,fontWeight:800,color:'#f59e0b',display:'flex',alignItems:'center',gap:4}}><GemIcon size={19}/>{won}</div></div>}
           </div>
         </div>
       )}
@@ -298,7 +299,7 @@ function LeaderboardGame({ game, isAdmin }) {
         {rank ? (
           <div style={{display:'flex',gap:20,flexWrap:'wrap'}}>
             <div><div style={{fontSize:11,color:'#64748b'}}>Final rank</div><div style={{fontSize:20,fontWeight:700,color:'#d97706'}}>#{rank}</div></div>
-            {won && <div><div style={{fontSize:11,color:'#64748b'}}>Credits won</div><div style={{fontSize:20,fontWeight:700,color:'#fbbf24'}}>💎 {won}</div></div>}
+            {won && <div><div style={{fontSize:11,color:'#64748b'}}>Credits won</div><div style={{fontSize:20,fontWeight:700,color:'#fbbf24',display:'flex',alignItems:'center',gap:4}}><GemIcon size={17}/> {won}</div></div>}
           </div>
         ) : <div style={{fontSize:13,color:'#64748b'}}>Check the final leaderboard below.</div>}
       </div>
@@ -345,7 +346,7 @@ function PortfolioView({ gid }) {
     return (
       <div style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:8,padding:20,textAlign:'center'}}>
         <div style={{fontSize:13,color:'#64748b'}}>Setting up your virtual account…</div>
-        <button className="btn btn-ghost btn-sm" onClick={refetch} style={{marginTop:8}}>↻ Refresh</button>
+        <button className="btn btn-ghost btn-sm" onClick={refetch} style={{marginTop:8,display:'inline-flex',alignItems:'center',gap:5}}><RefreshIcon/> Refresh</button>
       </div>
     )
   }
@@ -357,7 +358,7 @@ function PortfolioView({ gid }) {
         <span style={{fontSize:13,fontWeight:600,color:'#1e293b'}}>
           {pf.label || `Virtual Account #${pf.account_id}`}
         </span>
-        <button className="btn btn-ghost btn-sm" onClick={refetch} style={{padding:'3px 8px',fontSize:11}}>↻</button>
+        <button className="btn btn-ghost btn-sm" onClick={refetch} style={{padding:'3px 8px',display:'inline-flex'}}><RefreshIcon size={12}/></button>
       </div>
 
       <div className="portfolio-bar">
@@ -446,7 +447,7 @@ function ParticipantsPanel({ game, userId }) {
   return (
     <div className="participants-panel">
       <div className="participants-panel-hdr">
-        <span className="participants-panel-title">👥 {total} participant{total===1?'':'s'} in this game</span>
+        <span className="participants-panel-title" style={{display:'inline-flex',alignItems:'center',gap:5}}><PeopleIcon size={13}/> {total} participant{total===1?'':'s'} in this game</span>
         <span className="participants-panel-note">{note}</span>
       </div>
 
@@ -521,7 +522,7 @@ function LeaderboardSection({ game }) {
                   </td>
                   <td style={{fontWeight:500}}>{e.user_name||'—'}</td>
                   <td>{scoreFmt(e)}</td>
-                  {game.status==='resolved' && <td>{e.credits_won ? <span style={{color:'#d97706',fontWeight:700}}>💎{e.credits_won}</span> : '—'}</td>}
+                  {game.status==='resolved' && <td>{e.credits_won ? <span style={{color:'#d97706',fontWeight:700,display:'inline-flex',alignItems:'center',gap:3}}><GemIcon size={12}/>{e.credits_won}</span> : '—'}</td>}
                 </tr>
               ))}
             </tbody>

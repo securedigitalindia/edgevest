@@ -12,6 +12,7 @@ import LegBuilder from '../components/trades/LegBuilder'
 import { newLeg, collectLegs } from '../components/trades/legHelpers'
 import LegGroup from '../components/trades/LegDisplay'
 import { fmtRs, fmtPnl, fmtQty, fmtIstShort, fmtContract } from '../utils/format'
+import { BankIcon, GameIcon, GemIcon, LockIcon, RefreshIcon, TrophyIcon, PeopleIcon } from '../components/common/Icons'
 import './Dashboard.css'
 
 // ─── Create recommendation form (admin) ──────────────────────────────────────
@@ -491,7 +492,7 @@ function RecsPanel({ isAdmin }) {
       {!isAdmin && accounts.length === 0 && (
         <div className="card">
           <div className="card-body" style={{textAlign:'center',padding:'28px 20px'}}>
-            <div style={{fontSize:28,marginBottom:10}}>🏦</div>
+            <div style={{color:'var(--muted)',display:'flex',justifyContent:'center',marginBottom:10}}><BankIcon size={30}/></div>
             <div style={{fontSize:14,fontWeight:700,marginBottom:6}}>Set up your accounts</div>
             <div style={{fontSize:13,color:'var(--muted)',marginBottom:18}}>Add your brokerage accounts to start pushing trades from recommendations.</div>
             <button className="btn btn-primary" onClick={() => navigate('/profile/accounts')}>Open Account Settings →</button>
@@ -508,7 +509,7 @@ function RecsPanel({ isAdmin }) {
             <option value="exited">Exited</option>
             <option value="all">All</option>
           </select>
-          <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={refetch}>↻</button>
+          <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto',display:'inline-flex'}} onClick={refetch}><RefreshIcon/></button>
         </div>
 
         <div style={{display:'flex',gap:6,flexWrap:'wrap',padding:'8px 10px 6px',borderBottom:'1px solid var(--border)',background:'#fafafa'}}>
@@ -595,17 +596,17 @@ function NoSubscriptionGate() {
         <div className="card-header">
           <h2>Recommended Positions</h2>
           <span style={{marginLeft:'auto',fontSize:11,fontWeight:600,color:'#94a3b8',display:'flex',alignItems:'center',gap:4}}>
-            🔒 Subscription required
+            <LockIcon size={12}/> Subscription required
           </span>
         </div>
         <div className="card-body" style={{padding:'20px 16px'}}>
 
         {/* Header */}
         <div style={{textAlign:'center',marginBottom:20}}>
-          <div style={{fontSize:36,marginBottom:10}}>🔒</div>
+          <div style={{color:'var(--muted)',display:'flex',justifyContent:'center',marginBottom:10}}><LockIcon size={30}/></div>
           <div style={{fontSize:15,fontWeight:700,color:'#0f172a',marginBottom:6}}>Unlock live signals</div>
           <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.6}}>
-            Play games to earn 💎 gems, then redeem them below to unlock recommendations.
+            Play games to earn <GemIcon size={12}/> gems, then redeem them below to unlock recommendations.
           </div>
         </div>
 
@@ -613,10 +614,10 @@ function NoSubscriptionGate() {
         <div style={{background:'#fefce8',border:'1px solid #fde68a',borderRadius:10,padding:'14px 18px',marginBottom:16}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
             <span style={{fontSize:13,color:'#92400e',fontWeight:600}}>Your gem balance</span>
-            <span style={{fontSize:20,fontWeight:800,color:'#d97706'}}>💎 {balance}</span>
+            <span style={{fontSize:20,fontWeight:800,color:'#d97706',display:'inline-flex',alignItems:'center',gap:5}}><GemIcon size={17}/> {balance}</span>
           </div>
           <div style={{fontSize:11,color:'#b45309',lineHeight:1.5}}>
-            Earn gems by playing games — price predictions, quizzes, and trading challenges. Winners get 💎 gems from the reward pool.
+            Earn gems by playing games — price predictions, quizzes, and trading challenges. Winners get <GemIcon size={10}/> gems from the reward pool.
           </div>
         </div>
 
@@ -637,8 +638,8 @@ function NoSubscriptionGate() {
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontWeight:700,fontSize:14,color:'#1e293b'}}>{plan.name}</div>
                 <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{plan.duration_days} days · {plan.description}</div>
-                <div style={{fontSize:12,fontWeight:700,color: afford ? '#6366f1' : '#94a3b8',marginTop:4}}>
-                  {isFree ? 'Free' : `💎 ${gemCost} gems`}{plan.price > 0 ? `  ·  ₹${plan.price}` : ''}
+                <div style={{fontSize:12,fontWeight:700,color: afford ? '#6366f1' : '#94a3b8',marginTop:4,display:'flex',alignItems:'center',gap:4}}>
+                  {isFree ? 'Free' : <><GemIcon size={11}/> {gemCost} gems</>}{plan.price > 0 ? `  ·  ₹${plan.price}` : ''}
                 </div>
                 {!afford && need > 0 && (
                   <div style={{fontSize:11,color:'#f59e0b',marginTop:3,fontWeight:600}}>
@@ -656,9 +657,10 @@ function NoSubscriptionGate() {
                     color: active ? '#fff' : '#94a3b8',
                     fontWeight:700, fontSize:13,
                     cursor: active ? 'pointer' : 'not-allowed', whiteSpace:'nowrap',
+                    display:'inline-flex', alignItems:'center', justifyContent:'center', gap:5,
                   }}
                 >
-                  {isFree ? 'Claim Free' : afford ? `Redeem 💎 ${gemCost}` : `💎 ${gemCost}`}
+                  {isFree ? 'Claim Free' : afford ? <>Redeem <GemIcon size={12}/> {gemCost}</> : <><GemIcon size={12}/> {gemCost}</>}
                 </button>
                 {plan.price > 0 && (
                   <button
@@ -681,10 +683,10 @@ function NoSubscriptionGate() {
         {/* CTA to Games */}
         <button
           className="btn btn-ghost"
-          style={{width:'100%',justifyContent:'center',marginTop:8,fontSize:13}}
+          style={{width:'100%',justifyContent:'center',marginTop:8,fontSize:13,display:'flex',alignItems:'center',gap:6}}
           onClick={() => navigate('/games')}
         >
-          {canUnlock ? 'Play more games →' : '🎮 Go earn gems in Games →'}
+          {canUnlock ? 'Play more games →' : <><GameIcon size={13}/> Go earn gems in Games →</>}
         </button>
 
         </div>
@@ -770,7 +772,7 @@ function GameStripCard({ g }) {
         <span className="gsc-icon">{TYPE_ICON[g.game_type]}</span>
         <span className="gsc-type">{TYPE_LABEL[g.game_type]}</span>
         <span className={`gsc-status ${isLive ? 'gsc-live' : 'gsc-soon'}`}>{isLive ? '● Live' : '◌ Soon'}</span>
-        <span className="gsc-pool">💎 {g.reward_pool}</span>
+        <span className="gsc-pool" style={{display:'inline-flex',alignItems:'center',gap:3}}><GemIcon size={11}/> {g.reward_pool}</span>
       </div>
 
       {/* Title */}
@@ -780,9 +782,9 @@ function GameStripCard({ g }) {
       <div className="gsc-meta">
         <span>{isLive ? `Ends ${fmtIstShort(g.end_time)}` : `Starts ${fmtIstShort(g.start_time)}`}</span>
         <span className="gsc-dot">·</span>
-        <span>👥 {g.participant_count}</span>
+        <span style={{display:'inline-flex',alignItems:'center',gap:3}}><PeopleIcon size={11}/> {g.participant_count}</span>
         <span className="gsc-dot">·</span>
-        <span>🏆 Top {g.winner_count}</span>
+        <span style={{display:'inline-flex',alignItems:'center',gap:3}}><TrophyIcon size={11}/> Top {g.winner_count}</span>
       </div>
 
       {/* Portfolio strip for joined leaderboard */}
@@ -799,7 +801,7 @@ function GameStripCard({ g }) {
             </span>
           )}
           {joined && g.my_entry?.credits_won > 0 && (
-            <span className="gsc-won">💎 {g.my_entry.credits_won} won</span>
+            <span className="gsc-won" style={{display:'inline-flex',alignItems:'center',gap:3}}><GemIcon size={11}/> {g.my_entry.credits_won} won</span>
           )}
         </div>
         <div className="gsc-actions">
@@ -835,7 +837,7 @@ function GamesStrip() {
   return (
     <div className="card" style={{marginTop:12}}>
       <div className="card-header">
-        <span style={{fontWeight:700,fontSize:13}}>🎮 Games</span>
+        <span style={{fontWeight:700,fontSize:13,display:'inline-flex',alignItems:'center',gap:5}}><GameIcon size={14}/> Games</span>
         <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={() => navigate('/games')}>All →</button>
       </div>
       <div style={{padding:'6px 10px 12px',display:'flex',flexDirection:'column',gap:8}}>

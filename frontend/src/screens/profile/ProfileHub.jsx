@@ -1,15 +1,18 @@
 import { useNavigate } from 'react-router-dom'
 import { authUrl } from '../../api/client'
 import useAuthStore from '../../store/authStore'
+import { CardIcon, BankIcon, GemIcon, ProfileIcon, BuildingIcon, PeopleIcon, ClipboardIcon, ReceiptIcon } from '../../components/common/Icons'
 import './Profile.css'
 
 // Role-aware menu row list — mirrors the exact branching that used to drive
 // the old settings drawer's tab strip (client: My Plan/My Accounts/Gems/Details,
 // admin: Brokers/Users/Plans/Subscriptions + Details).
-function MenuRow({ icon, label, onClick }) {
+// `icon` is a component reference (e.g. CardIcon), not a rendered element —
+// sized/colored consistently here rather than per call site.
+function MenuRow({ icon: Icon, label, onClick }) {
   return (
     <div className="phub-row" onClick={onClick}>
-      <span className="phub-row-icon">{icon}</span>
+      <span className="phub-row-icon"><Icon size={18}/></span>
       <span className="phub-row-label">{label}</span>
       <span className="phub-row-chevron">›</span>
     </div>
@@ -41,20 +44,20 @@ export default function ProfileHub() {
 
       <div className="phub-section">
         {!isAdmin && <>
-          <MenuRow icon="💳" label="My Plan"     onClick={() => navigate('/profile/plan')} />
-          <MenuRow icon="🏦" label="My Accounts" onClick={() => navigate('/profile/accounts')} />
-          <MenuRow icon="💎" label="Gems"        onClick={() => navigate('/profile/gems')} />
+          <MenuRow icon={CardIcon} label="My Plan"     onClick={() => navigate('/profile/plan')} />
+          <MenuRow icon={BankIcon} label="My Accounts" onClick={() => navigate('/profile/accounts')} />
+          <MenuRow icon={GemIcon}  label="Gems"        onClick={() => navigate('/profile/gems')} />
         </>}
-        <MenuRow icon="👤" label="Details" onClick={() => navigate('/profile/details')} />
+        <MenuRow icon={ProfileIcon} label="Details" onClick={() => navigate('/profile/details')} />
       </div>
 
       {isAdmin && (
         <div className="phub-section">
           <div className="phub-section-title">Admin</div>
-          <MenuRow icon="🏛️" label="Brokers"       onClick={() => navigate('/profile/brokers')} />
-          <MenuRow icon="👥" label="Users"          onClick={() => navigate('/profile/users')} />
-          <MenuRow icon="📋" label="Plans"          onClick={() => navigate('/profile/plans')} />
-          <MenuRow icon="🧾" label="Subscriptions"  onClick={() => navigate('/profile/subscriptions')} />
+          <MenuRow icon={BuildingIcon}  label="Brokers"       onClick={() => navigate('/profile/brokers')} />
+          <MenuRow icon={PeopleIcon}    label="Users"          onClick={() => navigate('/profile/users')} />
+          <MenuRow icon={ClipboardIcon} label="Plans"          onClick={() => navigate('/profile/plans')} />
+          <MenuRow icon={ReceiptIcon}   label="Subscriptions"  onClick={() => navigate('/profile/subscriptions')} />
         </div>
       )}
 

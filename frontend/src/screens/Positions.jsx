@@ -8,7 +8,7 @@ import PageHeader from '../components/common/PageHeader'
 import LegBuilder from '../components/trades/LegBuilder'
 import { newLeg, collectLegs } from '../components/trades/legHelpers'
 import LegGroup from '../components/trades/LegDisplay'
-import { BankIcon, GameIcon, ChevronIcon, PlusIcon, TrendIcon } from '../components/common/Icons'
+import { BankIcon, GameIcon, ChevronIcon, PlusIcon, TrendIcon, BellIcon, WarningIcon, RefreshIcon } from '../components/common/Icons'
 import { fmtRs, fmtPnl, fmtQty } from '../utils/format'
 import './Positions.css'
 
@@ -112,10 +112,10 @@ function TradeCard({ trade: t, isAdmin, prices }) {
           <span className="badge badge-open">Open</span>
           {t.segment && <span className="rec-seg-tag">{t.segment}</span>}
           {t.pending_adj_count > 0 && (
-            <span className="adj-badge">⚠ {t.pending_adj_count} adj pending</span>
+            <span className="adj-badge" style={{display:'inline-flex',alignItems:'center',gap:4}}><WarningIcon size={10}/> {t.pending_adj_count} adj pending</span>
           )}
           {t.pending_exit && (
-            <span className="badge badge-danger">🔔 exit pending</span>
+            <span className="badge badge-danger" style={{display:'inline-flex',alignItems:'center',gap:4}}><BellIcon size={10}/> exit pending</span>
           )}
           <span className="acct-chip">{t.account_label}</span>
         </div>
@@ -161,7 +161,7 @@ function TradeCard({ trade: t, isAdmin, prices }) {
 
       {t.pending_exit && (
         <div style={{padding:'10px 14px',borderTop:'2px solid #ef4444',background:'#fff1f2',display:'flex',alignItems:'flex-start',gap:10}}>
-          <span style={{fontSize:16,lineHeight:1,flexShrink:0}}>🔔</span>
+          <span style={{color:'#dc2626',flexShrink:0,display:'inline-flex'}}><BellIcon size={18}/></span>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontWeight:700,fontSize:12,color:'#b91c1c',textTransform:'uppercase',letterSpacing:.4,marginBottom:2}}>
               Recommendation Exited
@@ -356,7 +356,7 @@ function AccountPicker({ realAccounts, gameAccounts, acctFilter, setAcct, isAdmi
     return (
       <div className="card">
         <div className="card-body" style={{textAlign:'center',padding:'28px 20px'}}>
-          <div style={{fontSize:28,marginBottom:10}}>🏦</div>
+          <div style={{color:'var(--muted)',display:'flex',justifyContent:'center',marginBottom:10}}><BankIcon size={30}/></div>
           <div style={{fontSize:14,fontWeight:700,marginBottom:6}}>Add your first account</div>
           <div style={{fontSize:13,color:'var(--muted)',marginBottom:18}}>Connect a brokerage account to start tracking your own positions here.</div>
           <button className="btn btn-primary" onClick={() => navigate('/profile/accounts')}>Open Account Settings →</button>
@@ -572,7 +572,7 @@ export default function Positions() {
           </button>
         )}
         {posTab !== 'new' && (
-          <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>posTab==='open'?refetch():refetchHist()}>↻</button>
+          <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto',display:'inline-flex'}} onClick={()=>posTab==='open'?refetch():refetchHist()}><RefreshIcon/></button>
         )}
       </div>
 

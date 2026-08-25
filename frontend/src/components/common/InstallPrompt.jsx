@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import useInstallPrompt from '../../hooks/useInstallPrompt'
+import { CloseIcon } from './Icons'
 import './InstallPrompt.css'
 
 const DISMISS_KEY = 'edgevest_install_prompt_dismissed'
@@ -28,7 +29,7 @@ export default function InstallPrompt() {
       <span>Install EdgeVest for quick access and a native-app feel</span>
       <div className="install-prompt-actions">
         <button className="btn btn-primary btn-sm" onClick={promptInstall}>Install</button>
-        <button className="install-prompt-dismiss" onClick={dismiss} aria-label="Dismiss">✕</button>
+        <button className="install-prompt-dismiss" onClick={dismiss} aria-label="Dismiss"><CloseIcon size={11}/></button>
       </div>
     </div>
   )

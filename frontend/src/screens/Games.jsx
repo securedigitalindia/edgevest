@@ -6,6 +6,7 @@ import { getCredits } from '../api/games'
 import useAuthStore from '../store/authStore'
 import GameDetail from '../components/games/GameDetail'
 import { useToast } from '../components/common/Toast'
+import { GameIcon, GemIcon, PeopleIcon, CloseIcon } from '../components/common/Icons'
 import './Games.css'
 
 const STATUS_DOT = { draft:'#94a3b8', active:'#4ade80', closed:'#f87171', resolved:'#fbbf24' }
@@ -53,7 +54,7 @@ function QuestionBuilder({ questions, onChange }) {
         <div key={i} style={{border:'1px solid var(--border)',borderRadius:8,padding:'10px 10px 8px',marginBottom:10,background:'#fafafa',position:'relative'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
             <span style={{fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5}}>Question {i+1}</span>
-            <button style={{background:'none',border:'none',color:'#cbd5e1',cursor:'pointer',fontSize:16,padding:0}} onClick={() => remove(i)}>✕</button>
+            <button style={{background:'none',border:'none',color:'#cbd5e1',cursor:'pointer',padding:0,display:'inline-flex'}} onClick={() => remove(i)}><CloseIcon/></button>
           </div>
           <div className="form-row" style={{marginBottom:8}}>
             <input placeholder="Question text" value={q.question} onChange={e=>update(i,'question',e.target.value)} />
@@ -244,10 +245,10 @@ export default function Games({ subscribed }) {
       {/* Sidebar */}
       <div className="games-sidebar">
         <div className="games-sidebar-hdr">
-          <h2>🎮 Games</h2>
+          <h2 style={{display:'flex',alignItems:'center',gap:7}}><GameIcon size={17}/> Games</h2>
           <div style={{display:'flex',gap:8,alignItems:'center'}}>
             {isClient && (
-              <span style={{fontSize:12,color:'#fbbf24',fontWeight:700}}>💎 {credits?.balance ?? '—'}</span>
+              <span style={{fontSize:12,color:'#fbbf24',fontWeight:700,display:'inline-flex',alignItems:'center',gap:3}}><GemIcon size={12}/> {credits?.balance ?? '—'}</span>
             )}
             {isAdmin && (
               <button className="btn btn-primary btn-sm" onClick={() => { setEditing({}); navigate('/games') }}>+ Create</button>
@@ -278,15 +279,15 @@ export default function Games({ subscribed }) {
                 </div>
                 <div style={{fontSize:13,fontWeight:600,color:'#1e293b',marginBottom:6,lineHeight:1.3}}>{g.title}</div>
                 <div style={{fontSize:11,color:'#64748b',display:'flex',gap:10,flexWrap:'wrap',marginBottom:entered?6:0}}>
-                  <span>💎 {g.reward_pool} · Top {g.winner_count}</span>
-                  <span>👥 {g.participant_count}</span>
+                  <span style={{display:'inline-flex',alignItems:'center',gap:3}}><GemIcon size={10}/> {g.reward_pool} · Top {g.winner_count}</span>
+                  <span style={{display:'inline-flex',alignItems:'center',gap:3}}><PeopleIcon size={10}/> {g.participant_count}</span>
                   {g.end_time && <span>Ends {fmtIst(g.end_time)}</span>}
                 </div>
                 {entered && (
                   <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
                     <span className="entered-badge">✓ Entered</span>
                     {entered.rank > 0        && <span style={{fontSize:10,color:'#d97706',fontWeight:700}}>Rank #{entered.rank}</span>}
-                    {entered.credits_won > 0 && <span style={{fontSize:10,color:'#fbbf24',fontWeight:700}}>💎 {entered.credits_won} won</span>}
+                    {entered.credits_won > 0 && <span style={{fontSize:10,color:'#fbbf24',fontWeight:700,display:'inline-flex',alignItems:'center',gap:3}}><GemIcon size={10}/> {entered.credits_won} won</span>}
                   </div>
                 )}
               </div>

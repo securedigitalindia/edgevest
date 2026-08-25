@@ -22,7 +22,7 @@
 .phub-row { display:flex; align-items:center; gap:10px; padding:13px 16px; border-bottom:1px solid #f1f5f9; cursor:pointer; transition:background .15s; }
 .phub-row:last-child { border-bottom:none; }
 .phub-row:hover { background:#f8fafc; }
-.phub-row-icon { font-size:16px; flex-shrink:0; width:22px; text-align:center; }
+.phub-row-icon { flex-shrink:0; width:22px; display:flex; align-items:center; justify-content:center; color:var(--blue); }
 .phub-row-label { flex:1; min-width:0; font-size:13px; font-weight:600; color:var(--text); }
 .phub-row-chevron { color:#cbd5e1; font-size:16px; }
 
