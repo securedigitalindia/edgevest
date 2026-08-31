@@ -17,6 +17,7 @@ import './styles/shadcn.css'
 // only once the user actually navigates to that particular page, so none of
 // them need to ship in the initial bundle for every visit.
 const Dashboard       = lazy(() => import('./screens/Dashboard'))
+const Trades          = lazy(() => import('./screens/Trades'))
 const Positions       = lazy(() => import('./screens/Positions'))
 const Games           = lazy(() => import('./screens/Games'))
 const SetupWizard     = lazy(() => import('./screens/SetupWizard'))
@@ -26,10 +27,12 @@ const ProfileDetails  = lazy(() => import('./screens/profile/ProfileDetails'))
 const MyPlan          = lazy(() => import('./screens/profile/MyPlan'))
 const MyAccounts      = lazy(() => import('./screens/profile/MyAccounts'))
 const Gems            = lazy(() => import('./screens/profile/Gems'))
+const Referrals       = lazy(() => import('./screens/profile/Referrals'))
 const Brokers         = lazy(() => import('./screens/profile/Brokers'))
 const Users           = lazy(() => import('./screens/profile/Users'))
 const Plans           = lazy(() => import('./screens/profile/Plans'))
 const Subscriptions   = lazy(() => import('./screens/profile/Subscriptions'))
+const Reports         = lazy(() => import('./screens/profile/Reports'))
 
 const Loading = () => <div className="empty" style={{marginTop:80}}>Loading…</div>
 
@@ -64,7 +67,8 @@ function AppShell() {
       <Suspense fallback={<Loading />}>
         <Routes>
           <Route path="/"                     element={<RootRedirect />} />
-          <Route path="/dashboard"             element={<Dashboard subscribed={subscribed} />} />
+          <Route path="/dashboard"             element={<Dashboard />} />
+          <Route path="/trades"                element={<Trades subscribed={subscribed} />} />
           <Route path="/positions"             element={<Positions />} />
           <Route path="/games"                 element={<Games subscribed={subscribed} />} />
           <Route path="/games/:id"             element={<Games subscribed={subscribed} />} />
@@ -73,10 +77,12 @@ function AppShell() {
           <Route path="/profile/plan"          element={<MyPlan />} />
           <Route path="/profile/accounts"      element={<MyAccounts />} />
           <Route path="/profile/gems"          element={<Gems />} />
+          <Route path="/profile/referrals"     element={<Referrals />} />
           <Route path="/profile/brokers"       element={<Brokers />} />
           <Route path="/profile/users"         element={<Users />} />
           <Route path="/profile/plans"         element={<Plans />} />
           <Route path="/profile/subscriptions" element={<Subscriptions />} />
+          <Route path="/profile/reports"       element={<Reports />} />
           <Route path="*"                      element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Suspense>

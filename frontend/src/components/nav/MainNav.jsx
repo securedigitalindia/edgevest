@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../../store/authStore'
 import { useQuery } from '@tanstack/react-query'
 import { getCredits } from '../../api/games'
-import { DashboardIcon, PositionsIcon, GameIcon, ProfileIcon, GemIcon } from '../common/Icons'
+import { DashboardIcon, ChartIcon, PositionsIcon, GameIcon, ProfileIcon, GemIcon } from '../common/Icons'
 import './MainNav.css'
 
 export default function MainNav({ subscribed }) {
@@ -15,6 +15,7 @@ export default function MainNav({ subscribed }) {
   const menuRef   = useRef(null)
   const isClient  = user?.role === 'client'
   const activeTab = location.pathname.startsWith('/games')     ? 'games' :
+                    location.pathname.startsWith('/trades')    ? 'trades' :
                     location.pathname.startsWith('/positions') ? 'positions' :
                     location.pathname.startsWith('/profile')   ? 'profile' :
                     'dashboard'
@@ -26,7 +27,7 @@ export default function MainNav({ subscribed }) {
   // could leave two separate history entries both rendering the same tab —
   // back would then land on a visually-identical page twice in a row.
   // Pushing when leaving a drill-down keeps that page reachable via back.
-  const atTopLevel = ['/dashboard', '/positions', '/games', '/profile'].includes(location.pathname)
+  const atTopLevel = ['/dashboard', '/trades', '/positions', '/games', '/profile'].includes(location.pathname)
 
   const { data: credits } = useQuery({
     queryKey: ['credits'],
@@ -63,6 +64,7 @@ export default function MainNav({ subscribed }) {
         </div>
         <div className="nav-tabs">
           <button className={`main-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard', {replace: atTopLevel})}>Dashboard</button>
+          <button className={`main-nav-tab${activeTab==='trades'?' active':''}`} onClick={() => navigate('/trades', {replace: atTopLevel})}>Trades</button>
           <button className={`main-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions', {replace: atTopLevel})}>Positions</button>
           <button className={`main-nav-tab${activeTab==='games'?' active':''}`} onClick={() => navigate('/games', {replace: atTopLevel})}>Games</button>
           <button className={`main-nav-tab${activeTab==='profile'?' active':''}`} onClick={() => navigate('/profile', {replace: atTopLevel})}>Profile</button>
@@ -104,6 +106,10 @@ export default function MainNav({ subscribed }) {
         <button className={`bottom-nav-tab${activeTab==='dashboard'?' active':''}`} onClick={() => navigate('/dashboard', {replace: atTopLevel})}>
           <span className="bottom-nav-tab-icon"><DashboardIcon /></span>
           Dashboard
+        </button>
+        <button className={`bottom-nav-tab${activeTab==='trades'?' active':''}`} onClick={() => navigate('/trades', {replace: atTopLevel})}>
+          <span className="bottom-nav-tab-icon"><ChartIcon size={20} /></span>
+          Trades
         </button>
         <button className={`bottom-nav-tab${activeTab==='positions'?' active':''}`} onClick={() => navigate('/positions', {replace: atTopLevel})}>
           <span className="bottom-nav-tab-icon"><PositionsIcon /></span>

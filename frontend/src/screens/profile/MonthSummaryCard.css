@@ -1,0 +1,106 @@
+/* MonthSummaryCard — shared by Dashboard.jsx and Trades.jsx. `msc-` prefix
+   keeps this file's classes from colliding with Reports.css's own `rep-*`
+   classes (different card, similar concept) wherever both happen to be
+   loaded on the same page. */
+
+.msc-sec-row       { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:12px; }
+.msc-section-label { font-size:18px; font-weight:800; color:#0f172a; letter-spacing:-.2px; margin-bottom:12px; }
+.msc-sec-link      { font-size:12.5px; font-weight:700; color:var(--blue); background:none; border:none; cursor:pointer; padding:0; }
+.msc-sec-link:hover { color:#1d4ed8; }
+
+/* "New this month" badge, top-right of the header row. */
+.msc-pill        { font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:20px; white-space:nowrap; flex-shrink:0; }
+.msc-pill-blue   { background:#dbeafe; color:#1d4ed8; }
+
+/* ── Card ── */
+.msc-hero-card    { padding:16px 18px 8px; text-align:left; }
+.msc-hero-top-row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+
+/* Compact (Trades page) — no header row, no Avg/Peak Margin row above it,
+   so the split tile(s) sit right against the card's own edges. */
+.msc-hero-card-compact { padding:14px 16px; }
+
+/* Toolbar — Open/Exited toggle (left) + the Exited-only month-nav (right),
+   one bordered band instead of two separately-centered rows stacked with no
+   visual link between them. Wraps on narrow screens (month-nav drops to its
+   own line) but still reads as one control strip since the border wraps
+   both. */
+.msc-toolbar       { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
+                      padding-bottom:12px; margin-bottom:12px; border-bottom:1px solid var(--border); }
+
+/* Status toggle — the "top filter" for the whole compact card (and, via
+   onStatusChange, for Trades' position list underneath it too). Same
+   segmented-switch look as Reports.jsx's Margin/P&L switch (`.rep-switch`),
+   independently defined here (own `msc-` prefix) since this card is meant
+   to work with no other file loaded. */
+.msc-switch-inner  { display:inline-flex; background:#f1f5f9; border-radius:8px; padding:2px; gap:2px; }
+.msc-switch-btn    { border:none; background:transparent; cursor:pointer; font-family:inherit;
+                      font-size:12px; font-weight:600; color:var(--muted); padding:5px 16px; border-radius:6px; transition:all .15s; }
+.msc-switch-btn:hover { color:var(--text); }
+.msc-switch-btn-active { background:#fff; color:var(--text); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+
+/* Month nav — Booked-only compact mode (Trades' Exited filter) only; lets
+   the reader browse a historical booked figure without leaving the page.
+   Not shown for Running (always "now") or the full/dual-tile card. */
+.msc-month-nav    { display:flex; align-items:center; gap:8px; cursor:default; }
+.msc-month-btn    { width:24px; height:24px; border-radius:7px; border:1px solid var(--border); background:#fff; color:var(--text);
+                     font-size:15px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background .15s; }
+.msc-month-btn:hover:not(:disabled) { background:#f8fafc; }
+.msc-month-btn:disabled { opacity:.35; cursor:not-allowed; }
+.msc-month-label  { font-size:12.5px; font-weight:700; color:var(--text); display:flex; align-items:center; gap:6px; white-space:nowrap; }
+.msc-month-live   { font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:#166534; background:#dcfce7; padding:1px 5px; border-radius:10px; }
+
+/* Whole card links through to the full report. */
+.msc-hero-card-clickable       { cursor:pointer; transition:box-shadow .15s, border-color .15s; }
+.msc-hero-card-clickable:hover { box-shadow:0 2px 10px rgba(0,0,0,.06); border-color:#cbd5e1; }
+.msc-hero-label   { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
+
+/* Secondary stats — Avg/Peak Margin. Bordered chips match the Booked/Running
+   split tiles' visual family (icon, label, bold value). */
+.msc-hero-secondary { display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+@media (max-width:340px) { .msc-hero-secondary { grid-template-columns:1fr; } }
+.msc-hero-stat     { border:1px solid var(--border); border-radius:10px; background:#f8fafc; padding:10px 12px; cursor:default; }
+.msc-hero-stat-icon        { flex-shrink:0; width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; margin-bottom:8px; }
+.msc-hero-stat-icon-indigo { background:#f1eeff; color:#4f46e5; }
+.msc-hero-stat-icon-amber  { background:#fff8ea; color:#d97706; }
+.msc-hero-stat-lbl { font-size:9.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; }
+.msc-hero-stat-val { font-size:16px; font-weight:800; color:#0f172a; margin-top:3px; letter-spacing:-.3px; }
+
+/* Booked (settled/exited) vs Running (live/open) split — the two numbers
+   are deliberately never re-merged into one headline: Running can still
+   reverse before it books, so a combined figure would look "final" when
+   it isn't. Colors match the exited/open convention on the Trades page
+   (Trades.css's .rec-item-exited / .rec-item-open, .status-dot-*). */
+.msc-split       { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+@media (max-width:480px) { .msc-split { grid-template-columns:1fr; } }
+/* Trades' compact card shows only the tile matching its active status
+   filter — full width instead of half a row of an otherwise-empty grid. */
+.msc-split-single { grid-template-columns:1fr; }
+.msc-split-tile      { border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:#f8fafc; }
+.msc-split-booked    { border-left:3px solid #94a3b8; }
+.msc-split-running   { border-left:3px solid #22c55e; }
+/* Whole tile (not just its count badge) drills into Trades pre-filtered to
+   that status — stopPropagation'd in the component against the card's own
+   click-through to the report. */
+.msc-split-tile-link       { cursor:pointer; transition:box-shadow .15s, border-color .15s; }
+.msc-split-tile-link:hover { box-shadow:0 2px 8px rgba(0,0,0,.07); border-color:#cbd5e1; }
+.msc-split-top       { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px; }
+.msc-split-lbl       { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+.msc-split-count     { font-size:10.5px; font-weight:600; color:#94a3b8; white-space:nowrap; }
+/* Icon chip on each tile's label — background says which tile (muted for
+   settled/Booked, green for live/Running, matching the tile's own left
+   border); the trend arrow inside is colored by that tile's own gain/loss
+   instead, independent of the chip's status color. */
+.msc-split-icon         { width:20px; height:20px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+.msc-split-icon-booked  { background:#f1f5f9; }
+.msc-split-icon-running { background:#dcfce7; }
+/* ROI leads each tile — the figure that actually answers "was this worth
+   it" — sized as the hero number (matches the Reports page's own ROI-hero
+   treatment: bold colored text, no background fill). */
+.msc-split-val       { font-size:21px; font-weight:800; line-height:1.2; letter-spacing:-.4px; }
+/* Caption sentence below it — same "{amount} realized on {capital}" pattern
+   as Reports.jsx's own `.rep-hero-sub`, just with the rupee amount itself
+   bolded and colored (Reports.jsx leaves its whole caption plain). */
+.msc-split-foot      { font-size:10.5px; color:var(--muted); margin-top:5px; line-height:1.4; }
+.msc-split-foot svg  { vertical-align:-1px; margin:0 1px; }
+.msc-split-amt       { font-weight:700; }

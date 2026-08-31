@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { authUrl } from '../api/client'
 
 // Dev-only Google-login bypass — Google rejects any redirect_uri that isn't a
@@ -6,14 +7,17 @@ import { authUrl } from '../api/client'
 // Wi-Fi as the dev laptop can never complete real Google OAuth against a
 // localhost-bound backend. Logs in as an existing user by email instead;
 // server.py's /auth/dev-login 404s outside FLASK_ENV=dev regardless.
-function DevLogin() {
+// `ref` is threaded through for URL consistency with the Google sign-in
+// links, but is a no-op here — dev-login only ever resolves an *existing*
+// user by email, so the new-user referral path can never fire through it.
+function DevLogin({ refCode }) {
   const [email, setEmail] = useState('')
   if (import.meta.env.MODE !== 'dev') return null
   return (
     <div style={{marginTop:18,display:'flex',gap:8,justifyContent:'center',alignItems:'center'}}>
       <input value={email} onChange={e => setEmail(e.target.value)} placeholder="dev login: email"
              style={{fontSize:12,padding:'6px 10px',border:'1px solid #e2e8f0',borderRadius:6,width:200}} />
-      <a href={email ? authUrl('/auth/dev-login') + `&email=${encodeURIComponent(email)}` : undefined}
+      <a href={email ? authUrl('/auth/dev-login', { ref: refCode }) + `&email=${encodeURIComponent(email)}` : undefined}
          style={{fontSize:12,padding:'6px 12px',border:'1px solid #e2e8f0',borderRadius:6,color:'#64748b',
                  textDecoration:'none',pointerEvents:email ? 'auto' : 'none',opacity:email ? 1 : .5}}>
         Dev login
@@ -32,6 +36,9 @@ const GOOGLE_SVG = (
 )
 
 export default function Landing() {
+  const [searchParams] = useSearchParams()
+  const ref = searchParams.get('ref') || undefined
+
   return (
     <div style={{background:'#fff',minHeight:'100vh',color:'#0f172a',fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'}}>
 
@@ -40,7 +47,7 @@ export default function Landing() {
         <div style={{fontSize:17,fontWeight:800,letterSpacing:'-.3px',color:'#0f172a'}}>
           Edge<span style={{color:'#3b82f6'}}>Vest</span>
         </div>
-        <a href={authUrl('/auth/google')} style={{display:'inline-flex',alignItems:'center',gap:8,background:'#0f172a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer',textDecoration:'none'}}>
+        <a href={authUrl('/auth/google', { ref })} style={{display:'inline-flex',alignItems:'center',gap:8,background:'#0f172a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer',textDecoration:'none'}}>
           {GOOGLE_SVG}
           Sign in with Google
         </a>
@@ -60,13 +67,13 @@ export default function Landing() {
           portfolio tools — all in one clean interface.
         </p>
         <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>
-          <a href={authUrl('/auth/google')} style={{display:'inline-flex',alignItems:'center',gap:10,background:'#fff',color:'#0f172a',border:'1.5px solid #e2e8f0',borderRadius:10,padding:'12px 24px',fontSize:14,fontWeight:600,cursor:'pointer',textDecoration:'none',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+          <a href={authUrl('/auth/google', { ref })} style={{display:'inline-flex',alignItems:'center',gap:10,background:'#fff',color:'#0f172a',border:'1.5px solid #e2e8f0',borderRadius:10,padding:'12px 24px',fontSize:14,fontWeight:600,cursor:'pointer',textDecoration:'none',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
             {GOOGLE_SVG}
             Continue with Google
           </a>
         </div>
         <p style={{fontSize:12,color:'#94a3b8',marginTop:14}}>By continuing you agree to our terms. Invite-only access.</p>
-        <DevLogin />
+        <DevLogin refCode={ref} />
       </section>
 
       {/* Segments strip */}

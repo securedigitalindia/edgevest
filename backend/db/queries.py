@@ -6,7 +6,7 @@
 
 import itertools
 import sqlite3
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from typing import Optional
 import pandas as pd
 
@@ -385,6 +385,7 @@ def open_recommended_trade(
     parent_trade_id:  int   | None = None,
     margin_required:  float | None = None,
     margin_final:     float | None = None,
+    margin_at_entry:  float | None = None,
     expiry_strs       = None,  # iterable of each leg's expiry_str, for display_code
     note:             str   | None = None,
     risk_level:       str   | None = None,
@@ -396,11 +397,11 @@ def open_recommended_trade(
         INSERT INTO recommended_trades
             (trigger_name, symbol, parent_trade_id,
              entry_level, entry_ltp, entry_time, exit_level, status,
-             margin_required, margin_final, display_code, note, risk_level)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
+             margin_required, margin_final, margin_at_entry, display_code, note, risk_level)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
     """, (trigger_name, symbol, parent_trade_id,
           entry_level, entry_ltp, entry_time, exit_level,
-          margin_required, margin_final, display_code, note or None, risk_level))
+          margin_required, margin_final, margin_at_entry, display_code, note or None, risk_level))
     row_id = cur.lastrowid
     conn.commit()
     conn.close()
@@ -564,6 +565,176 @@ def get_today_closed_trades(ist_date) -> list[dict]:
     return [dict(zip(_TRADE_COLS, r)) for r in rows]
 
 
+def get_monthly_report(year: int, month: int) -> dict:
+    """
+    Live rollup of recommended_trades/trade_legs for one IST calendar month
+    (see docs/prd/monthly-recommendation-report.md for full mechanics).
+
+    "Month" = [month_start_utc, effective_end_utc) where effective_end_utc is
+    min(next_month_start_utc, now_utc) — this is what makes an in-progress
+    "current month" and a finished past month share the exact same code path.
+    A month whose start is still in the future naturally yields an inverted
+    (empty) range and zeroed results, with no special-casing required.
+
+    Returns:
+        {
+          "positions_entered":  int,
+          "margin_series":      [{"date": "YYYY-MM-DD", "margin": float}, ...],
+          "peak_margin_used":   float,
+          "avg_margin_used":    float,  # mean of margin_series' own values — the ROI denominator (not peak_margin_used)
+          "margin_positions":   [{"trade_id": int, "symbol": str, "display_code": str|None,
+                                   "entry_date": "YYYY-MM-DD", "exit_date": "YYYY-MM-DD"|None,
+                                   "margin_at_entry": float, "realized_pnl": float|None}, ...],
+          "pnl_events":         [{"entry_date": "YYYY-MM-DD", "exit_date": "YYYY-MM-DD", "trade_id": int,
+                                   "symbol": str, "display_code": str|None, "realized_pnl": float}, ...],
+          "realized_pnl_total": float,
+        }
+
+    margin_positions lists every row that contributes to margin_series at any
+    point in this month (open positions carried forward included) — this is
+    what actually makes up peak_margin_used, not just its number. Its
+    realized_pnl is non-null only when that same row also exited within this
+    month (i.e. it also appears in pnl_events) — null for anything still open
+    or carried forward, since there's no outcome to show yet.
+    """
+    IST_OFFSET = timedelta(hours=5, minutes=30)
+
+    month_start_utc = datetime(year, month, 1, tzinfo=timezone.utc) - IST_OFFSET
+    if month == 12:
+        next_year, next_month = year + 1, 1
+    else:
+        next_year, next_month = year, month + 1
+    next_month_start_utc = datetime(next_year, next_month, 1, tzinfo=timezone.utc) - IST_OFFSET
+    now_utc = datetime.now(timezone.utc)
+    effective_end_utc = min(next_month_start_utc, now_utc)
+
+    month_start_str   = month_start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    effective_end_str = effective_end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _ist_date(utc_str: str):
+        dt = datetime.strptime(utc_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return (dt + IST_OFFSET).date()
+
+    conn = get_connection()
+
+    # --- 1. Positions entered ---------------------------------------------
+    positions_entered = conn.execute(
+        "SELECT COUNT(*) FROM recommended_trades WHERE entry_time >= ? AND entry_time < ?",
+        (month_start_str, effective_end_str),
+    ).fetchone()[0]
+
+    # --- 2. Margin day-by-day series + peak ---------------------------------
+    # One query fetches every row that could possibly overlap the month's day
+    # range, then we walk IST calendar days in Python (avoids N per-day queries).
+    margin_rows = conn.execute("""
+        SELECT id, symbol, display_code, entry_time, exit_time, status, margin_at_entry
+        FROM recommended_trades
+        WHERE entry_time < ? AND (status = 'open' OR exit_time >= ?)
+    """, (effective_end_str, month_start_str)).fetchall()
+
+    intervals = []        # (entry_date, exit_date_or_None, margin_at_entry) — for the day-walk below
+    margin_positions = []  # display-friendly version of the same rows, for the UI
+    for trade_id, symbol, display_code, entry_time, exit_time, status, margin_at_entry in margin_rows:
+        if margin_at_entry is None:
+            continue
+        entry_date = _ist_date(entry_time)
+        exit_date  = _ist_date(exit_time) if (status != "open" and exit_time) else None
+        intervals.append((entry_date, exit_date, margin_at_entry))
+        margin_positions.append({
+            "trade_id":        trade_id,
+            "symbol":          symbol,
+            "display_code":    display_code,
+            "entry_date":      entry_date.isoformat(),
+            "exit_date":       exit_date.isoformat() if exit_date else None,
+            "margin_at_entry": round(margin_at_entry, 2),
+        })
+
+    first_day = date(year, month, 1)
+    last_day  = date(next_year, next_month, 1) - timedelta(days=1)
+    today_ist = (now_utc + IST_OFFSET).date()
+    walk_end  = min(last_day, today_ist)
+
+    margin_series  = []
+    peak_margin    = 0.0
+    margin_sum     = 0.0
+    d = first_day
+    while d <= walk_end:
+        total = sum(
+            margin for entry_date, exit_date, margin in intervals
+            if entry_date <= d and (exit_date is None or exit_date >= d)
+        )
+        margin_series.append({"date": d.isoformat(), "margin": round(total, 2)})
+        peak_margin = max(peak_margin, total)
+        margin_sum += total
+        d += timedelta(days=1)
+    avg_margin = margin_sum / len(margin_series) if margin_series else 0.0
+
+    # --- 3. Realized P&L — per-exit + month total ---------------------------
+    # Match legs by instrument_key (not positional zip()) — see PRD for why
+    # the positional method used by GET /api/recommendations can mis-pair legs.
+    exited_rows = conn.execute(f"""
+        SELECT {_TRADE_SELECT} FROM recommended_trades
+        WHERE status = 'exited' AND exit_time >= ? AND exit_time < ?
+        ORDER BY exit_time
+    """, (month_start_str, effective_end_str)).fetchall()
+    exited_trades = [dict(zip(_TRADE_COLS, r)) for r in exited_rows]
+
+    conn.close()
+
+    pnl_events = []
+    realized_pnl_total = 0.0
+    for t in exited_trades:
+        legs       = get_trade_legs(t["id"])
+        entry_legs = [l for l in legs if l["action"] == "entry"]
+        exit_legs  = [l for l in legs if l["action"] == "exit"]
+
+        total, has_pnl = 0.0, False
+        for e in entry_legs:
+            x = next((xl for xl in exit_legs
+                      if xl["instrument_key"] and xl["instrument_key"] == e["instrument_key"]),
+                     None)
+            if x is None or e["price"] is None or x["price"] is None:
+                continue
+            qty = e["lots"] * (e["lot_size"] or 1)
+            total += (e["price"] - x["price"]) * qty if e["side"] == "SELL" \
+                     else (x["price"] - e["price"]) * qty
+            has_pnl = True
+
+        if has_pnl:
+            pnl_events.append({
+                "entry_date":   _ist_date(t["entry_time"]).isoformat(),
+                "exit_date":    _ist_date(t["exit_time"]).isoformat(),
+                "trade_id":     t["id"],
+                "symbol":       t["symbol"],
+                "display_code": t["display_code"],
+                "realized_pnl": round(total, 2),
+            })
+            realized_pnl_total += total
+
+    # A row that both blocked margin AND exited within this same month shows
+    # up in both lists — attach its realized P&L onto the margin_positions
+    # entry too, so "what did this position that closed this month actually
+    # make" is visible right next to the margin it was holding, not just in
+    # the separate P&L list.
+    pnl_by_trade = {e["trade_id"]: e["realized_pnl"] for e in pnl_events}
+    for p in margin_positions:
+        p["realized_pnl"] = pnl_by_trade.get(p["trade_id"])
+
+    # Sort so the UI can show the biggest margin contributors / most recent
+    # exits first without re-sorting client-side.
+    margin_positions.sort(key=lambda p: p["margin_at_entry"], reverse=True)
+
+    return {
+        "positions_entered":  positions_entered,
+        "margin_series":      margin_series,
+        "peak_margin_used":   round(peak_margin, 2),
+        "avg_margin_used":    round(avg_margin, 2),
+        "margin_positions":   margin_positions,
+        "pnl_events":         pnl_events,
+        "realized_pnl_total": round(realized_pnl_total, 2),
+    }
+
+
 # -----------------------------------------------------------
 # Users
 # -----------------------------------------------------------
@@ -590,8 +761,17 @@ def get_user_by_email(email: str) -> dict | None:
     return dict(zip(["id","google_id","email","name","picture","role","mobile","note","active"], row))
 
 
-def upsert_user(google_id: str, email: str, name: str, picture: str) -> dict:
-    """Create or update a Google user. First-ever user becomes super_admin."""
+def upsert_user(google_id: str, email: str, name: str, picture: str,
+                 referrer_user_id: int | None = None) -> dict:
+    """
+    Create or update a Google user. First-ever user becomes super_admin.
+
+    referrer_user_id: the resolved referrer's user id (already looked up
+    from a valid ?ref= code by /auth/google — never a raw code here), only
+    ever applied inside the new-row branch below, i.e. only for a genuinely
+    brand-new google_id, never retroactively on a returning user. See
+    docs/prd/refer-and-earn.md's "Signup flow" / "Self-referral guard".
+    """
     from datetime import datetime, timezone
     now  = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = get_connection()
@@ -615,9 +795,21 @@ def upsert_user(google_id: str, email: str, name: str, picture: str) -> dict:
         )
         conn.commit()
         if role == "client":
-            from config import SIGNUP_CREDITS
             new_uid = conn.execute("SELECT id FROM users WHERE google_id=?", (google_id,)).fetchone()[0]
-            _award_credits_tx(conn, new_uid, SIGNUP_CREDITS, "signup_bonus", ref_id=None, note="Welcome bonus")
+            # Defensive self-referral guard (structurally unreachable — new_uid
+            # is freshly INSERT-ed and can't equal a pre-existing referrer_user_id
+            # — kept cheap and future-proof, see PRD).
+            if referrer_user_id and referrer_user_id != new_uid:
+                from config import REFERRAL_SIGNUP_BONUS_GEMS
+                _award_credits_tx(conn, new_uid, REFERRAL_SIGNUP_BONUS_GEMS, "referral_signup_bonus",
+                                  ref_id=str(referrer_user_id), note="Referral signup bonus")
+                conn.execute("""
+                    INSERT INTO referrals (referrer_user_id, referee_user_id, status, created_at)
+                    VALUES (?, ?, 'pending', ?)
+                """, (referrer_user_id, new_uid, now))
+            else:
+                from config import SIGNUP_CREDITS
+                _award_credits_tx(conn, new_uid, SIGNUP_CREDITS, "signup_bonus", ref_id=None, note="Welcome bonus")
             conn.commit()
 
     row = conn.execute(
@@ -682,6 +874,106 @@ def update_user_role(user_id: int, role: str) -> None:
     conn.execute("UPDATE users SET role=? WHERE id=?", (role, user_id))
     conn.commit()
     conn.close()
+
+
+# ── Refer & Earn — docs/prd/refer-and-earn.md ─────────────────
+
+# Uppercase, unambiguous alphabet — excludes 0/O/1/I.
+_REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+_REFERRAL_CODE_LENGTH   = 7
+
+
+def _generate_referral_code() -> str:
+    import random
+    return "".join(random.choices(_REFERRAL_CODE_ALPHABET, k=_REFERRAL_CODE_LENGTH))
+
+
+def get_user_by_referral_code(code: str) -> dict | None:
+    """Case-insensitive lookup by users.referral_code."""
+    if not code:
+        return None
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT id,google_id,email,name,picture,role,mobile,note,active"
+        " FROM users WHERE referral_code IS NOT NULL AND UPPER(referral_code)=UPPER(?)",
+        (code,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+    return dict(zip(["id","google_id","email","name","picture","role","mobile","note","active"], row))
+
+
+def get_or_create_referral_code(user_id: int) -> str:
+    """
+    Lazily generate + persist this user's referral_code on first read (first
+    call to GET /api/my-referrals) — no backfill for pre-existing rows, same
+    "generate on demand" posture as recommended_trades.display_code. Retries
+    on UNIQUE collision (7-char, 33-symbol alphabet — collisions are rare;
+    this loop exists for correctness, not because collisions are expected).
+    """
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT referral_code FROM users WHERE id=?", (user_id,)).fetchone()
+        if row and row[0]:
+            return row[0]
+        for _ in range(10):
+            code = _generate_referral_code()
+            try:
+                conn.execute("UPDATE users SET referral_code=? WHERE id=?", (code, user_id))
+                conn.commit()
+                return code
+            except sqlite3.IntegrityError:
+                conn.rollback()
+                continue
+        raise RuntimeError(f"Could not generate a unique referral code for user {user_id}")
+    finally:
+        conn.close()
+
+
+def get_referral_stats(user_id: int) -> dict:
+    """
+    Counts from `referrals`; gems_earned from `credit_transactions` (the
+    ledger is the source of truth, not a redundant running total — same
+    posture as user_credits.balance elsewhere).
+    """
+    conn = get_connection()
+    try:
+        referred_count = conn.execute(
+            "SELECT COUNT(*) FROM referrals WHERE referrer_user_id=?", (user_id,)
+        ).fetchone()[0]
+        rewarded_count = conn.execute(
+            "SELECT COUNT(*) FROM referrals WHERE referrer_user_id=? AND status='rewarded'", (user_id,)
+        ).fetchone()[0]
+        gems_earned = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM credit_transactions"
+            " WHERE user_id=? AND reason='referral_reward'",
+            (user_id,)
+        ).fetchone()[0]
+        return {
+            "referred_count": referred_count,
+            "rewarded_count": rewarded_count,
+            "gems_earned":    gems_earned,
+        }
+    finally:
+        conn.close()
+
+
+def get_referral_history(user_id: int) -> list[dict]:
+    """Referrer's own referral list — referee name/status/dates only (no email; see PRD open questions)."""
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT r.id, r.referee_user_id, u.name AS referee_name,
+                   r.status, r.created_at, r.rewarded_at
+            FROM referrals r
+            JOIN users u ON u.id = r.referee_user_id
+            WHERE r.referrer_user_id = ?
+            ORDER BY r.created_at DESC
+        """, (user_id,)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 def get_accounts_for_user(user_id: int) -> list[dict]:
@@ -902,6 +1194,29 @@ def upsert_user_trading_profile(
                 setup_done  = excluded.setup_done,
                 updated_at  = excluded.updated_at
         """, (user_id, segment, risk_type, trader_type, focus, int(setup_done), now))
+
+        if setup_done:
+            # Referrer payout (docs/prd/refer-and-earn.md — "Referrer payout,
+            # triggered by setup_done"). This upsert runs unconditionally on
+            # every POST /api/profile, incl. repeat setup_done=true saves from
+            # ProfileDetails.jsx — idempotency is enforced at the DB layer:
+            # only the first call for this referee finds a 'pending' row to
+            # flip (referee_user_id is UNIQUE), every subsequent call affects
+            # 0 rows and is a guaranteed no-op.
+            cur = conn.execute("""
+                UPDATE referrals SET status='rewarded', rewarded_at=?
+                WHERE referee_user_id=? AND status='pending'
+            """, (now, user_id))
+            if cur.rowcount == 1:
+                ref_row = conn.execute(
+                    "SELECT referrer_user_id FROM referrals WHERE referee_user_id=?",
+                    (user_id,)
+                ).fetchone()
+                if ref_row:
+                    from config import REFERRAL_REWARD_GEMS
+                    _award_credits_tx(conn, ref_row[0], REFERRAL_REWARD_GEMS, "referral_reward",
+                                      ref_id=str(user_id), note="Referral reward")
+
         conn.commit()
     finally:
         conn.close()

@@ -175,6 +175,14 @@ export function ReceiptIcon({ size = 18 }) {
   )
 }
 
+export function ChartIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>
+    </svg>
+  )
+}
+
 export function TrendIcon({ size = 14, up }) {
   // Base path's arrowhead sits at the top-right (17,7) — an up-right
   // ("growth") arrow by default. Flip it to point down-right for the

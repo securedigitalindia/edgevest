@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { authUrl } from '../../api/client'
 import useAuthStore from '../../store/authStore'
-import { CardIcon, BankIcon, GemIcon, ProfileIcon, BuildingIcon, PeopleIcon, ClipboardIcon, ReceiptIcon } from '../../components/common/Icons'
+import { CardIcon, BankIcon, GemIcon, ProfileIcon, BuildingIcon, PeopleIcon, ClipboardIcon, ReceiptIcon, ChartIcon } from '../../components/common/Icons'
 import './Profile.css'
 
 // Role-aware menu row list — mirrors the exact branching that used to drive
@@ -49,7 +49,9 @@ export default function ProfileHub() {
           <MenuRow icon={CardIcon} label="My Plan"     onClick={() => navigate('/profile/plan')} />
           <MenuRow icon={BankIcon} label="My Accounts" onClick={() => navigate('/profile/accounts')} />
           <MenuRow icon={GemIcon}  label="Gems"        onClick={() => navigate('/profile/gems')} />
+          <MenuRow icon={PeopleIcon} label="Refer & Earn" onClick={() => navigate('/profile/referrals')} />
         </>}
+        <MenuRow icon={ChartIcon}   label="Monthly Report" onClick={() => navigate('/profile/reports')} />
         <MenuRow icon={ProfileIcon} label="Details" onClick={() => navigate('/profile/details')} />
       </div>
 

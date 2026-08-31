@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getCredits } from '../../api/games'
 import PageHeader from '../../components/common/PageHeader'
 import { fmtIstShort } from '../../utils/format'
-import { GemIcon, TrophyIcon, GameIcon, LockIcon, GearIcon, UndoIcon } from '../../components/common/Icons'
+import { GemIcon, TrophyIcon, GameIcon, LockIcon, GearIcon, UndoIcon, PeopleIcon } from '../../components/common/Icons'
 import './Profile.css'
 
 const REASON_META = {
@@ -11,6 +11,8 @@ const REASON_META = {
   subscription_purchase:  { icon: LockIcon,   label: 'Subscription' },
   manual:                 { icon: GearIcon,   label: 'Manual' },
   refund:                 { icon: UndoIcon,   label: 'Refund' },
+  referral_signup_bonus:  { icon: PeopleIcon, label: 'Referral signup bonus' },
+  referral_reward:        { icon: PeopleIcon, label: 'Referral reward' },
 }
 
 export default function Gems() {

@@ -431,6 +431,7 @@ class Nifty500MultipleTrigger(BaseTrigger):
                     trade_id = open_recommended_trade(
                         self.name, self.symbol, level, ltp, now_utc, exit_level,
                         margin_required=margin_required, margin_final=margin_final,
+                        margin_at_entry=margin_final,
                         expiry_strs=[exp_str],
                         note="NIFTY 500-Multi Short",
                         risk_level=self.risk_level,

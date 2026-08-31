@@ -99,7 +99,8 @@ One row per trade *header* — all leg detail lives in `trade_legs`. Created by 
 | `exit_level` | REAL NOT NULL | |
 | `status` | TEXT NOT NULL DEFAULT `'open'` | `open` \| `exited` (legacy `'rolled'` values are migrated to `'exited'` on startup) |
 | `exit_ltp` / `exit_time` | REAL/TEXT | Nullable until exit |
-| `margin_required` / `margin_final` | REAL | Added via migration; nullable |
+| `margin_required` / `margin_final` | REAL | Added via migration; nullable. Overwritten in place on every `recalculate_recommendation_margin()` call (e.g. after a `/adjust`) — always reflects the trade's *current* live legs, not its entry-time value |
+| `margin_at_entry` | REAL | Added via migration; nullable. Immutable snapshot of `margin_final` captured once at entry (`open_recommended_trade()`) or on a rolled trade's first margin calc — never overwritten thereafter (`recalculate_recommendation_margin()` only sets it via `COALESCE(margin_at_entry, ?)`). Powers the monthly recommendation report's margin-in-use figures (`docs/prd/monthly-recommendation-report.md`); rows created before this column's migration have `margin_at_entry IS NULL` permanently |
 
 - **Indexes**: `idx_recommended_trades_sym_level_status` on `(symbol, entry_level, status)`; `idx_recommended_trades_parent` on `(parent_trade_id)`.
 - Walk a full rollover chain root→latest via `get_trade_chain()` (follows `parent_trade_id`).
@@ -161,6 +162,7 @@ Google OAuth identity + role. Created/updated by `upsert_user()` on every login 
 | `mobile` / `note` | TEXT | Added via migration; nullable |
 | `active` | INTEGER NOT NULL DEFAULT 1 | |
 | `created_at` | TEXT NOT NULL | |
+| `referral_code` | TEXT | Added via migration; nullable. Refer & Earn (`docs/prd/refer-and-earn.md`) — 7-char uppercase code, unambiguous alphabet (excludes `0/O/1/I`). Lazily generated + persisted on first `GET /api/my-referrals` call (`get_or_create_referral_code()`), never backfilled. **Uniqueness is enforced by a separate `idx_users_referral_code` unique index, not an inline column constraint** — SQLite's `ALTER TABLE ... ADD COLUMN` rejects `UNIQUE` outright, so this migration adds the column plain and creates the index alongside it. Multiple `NULL`s are fine (SQLite unique indexes treat each `NULL` as distinct). |
 
 - Schema history: this table replaces an older `traders` table — `_migrate_traders_to_users()` runs once (detects a leftover `traders` table), copying `mobile`/`note` across, rebuilding `accounts`/`account_trades`/`account_trade_legs` to fix their foreign keys after the rename, then drops `traders`.
 
@@ -393,4 +395,21 @@ Append-only ledger of every credit change — `user_credits.balance` is derived/
 | `created_at` | TEXT NOT NULL | |
 
 - **Index**: `idx_credit_tx_user` on `(user_id)`.
-- New users are awarded `config.SIGNUP_CREDITS` (99) via `_award_credits_tx()` at signup (`upsert_user()`), reason `"signup_bonus"`.
+- New users are awarded `config.SIGNUP_CREDITS` (99) via `_award_credits_tx()` at signup (`upsert_user()`), reason `"signup_bonus"` — or, for a user who signed up via a referral link, `config.REFERRAL_SIGNUP_BONUS_GEMS` (149) with reason `"referral_signup_bonus"` instead (see `referrals` below). A referrer is awarded `config.REFERRAL_REWARD_GEMS` (99), reason `"referral_reward"`, once their referee's `setup_done` first flips true.
+
+### `referrals`
+
+Refer & Earn (`docs/prd/refer-and-earn.md`) — one row per successful referral signup, created inside `upsert_user()`'s new-row branch when a valid `?ref=` code resolved to a referrer at signup. No parallel gems ledger — gem awards post through the existing `user_credits`/`credit_transactions` tables above; this table exists purely to track the pending→rewarded lifecycle per referee and to drive the referrer's own history view.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | |
+| `referrer_user_id` | INTEGER NOT NULL REFERENCES `users(id)` | |
+| `referee_user_id` | INTEGER NOT NULL UNIQUE REFERENCES `users(id)` | `UNIQUE` is the DB-level enforcement of "at most one payout per referee, ever" |
+| `status` | TEXT NOT NULL DEFAULT `'pending'` | `pending` → `rewarded`, one-way transition |
+| `created_at` | TEXT NOT NULL | ISO-8601 UTC, set at signup |
+| `rewarded_at` | TEXT | Nullable until the referrer payout fires |
+
+- **Index**: `idx_referrals_referrer` on `(referrer_user_id, status)` — backs the referrer's own stats/history query.
+- **Payout trigger**: `upsert_user_trading_profile()` runs `UPDATE referrals SET status='rewarded', rewarded_at=? WHERE referee_user_id=? AND status='pending'` inside the same transaction as the profile upsert, every time `setup_done` is truthy (which happens on every save, not just the first — see `docs/apis.md`'s Profile section). Credits are only awarded to the referrer if that `UPDATE` actually affects a row (`rowcount == 1`) — the `UNIQUE` constraint plus the `status='pending'` guard together make this safe to call arbitrarily many times per referee.
+- `GET /api/my-referrals` (`docs/apis.md`) is the only read path — lazily generates the caller's `users.referral_code` on first call, then returns their own stats (`get_referral_stats()`) and history (`get_referral_history()`, joined to `users` for the referee's name only — no email, a deliberate choice given this is a peer-facing view rather than an admin one).

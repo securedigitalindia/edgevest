@@ -1,0 +1,130 @@
+/* Monthly Recommendation Report — /profile/reports.
+   Card/card-header/card-body and .empty are global (index.css). */
+
+/* ── ROI hero figure — the one number this page leads with ──────────────
+   Everything else (positions, avg/peak margin) is supporting context, sized
+   and colored to stay quiet next to it — see dataviz skill's "hero figure"
+   spec: >=48px, proportional (not tabular) figures, exactly one per view. */
+.rep-hero-card  { padding:20px 20px 4px; text-align:left; }
+.rep-hero-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
+.rep-hero-value { font-size:48px; font-weight:700; line-height:1.05; margin-top:4px; font-variant-numeric:normal; }
+.rep-hero-sub   { font-size:13px; color:var(--muted); margin:6px 0 0; }
+
+/* Position counts — Booked vs Open, the one split that actually partitions
+   the total (see Reports.jsx's comment on why "New" isn't a third tile
+   here). Mirrors the Dashboard's own Booked/Running split card (dot + label
+   + colored left border) so the same two numbers read identically wherever
+   they show up in the app. */
+.rep-count-row       { margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+.rep-count-total     { font-size:12px; color:var(--muted); margin-bottom:10px; }
+.rep-count-total-val { font-weight:800; color:#0f172a; }
+.rep-count-new        { color:#1d4ed8; font-weight:600; }
+.rep-count-split     { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.rep-count-tile        { border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:#f8fafc; }
+.rep-count-tile-booked { border-left:3px solid #94a3b8; }
+.rep-count-tile-open   { border-left:3px solid #22c55e; }
+.rep-count-tile-top    { display:flex; align-items:center; gap:6px; font-size:9.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; }
+.rep-count-tile-val    { font-size:20px; font-weight:800; color:#0f172a; letter-spacing:-.3px; margin-top:4px; }
+.rep-count-tile-note   { font-size:10px; font-style:italic; color:var(--muted); margin-top:4px; }
+
+.rep-dot           { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.rep-dot-booked    { background:#94a3b8; }
+.rep-dot-open      { background:#22c55e; }
+.rep-dot-open.is-live { animation:rep-pulse 1.7s ease-in-out infinite; }
+@keyframes rep-pulse { 0%, 100% { opacity:1; } 50% { opacity:.4; } }
+
+/* Secondary stats — bordered icon chips (matches the Dashboard's Monthly
+   Report card) rather than plain numbers divided by thin vertical rules.
+   "Positions entered" moved up into the month-nav's "X new" chip, so this
+   row is just the two margin figures. */
+.rep-hero-secondary { display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); }
+.rep-hero-stat      { border:1px solid var(--border); border-radius:10px; background:#f8fafc; padding:10px 12px; }
+.rep-hero-stat-icon        { flex-shrink:0; width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; margin-bottom:8px; }
+.rep-hero-stat-icon-indigo { background:#f1eeff; color:#4f46e5; }
+.rep-hero-stat-icon-amber  { background:#fff8ea; color:#d97706; }
+.rep-hero-stat-lbl { font-size:9.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; }
+.rep-hero-stat-val { font-size:16px; font-weight:800; color:#0f172a; margin-top:3px; letter-spacing:-.3px; }
+
+/* ── Month nav ── */
+.rep-month-nav   { display:flex; align-items:center; justify-content:center; gap:14px; padding:10px 0 16px; }
+.rep-month-btn   { width:32px; height:32px; border-radius:8px; border:1px solid var(--border); background:#fff; color:var(--text);
+                    font-size:18px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background .15s; }
+.rep-month-btn:hover:not(:disabled) { background:#f8fafc; }
+.rep-month-btn:disabled { opacity:.35; cursor:not-allowed; }
+.rep-month-label { min-width:150px; text-align:center; font-size:14px; font-weight:700; color:var(--text); display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
+.rep-live-chip   { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:#166534; background:#dcfce7; padding:2px 6px; border-radius:10px; }
+
+/* ── Chart scaffolding ── */
+.rep-chart-wrap    { position:relative; }
+.rep-chart-svg      { width:100%; height:auto; display:block; overflow:visible; }
+.rep-chart-empty    { display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:13px; background:#f8fafc; border:1px dashed var(--border); border-radius:8px; width:100%; }
+.rep-chart-gridline { stroke:#eef2f6; stroke-width:1; }
+.rep-chart-zeroline  { stroke:#e2e8f0; stroke-width:1; }
+.rep-chart-axis      { stroke:#cbd5e1; stroke-width:1; }
+.rep-chart-guide      { stroke:#cbd5e1; stroke-width:1; stroke-dasharray:3 3; }
+.rep-chart-ylabel     { font-size:9px; fill:var(--muted); }
+.rep-chart-xlabel     { font-size:9px; fill:var(--muted); }
+.rep-chart-dot        { fill:#fff; stroke:var(--blue); stroke-width:2; }
+
+.rep-margin-area { fill:rgba(59,130,246,.12); stroke:none; }
+.rep-margin-line { fill:none; stroke:var(--blue); stroke-width:2; stroke-linejoin:round; }
+
+.rep-pnl-bar-pos { fill:var(--green); cursor:pointer; transition:opacity .1s; }
+.rep-pnl-bar-neg { fill:var(--red);   cursor:pointer; transition:opacity .1s; }
+
+/* ── Tooltip ── */
+.rep-chart-tooltip { position:absolute; transform:translate(-50%,-115%); background:#1e293b; color:#fff; padding:6px 9px; border-radius:6px;
+                      font-size:11px; white-space:nowrap; pointer-events:none; box-shadow:0 4px 12px rgba(0,0,0,.2); z-index:2; }
+.rep-tt-date { font-weight:600; opacity:.85; margin-bottom:1px; }
+.rep-tt-val  { font-weight:700; }
+.rep-tt-sub  { font-size:10px; opacity:.75; margin-top:1px; }
+
+/* ── Card header caption — the "what this number means" line ── */
+.rep-card-header    { display:block; }
+.rep-card-caption   { font-size:12px; color:var(--muted); line-height:1.5; margin:5px 0 0; max-width:62ch; }
+
+/* ── Margin/P&L switch — one chart card, one metric shown at a time ── */
+.rep-switch-header { position:relative; }
+.rep-switch {
+  position:absolute; top:0; right:0;
+  display:inline-flex; background:#f1f5f9; border-radius:8px; padding:2px; gap:2px;
+}
+.rep-switch-btn {
+  border:none; background:transparent; cursor:pointer; font-family:inherit;
+  font-size:12px; font-weight:600; color:var(--muted); padding:5px 12px; border-radius:6px; transition:all .15s;
+}
+.rep-switch-btn:hover { color:var(--text); }
+.rep-switch-btn-active { background:#fff; color:var(--text); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+
+/* ── Position lists — "which positions" behind a headline number ── */
+.rep-pos-section-title {
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--muted);
+  padding:12px 16px 0;
+}
+.rep-pos-body { padding-top:6px; }
+.rep-pos-list { display:flex; flex-direction:column; }
+.rep-pos-row  {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:9px 4px; border-bottom:1px solid #f1f5f9;
+}
+.rep-pos-row:last-child { border-bottom:none; }
+.rep-pos-row-open { background:#fffbeb; margin:0 -4px; padding-left:8px; padding-right:8px; border-radius:6px; border-bottom-color:transparent; }
+.rep-pos-main  { min-width:0; }
+.rep-pos-label { font-size:13px; font-weight:600; color:var(--text); }
+.rep-pos-sub   { font-size:11px; color:var(--muted); margin-top:1px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.rep-pos-open-badge {
+  font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.3px;
+  color:#92400e; background:#fef3c7; padding:1px 6px; border-radius:10px;
+}
+.rep-pos-badge-neutral { color:#475569; background:#f1f5f9; }
+.rep-pos-days  { color:var(--muted); }
+.rep-pos-amt   { font-size:13px; font-weight:700; color:var(--text); white-space:nowrap; flex-shrink:0; }
+.rep-pos-amt-col { text-align:right; flex-shrink:0; }
+.rep-pos-amt-sub { font-size:10px; font-weight:700; margin-top:1px; white-space:nowrap; }
+
+@media (max-width:768px) {
+  .rep-hero-value { font-size:36px; }
+  /* Absolute-positioned switch would overlap the title on a narrow screen —
+     drop it back into normal flow, stacked under the heading. */
+  .rep-switch { position:static; margin-top:8px; }
+}

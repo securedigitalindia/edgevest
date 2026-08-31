@@ -1,152 +1,51 @@
-/* minmax(0, 1fr), not bare 1fr — a grid track's implicit min-width is "auto"
-   (the min-content size of whatever's inside it), so any nowrap descendant
-   (e.g. .rec-leg-meta) would otherwise force this track — and every card in
-   it — wider than the viewport instead of shrinking/wrapping. */
-.dash-layout { display:grid; grid-template-columns:min(480px,100%) minmax(0,1fr); gap:20px; padding:20px 24px; max-width:1400px; margin:0 auto; }
-@media (max-width:960px) { .dash-layout { grid-template-columns:minmax(0,1fr); } }
-@media (max-width:768px)  { .dash-layout { padding:12px; gap:12px; } }
+.ov-layout   { max-width:680px; margin:0 auto; padding:24px; }
+@media (max-width:768px) { .ov-layout { padding:14px; } }
 
-/* Rec item */
-.rec-item         { border:1px solid var(--border); border-left-width:4px; border-radius:10px; margin-bottom:12px; overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.06); transition:box-shadow .15s; }
-.rec-item:hover   { box-shadow:0 4px 14px rgba(0,0,0,.1); }
-.rec-item-open    { border-left-color:#22c55e; }
-.rec-item-exited  { border-left-color:#94a3b8; }
+/* Section header — bold sentence-case, matching the "Featured" heading from
+   the signed-off dashboard mockup (bigger and darker than the small-caps
+   card-header convention used inside cards). MonthSummaryCard.jsx's own
+   "Monthly Report" heading has its own identically-styled `msc-*` classes,
+   colocated with that component since it's shared with Trades.jsx too. */
+.ov-section-label { font-size:18px; font-weight:800; color:#0f172a; letter-spacing:-.2px; margin-bottom:12px; }
 
-/* Collapse toggle chevron */
-.rec-collapse-btn { display:inline-flex; align-items:center; justify-content:center; margin-left:auto; color:var(--muted); transition:transform .22s ease; flex-shrink:0; }
-.rec-collapse-btn.collapsed { transform:rotate(-90deg); }
+/* Featured — 2x2 grid of compact nav tiles (Trades / Reports / Refer & Earn
+   / Games), each a colored tint with one highlight ribbon and a large,
+   faint decorative icon — not a stat card with a big number, the full
+   detail for each lives on its destination screen. */
+.ov-tile-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:26px; }
+@media (max-width:420px) { .ov-tile-grid { grid-template-columns:1fr; } }
 
-/* Collapsible body */
-.rec-body           { overflow:hidden; max-height:1200px; opacity:1; transition:max-height .28s ease, opacity .2s ease; will-change:max-height; }
-.rec-body-collapsed { max-height:0; opacity:0; pointer-events:none; }
+.ov-tile        { position:relative; border:1px solid var(--border); border-radius:14px; padding:14px; overflow:hidden; cursor:pointer;
+                   min-height:128px; display:flex; flex-direction:column; transition:box-shadow .15s ease, transform .15s ease; }
+.ov-tile:hover  { box-shadow:0 6px 18px rgba(15,23,42,.08); transform:translateY(-1px); }
+.ov-tile:active { transform:translateY(0); }
+.ov-tile-blue   { background:#eef4ff; }
+.ov-tile-indigo { background:#f1eeff; }
+.ov-tile-amber  { background:#fff8ea; }
+.ov-tile-green  { background:#eefbf3; }
 
-/* Prevent browser scroll-anchor jumps when cards expand/collapse */
-.rec-item { overflow-anchor:none; }
-@keyframes rec-highlight {
-  0%   { background:#dbeafe; box-shadow:0 0 0 3px rgba(59,130,246,.35), 0 4px 20px rgba(59,130,246,.18); }
-  45%  { background:#eff6ff; box-shadow:0 0 0 2px rgba(59,130,246,.15), 0 4px 14px rgba(59,130,246,.08); }
-  100% { background:#fff;    box-shadow:0 2px 8px rgba(0,0,0,.06); }
-}
-.rec-item-highlight { animation:rec-highlight 2.8s ease-out forwards; }
+.ov-ribbon        { align-self:flex-start; font-size:9.5px; font-weight:800; padding:3px 8px; border-radius:20px; margin-bottom:10px; color:#fff; white-space:nowrap; }
+.ov-ribbon-green  { background:#16a34a; }
+.ov-ribbon-amber  { background:#d97706; }
+.ov-ribbon-blue   { background:#2563eb; }
+.ov-ribbon-muted  { background:#94a3b8; }
 
-.rec-header  { padding:12px 14px 6px; border-bottom:1px solid var(--border); }
-.rec-symbol  { font-weight:800; font-size:16px; color:#0f172a; }
-.rec-ts      { font-size:11px; color:var(--muted); margin-top:4px; overflow-wrap:break-word; }
-.rec-code    { font-weight:700; color:var(--blue); white-space:nowrap; }
-.rec-adj-strip { font-size:11px; color:var(--muted); border-top:1px solid var(--border); margin-top:6px; padding-top:6px; }
-.rec-adj-text  { color:#92400e; font-weight:600; }
-.rec-seg-tag { font-size:10px; padding:2px 7px; border-radius:10px; background:#f1f5f9; color:#64748b; font-weight:600; }
-.rec-legs      { padding:10px 14px 2px; }
+.ov-tile-icon       { position:absolute; right:10px; bottom:8px; opacity:.16; }
+.ov-tile-icon-blue   { color:#2563eb; }
+.ov-tile-icon-indigo { color:#4f46e5; }
+.ov-tile-icon-amber  { color:#d97706; }
+.ov-tile-icon-green  { color:#15803d; }
 
-/* Risk level badge — traffic-light gradient, low (safest) to very_high */
-.risk-badge     { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
-.risk-low       { background:#dcfce7; color:#15803d; }
-.risk-mid       { background:#fef9c3; color:#854d0e; }
-.risk-high      { background:#ffedd5; color:#c2410c; }
-.risk-very_high { background:#fee2e2; color:#b91c1c; }
+.ov-tile-title { position:relative; font-size:14.5px; font-weight:800; color:#0f172a; margin-bottom:2px; }
+.ov-tile-sub   { position:relative; font-size:11px; color:var(--muted); line-height:1.4; max-width:85%; }
 
-/* Side pill */
-.leg-pill      { display:inline-flex; align-items:center; justify-content:center; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; min-width:40px; flex-shrink:0; }
-.leg-pill-buy  { background:#dcfce7; color:#15803d; }
-.leg-pill-sell { background:#fee2e2; color:#dc2626; }
-
-/* Leg rows */
-.rec-leg-row  { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f1f5f9; }
-.rec-leg-row:last-child { border-bottom:none; }
-.rec-leg-name { flex:1; min-width:0; }
-.rec-leg-sym  { font-size:13px; font-weight:700; color:#1e293b; }
-.rec-leg-contract { font-size:11px; color:var(--muted); margin-top:1px; }
-.rec-leg-meta { font-size:12px; color:#475569; white-space:nowrap; }
-
-/* Leg groups */
-.leg-group        { margin-bottom:8px; padding-left:10px; }
-.leg-group-entry  { border-left:3px solid #93c5fd; }
-.leg-group-adj    { border-left:3px solid #fcd34d; }
-.leg-grp-hdr      { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; padding-bottom:4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.leg-grp-note     { font-size:11px; font-weight:600; color:#92400e; text-transform:none; letter-spacing:0; }
-
-/* Connector between entry and adjustment */
-.adj-connector { font-size:10px; font-weight:700; color:#b45309; text-transform:uppercase; letter-spacing:.4px; padding:4px 0 6px 2px; }
-
-/* Stats strip (replaces stacked P&L bars) */
-.rec-stats-strip { display:flex; border-top:1px solid var(--border); }
-.rec-stat        { flex:1; min-width:0; padding:8px 12px; text-align:center; border-right:1px solid var(--border); }
-.rec-stat:last-child { border-right:none; }
-.rec-stat-lbl    { font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; }
-.rec-stat-val    { font-size:14px; font-weight:700; color:var(--text); margin-top:2px; }
-
-/* P&L bar (also used by inline forms below) */
-.pnl-bar { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; border-top:1px solid var(--border); background:#f8fafc; font-size:13px; }
-.pnl-bar-lbl { color:var(--muted); font-size:12px; }
-.pnl-neu   { color:var(--muted); }
-
-/* Action bar & notices */
-.rec-action-bar { display:flex; gap:8px; padding:8px 14px; border-top:1px solid var(--border); background:#fafafa; flex-wrap:wrap; }
-.rec-adj-notice { margin:10px 14px 12px; padding:10px 14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; display:flex; align-items:flex-start; gap:10px; }
-
-/* Inline forms (push / adjust / exit) */
-.inline-action { padding:12px; border-top-width:2px; border-top-style:solid; }
-.inline-action h4 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
-.action-adj   { border-top-color:#e0e7ff; background:#f5f3ff; }
-.action-adj h4  { color:#3730a3; }
-.action-exit  { border-top-color:#fee2e2; background:#fff9f9; }
-.action-exit h4 { color:var(--red); }
-.action-push  { border-top-color:#bfdbfe; background:#f0f7ff; }
-.action-push h4 { color:#1d4ed8; }
-
-/* Account chips (unused currently — kept for forward-compat with account-chip UI) */
-.add-account-link { background:none; border:none; padding:0; font-size:12px; color:var(--blue); cursor:pointer; white-space:nowrap; text-decoration:underline; text-underline-offset:2px; flex-shrink:0; }
-.add-account-link:hover { color:var(--blue-dark,#1d4ed8); }
-
-/* Game strip card (dashboard) */
-.gsc               { border:1px solid var(--border); border-left:3px solid var(--gsc-accent,#6366f1); border-radius:10px; padding:12px 14px; background:#fff; cursor:pointer; transition:box-shadow .15s,border-color .15s; }
-.gsc:hover         { box-shadow:0 4px 14px rgba(0,0,0,.08); border-color:#cbd5e1; border-left-color:var(--gsc-accent,#6366f1); }
-
-.gsc-header        { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
-.gsc-icon          { font-size:15px; line-height:1; flex-shrink:0; }
-.gsc-type          { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; flex:1; min-width:0; }
-.gsc-status        { font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; flex-shrink:0; }
-.gsc-live          { background:#dcfce7; color:#15803d; }
-.gsc-soon          { background:#f1f5f9; color:#64748b; }
-.gsc-pool          { font-size:12px; font-weight:700; color:#d97706; flex-shrink:0; }
-
-.gsc-title         { font-size:13px; font-weight:700; color:#0f172a; line-height:1.4; margin-bottom:5px; }
-.gsc-meta          { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); flex-wrap:wrap; }
-.gsc-dot           { color:#cbd5e1; }
-
-/* Portfolio strip inside game card */
-.gsc-portfolio-wrap  { margin:10px 0 2px; }
-.gsc-pf-acct-name    { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:5px; padding-left:2px; }
-.gsc-portfolio       { display:flex; align-items:center; background:#f8fafc; border:1px solid #f1f5f9; border-radius:8px; overflow:hidden; }
-.gsc-pf-stat       { flex:1; min-width:0; padding:7px 0; text-align:center; }
-.gsc-pf-lbl        { font-size:9px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:2px; }
-.gsc-pf-val        { font-size:12px; font-weight:700; color:var(--text); }
-.gsc-pf-sep        { width:1px; height:28px; background:#e2e8f0; flex-shrink:0; }
-
-.gsc-footer        { display:flex; align-items:center; justify-content:space-between; margin-top:10px; padding-top:10px; border-top:1px solid #f1f5f9; gap:8px; }
-.gsc-entry-status  { display:flex; align-items:center; gap:8px; font-size:12px; }
-.gsc-joined        { color:#16a34a; font-weight:600; }
-.gsc-won           { color:#d97706; font-weight:700; }
-.gsc-actions       { display:flex; align-items:center; gap:6px; flex-shrink:0; }
-
-.gsc-btn           { font-size:12px; font-weight:600; padding:5px 12px; border-radius:6px; cursor:pointer; border:1.5px solid transparent; transition:all .12s; line-height:1.4; white-space:nowrap; }
-.gsc-btn-primary   { background:var(--blue); border-color:var(--blue); color:#fff; }
-.gsc-btn-primary:hover { background:#1d4ed8; }
-.gsc-btn-primary:disabled { opacity:.6; cursor:not-allowed; }
-.gsc-btn-ghost     { background:#f8fafc; border-color:var(--border); color:#475569; }
-.gsc-btn-ghost:hover { background:#f1f5f9; border-color:#94a3b8; }
-
-/* Form leg rows (push / adjust / exit forms) */
-.form-leg-row      { display:grid; grid-template-columns:1fr 70px 100px; gap:8px; align-items:end; margin-bottom:8px; }
-.form-leg-row-exit { grid-template-columns:1fr 130px; }
-/* min-width:0 lets grid cells shrink below content size — prevents push form overflow */
-.form-leg-row > * { min-width:0; }
-.form-leg-info     { display:flex; gap:8px; align-items:flex-start; min-width:0; }
-.form-leg-info > div { min-width:0; }
-.rec-leg-sym      { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.rec-leg-contract { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-
-@media (max-width:640px) {
-  /* Card header: let tabs + status selector wrap to a second row */
-  .card-header { flex-wrap: wrap; }
-}
+/* ── Footer — closing tagline + "Made in India" ── */
+.ov-footer       { text-align:center; padding:8px 10px 4px; }
+.ov-footer-tag   { font-size:13px; color:var(--muted); margin-bottom:8px; }
+.ov-footer-brand { font-family:'Sora','Helvetica Neue',Arial,sans-serif; font-weight:700; color:#0f172a; font-style:normal; }
+.ov-footer-made  { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:14px; font-size:10.5px; font-weight:700; color:var(--muted); letter-spacing:.2px; }
+.ov-flag         { display:inline-flex; flex-direction:column; width:14px; height:10px; border-radius:2px; overflow:hidden; border:1px solid var(--border); flex-shrink:0; }
+.ov-flag span    { flex:1; }
+.ov-flag span:nth-child(1) { background:#FF9933; }
+.ov-flag span:nth-child(2) { background:#fff; }
+.ov-flag span:nth-child(3) { background:#138808; }

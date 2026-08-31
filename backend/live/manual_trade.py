@@ -146,6 +146,7 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "", risk_level: 
         exit_level      = 0,
         margin_required = margin_required,
         margin_final    = margin_final,
+        margin_at_entry = margin_final,
         expiry_strs     = [l.get("expiry_str") for l in resolved_legs],
         note            = note,
         risk_level      = risk_level,
@@ -431,9 +432,16 @@ def recalculate_recommendation_margin(rec_id: int) -> float | None:
 
     if margin_required is not None:
         conn = get_connection()
+        # margin_at_entry is immutable once set — COALESCE only populates it the
+        # first time (e.g. right after a roll creates a fresh row with NULL
+        # margin); later recalculations (e.g. after an /adjust) never overwrite
+        # it, so the monthly report can always read back the true entry-time
+        # margin. margin_required/margin_final keep being overwritten as before.
         conn.execute(
-            "UPDATE recommended_trades SET margin_required=?, margin_final=? WHERE id=?",
-            (margin_required, margin_final, rec_id),
+            "UPDATE recommended_trades "
+            "SET margin_required=?, margin_final=?, margin_at_entry=COALESCE(margin_at_entry, ?) "
+            "WHERE id=?",
+            (margin_required, margin_final, margin_final, rec_id),
         )
         conn.commit()
         conn.close()

@@ -204,6 +204,16 @@ def auth_google():
     next_origin = request.args.get("next")
     if next_origin in _CORS_ORIGINS:
         session["post_login_redirect"] = next_origin
+    # Refer & Earn (docs/prd/refer-and-earn.md) — resolve ?ref= to the
+    # referrer's user id now (not the raw code) and stash it, same pattern
+    # as post_login_redirect above; unknown/garbage codes are silently
+    # ignored (falls back to standard signup).
+    ref_code = request.args.get("ref")
+    if ref_code:
+        from db.queries import get_user_by_referral_code
+        referrer = get_user_by_referral_code(ref_code)
+        if referrer:
+            session["referral_referrer_id"] = referrer["id"]
     redirect_uri = url_for("auth_callback", _external=True)
     return google.authorize_redirect(redirect_uri, prompt="consent")
 
@@ -215,12 +225,14 @@ def auth_callback():
         # State mismatch or expired — send back to login to try again
         return redirect(url_for("auth_google"))
     userinfo = token.get("userinfo") or google.userinfo()
+    referrer_user_id = session.pop("referral_referrer_id", None)
     from db.queries import upsert_user
     user = upsert_user(
         google_id = userinfo["sub"],
         email     = userinfo["email"],
         name      = userinfo["name"],
         picture   = userinfo.get("picture", ""),
+        referrer_user_id = referrer_user_id,
     )
     if not user["active"]:
         return redirect(_post_auth_redirect())
@@ -665,6 +677,45 @@ def api_rec_create():
         return jsonify(ok=True, trade_id=trade_id)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 400
+
+
+# ─────────────────────────────────────────────────────────
+# API: reports (all logged-in roles — see docs/prd/monthly-recommendation-report.md's
+# 2026-08-26 revision note; not admin-only despite the platform-wide data)
+# ─────────────────────────────────────────────────────────
+
+@app.route("/api/reports/monthly")
+@require_login
+def api_reports_monthly():
+    from datetime import datetime, timezone, timedelta
+    from db.queries import get_monthly_report
+
+    month_param = request.args.get("month", "").strip()
+    if month_param:
+        try:
+            year_str, month_str = month_param.split("-")
+            year, month = int(year_str), int(month_str)
+            if not (1 <= month <= 12):
+                raise ValueError
+        except ValueError:
+            return jsonify(ok=False, error="Invalid month, expected YYYY-MM"), 400
+    else:
+        now_ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+        year, month = now_ist.year, now_ist.month
+
+    report = get_monthly_report(year, month)
+
+    return jsonify(
+        ok=True,
+        month=f"{year:04d}-{month:02d}",
+        positions_entered=report["positions_entered"],
+        peak_margin_used=report["peak_margin_used"],
+        avg_margin_used=report["avg_margin_used"],
+        margin_series=report["margin_series"],
+        margin_positions=report["margin_positions"],
+        realized_pnl_total=report["realized_pnl_total"],
+        pnl_events=report["pnl_events"],
+    )
 
 
 # ─────────────────────────────────────────────────────────
@@ -1222,6 +1273,25 @@ def api_my_subscription():
     return jsonify(
         current=get_user_subscription(uid),
         history=get_subscription_history(uid),
+    )
+
+
+@app.route("/api/my-referrals", methods=["GET"])
+@require_login
+def api_my_referrals():
+    from db.queries import get_or_create_referral_code, get_referral_stats, get_referral_history
+    from config import REFERRAL_REWARD_GEMS, REFERRAL_SIGNUP_BONUS_GEMS
+    uid   = current_user()["id"]
+    code  = get_or_create_referral_code(uid)
+    stats = get_referral_stats(uid)
+    return jsonify(
+        code=code,
+        referred_count=stats["referred_count"],
+        rewarded_count=stats["rewarded_count"],
+        gems_earned=stats["gems_earned"],
+        referrals=get_referral_history(uid),
+        reward_gems=REFERRAL_REWARD_GEMS,
+        signup_bonus_gems=REFERRAL_SIGNUP_BONUS_GEMS,
     )
 
 

@@ -22,6 +22,10 @@ SYMBOLS = [
 # -----------------------------------------------------------
 SIGNUP_CREDITS = 99          # gems awarded to every new user on first login
 
+# Refer & Earn — see docs/prd/refer-and-earn.md
+REFERRAL_SIGNUP_BONUS_GEMS = 149  # gems awarded to a new user who signs up via a referral link (replaces SIGNUP_CREDITS for that signup)
+REFERRAL_REWARD_GEMS       = 99   # gems awarded to the referrer once the referee's setup_done flips true
+
 # -----------------------------------------------------------
 # Database
 # -----------------------------------------------------------

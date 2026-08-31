@@ -36,11 +36,12 @@ src/
 │   ├── common/    — Toast.jsx, ErrorBoundary.jsx, PageHeader.jsx (back-button + title bar, used by Positions + all /profile/* pages), Icons.jsx (Bank/Game/Chevron/Plus/Trend — shared by Positions' AccountPicker and profile/MyAccounts)
 │   ├── games/     — GameDetail.jsx
 │   ├── nav/       — MainNav.jsx (top + bottom nav, 4 peer tabs), TickerStrip.jsx
-│   ├── trades/    — InstrumentSearch.jsx, LegBuilder.jsx, legHelpers.js (newLeg/collectLegs) — shared by Dashboard's rec forms and Positions' New Trade form
+│   ├── trades/    — InstrumentSearch.jsx, LegBuilder.jsx, legHelpers.js (newLeg/collectLegs) — shared by Trades' rec forms and Positions' New Trade form
 │   └── ui/        — shadcn/ui primitives (button/card/dialog/dropdown-menu/tabs/input/label) — new pages only, see Stack above; no current callers until a new page adopts them
 ├── hooks/         — useMe, useTrades, useGames, usePrices, useSettings, useBilling (TanStack Query)
 ├── screens/
-│   ├── Dashboard.jsx    — Recommended Positions + live games teaser
+│   ├── Dashboard.jsx    — overview/home: active-trades count, monthly report summary, refer-and-earn promo, live games teaser
+│   ├── Trades.jsx       — Recommended Positions (admin-authored recs, push-to-account, adjust/exit)
 │   ├── Positions.jsx    — "My Positions" / "All Positions" (admin): open/history tabs, account switcher, new-trade form
 │   ├── Games.jsx        — paper trading games
 │   ├── Landing.jsx      — unauthenticated landing / login
@@ -51,6 +52,8 @@ src/
 │       ├── MyPlan.jsx           — client: current subscription + history
 │       ├── MyAccounts.jsx       — client: brokerage accounts + capital
 │       ├── Gems.jsx             — client: gem balance + transaction history
+│       ├── Referrals.jsx        — all roles: referral code/link, share, referral history
+│       ├── Reports.jsx          — all roles: monthly recommendation report (margin/P&L)
 │       ├── Brokers.jsx          — admin: broker list
 │       ├── Users.jsx            — admin: user management
 │       ├── Plans.jsx            — admin: subscription plan editor
@@ -62,7 +65,7 @@ src/
 ├── lib/
 │   └── utils.js       — shadcn's cn() class-merge helper (new pages only)
 ├── utils/
-│   └── format.js      — fmtRs/fmtPnl/fmtQty/fmtIstShort, shared by Dashboard, Positions, profile screens
+│   └── format.js      — fmtRs/fmtPnl/fmtQty/fmtIstShort, shared by Dashboard, Trades, Positions, profile screens
 ├── App.jsx        — routing shell, auth gate, setup gate
 └── main.jsx       — React root
 ```
@@ -74,16 +77,17 @@ src/
 - `SetupWizard` if `!user.setup_done`
 - Full shell (nav + routes) otherwise
 
-Subscription gate: `user.subscription_valid !== false` — passed as `subscribed` prop into Dashboard/Games.
+Subscription gate: `user.subscription_valid !== false` — passed as `subscribed` prop into Trades/Games.
 
 ## Routing
 
-Bottom nav (mobile, ≤768px) / top nav (desktop) has 4 peer tabs: `Dashboard | Positions | Games | Profile`. Admin-only `/profile/*` routes self-guard with `if (!isAdmin) return <Navigate to="/profile" replace />`.
+Bottom nav (mobile, ≤768px) / top nav (desktop) has 5 peer tabs: `Dashboard | Trades | Positions | Games | Profile`. Admin-only `/profile/*` routes self-guard with `if (!isAdmin) return <Navigate to="/profile" replace />`.
 
 | Path | Screen | Notes |
 |---|---|---|
 | `/` | redirect → `/dashboard` | |
-| `/dashboard` | Dashboard | Recommended Positions (or `NoSubscriptionGate`) + games teaser |
+| `/dashboard` | Dashboard | Overview: active-trades count, monthly summary, refer-and-earn promo, games teaser |
+| `/trades` | Trades | Recommended Positions (or `NoSubscriptionGate`) |
 | `/positions` | Positions | "My Positions" (client) / "All Positions" (admin) |
 | `/games` | Games list | |
 | `/games/:id` | Game detail | |
@@ -92,6 +96,8 @@ Bottom nav (mobile, ≤768px) / top nav (desktop) has 4 peer tabs: `Dashboard | 
 | `/profile/plan` | MyPlan | client only |
 | `/profile/accounts` | MyAccounts | client only |
 | `/profile/gems` | Gems | client only |
+| `/profile/referrals` | Referrals | all roles |
+| `/profile/reports` | Reports | all roles |
 | `/profile/brokers` | Brokers | admin only |
 | `/profile/users` | Users | admin only |
 | `/profile/plans` | Plans | admin only |
@@ -107,8 +113,9 @@ Bottom nav (mobile, ≤768px) / top nav (desktop) has 4 peer tabs: `Dashboard | 
 ## Key Components
 
 - **TickerStrip** — live price ticker at top, polls `/api/spot`
-- **MainNav** — top nav + mobile bottom nav, 4 peer tabs (Dashboard/Positions/Games/Profile), avatar dropdown (Profile link + Sign out)
-- **Dashboard** — Recommended Positions (admin-authored, with instrument search typeahead for building recs) + live games teaser
+- **MainNav** — top nav + mobile bottom nav, 5 peer tabs (Dashboard/Trades/Positions/Games/Profile), avatar dropdown (Profile link + Sign out)
+- **Dashboard** — overview/home: active-trades count card (→ Trades), monthly report summary, refer-and-earn promo card, live games teaser
+- **Trades** — Recommended Positions (admin-authored, with instrument search typeahead for building recs)
 - **Positions** — the user's own open/closed positions, account switcher, new-trade ticket
 - **profile/*** — account settings screens (identity, plan, accounts, gems for clients; brokers/users/plans/subscriptions for admins), replacing the old `SettingsDrawer`
 - **Games** — paper trading games list + GameDetail

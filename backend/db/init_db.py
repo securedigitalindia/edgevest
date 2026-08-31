@@ -409,6 +409,7 @@ def init_db():
         ("display_code",    "ALTER TABLE recommended_trades ADD COLUMN display_code    TEXT"),
         ("note",            "ALTER TABLE recommended_trades ADD COLUMN note            TEXT"),
         ("risk_level",      "ALTER TABLE recommended_trades ADD COLUMN risk_level      TEXT"),
+        ("margin_at_entry", "ALTER TABLE recommended_trades ADD COLUMN margin_at_entry REAL"),
     ]:
         if col not in existing_cols:
             cur.execute(ddl)
@@ -535,11 +536,23 @@ def init_db():
 
     existing_user_cols = {row[1] for row in cur.execute("SELECT * FROM pragma_table_info('users')")}
     for col, ddl in [
-        ("mobile", "ALTER TABLE users ADD COLUMN mobile TEXT"),
-        ("note",   "ALTER TABLE users ADD COLUMN note   TEXT"),
+        ("mobile",        "ALTER TABLE users ADD COLUMN mobile        TEXT"),
+        ("note",          "ALTER TABLE users ADD COLUMN note          TEXT"),
+        # SQLite rejects `ALTER TABLE ... ADD COLUMN ... UNIQUE` outright
+        # ("Cannot add a UNIQUE column") — enforce uniqueness via a separate
+        # index instead, same as idx_accounts_user_broker below. NULLs are
+        # exempt from SQLite UNIQUE-index enforcement (each NULL is treated
+        # as distinct), so pre-existing rows are unaffected until they first
+        # lazily get a code via get_or_create_referral_code().
+        ("referral_code", "ALTER TABLE users ADD COLUMN referral_code TEXT"),
     ]:
         if col not in existing_user_cols:
             cur.execute(ddl)
+
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_code
+        ON users (referral_code)
+    """)
 
     print("  ✓  Table ready: users")
 
@@ -804,6 +817,28 @@ def init_db():
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_credit_tx_user ON credit_transactions(user_id)")
     print("  ✓  Table ready: credit_transactions")
+
+    # -------------------------------------------------------
+    # referrals — Refer & Earn (docs/prd/refer-and-earn.md)
+    # One row per successful referral signup. status: pending → rewarded
+    # (one-way transition, driven by upsert_user_trading_profile() when the
+    # referee's setup_done first flips true).
+    # -------------------------------------------------------
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS referrals (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_user_id  INTEGER NOT NULL REFERENCES users(id),
+            referee_user_id   INTEGER NOT NULL UNIQUE REFERENCES users(id),
+            status            TEXT    NOT NULL DEFAULT 'pending',
+            created_at        TEXT    NOT NULL,
+            rewarded_at       TEXT
+        )
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_referrals_referrer
+        ON referrals (referrer_user_id, status)
+    """)
+    print("  ✓  Table ready: referrals")
 
     conn.commit()
     conn.close()

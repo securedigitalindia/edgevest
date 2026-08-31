@@ -1,0 +1,109 @@
+.trades-layout { max-width:640px; margin:0 auto; padding:20px 24px; }
+@media (max-width:768px) { .trades-layout { padding:12px; } }
+
+/* Rec item */
+.rec-item         { border:1px solid var(--border); border-left-width:4px; border-radius:10px; margin-bottom:12px; overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.06); transition:box-shadow .15s; }
+.rec-item:hover   { box-shadow:0 4px 14px rgba(0,0,0,.1); }
+.rec-item-open    { border-left-color:#22c55e; }
+.rec-item-exited  { border-left-color:#94a3b8; }
+
+/* Collapse toggle chevron */
+.rec-collapse-btn { display:inline-flex; align-items:center; justify-content:center; margin-left:auto; color:var(--muted); transition:transform .22s ease; flex-shrink:0; }
+.rec-collapse-btn.collapsed { transform:rotate(-90deg); }
+
+/* Collapsible body */
+.rec-body           { overflow:hidden; max-height:1200px; opacity:1; transition:max-height .28s ease, opacity .2s ease; will-change:max-height; }
+.rec-body-collapsed { max-height:0; opacity:0; pointer-events:none; }
+
+/* Prevent browser scroll-anchor jumps when cards expand/collapse */
+.rec-item { overflow-anchor:none; }
+@keyframes rec-highlight {
+  0%   { background:#dbeafe; box-shadow:0 0 0 3px rgba(59,130,246,.35), 0 4px 20px rgba(59,130,246,.18); }
+  45%  { background:#eff6ff; box-shadow:0 0 0 2px rgba(59,130,246,.15), 0 4px 14px rgba(59,130,246,.08); }
+  100% { background:#fff;    box-shadow:0 2px 8px rgba(0,0,0,.06); }
+}
+.rec-item-highlight { animation:rec-highlight 2.8s ease-out forwards; }
+
+.rec-header  { padding:12px 14px 6px; border-bottom:1px solid var(--border); }
+.rec-symbol  { font-weight:800; font-size:16px; color:#0f172a; }
+.rec-ts      { font-size:11px; color:var(--muted); margin-top:4px; overflow-wrap:break-word; }
+.rec-code    { font-weight:700; color:var(--blue); white-space:nowrap; }
+.rec-adj-strip { font-size:11px; color:var(--muted); border-top:1px solid var(--border); margin-top:6px; padding-top:6px; }
+.rec-adj-text  { color:#92400e; font-weight:600; }
+.rec-seg-tag { font-size:10px; padding:2px 7px; border-radius:10px; background:#f1f5f9; color:#64748b; font-weight:600; }
+.rec-legs      { padding:10px 14px 2px; }
+
+/* Risk level badge — traffic-light gradient, low (safest) to very_high */
+.risk-badge     { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
+.risk-low       { background:#dcfce7; color:#15803d; }
+.risk-mid       { background:#fef9c3; color:#854d0e; }
+.risk-high      { background:#ffedd5; color:#c2410c; }
+.risk-very_high { background:#fee2e2; color:#b91c1c; }
+
+/* Side pill */
+.leg-pill      { display:inline-flex; align-items:center; justify-content:center; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; min-width:40px; flex-shrink:0; }
+.leg-pill-buy  { background:#dcfce7; color:#15803d; }
+.leg-pill-sell { background:#fee2e2; color:#dc2626; }
+
+/* Leg rows */
+.rec-leg-row  { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f1f5f9; }
+.rec-leg-row:last-child { border-bottom:none; }
+.rec-leg-name { flex:1; min-width:0; }
+.rec-leg-sym  { font-size:13px; font-weight:700; color:#1e293b; }
+.rec-leg-contract { font-size:11px; color:var(--muted); margin-top:1px; }
+.rec-leg-meta { font-size:12px; color:#475569; white-space:nowrap; }
+
+/* Leg groups */
+.leg-group        { margin-bottom:8px; padding-left:10px; }
+.leg-group-entry  { border-left:3px solid #93c5fd; }
+.leg-group-adj    { border-left:3px solid #fcd34d; }
+.leg-grp-hdr      { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; padding-bottom:4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.leg-grp-note     { font-size:11px; font-weight:600; color:#92400e; text-transform:none; letter-spacing:0; }
+
+/* Connector between entry and adjustment */
+.adj-connector { font-size:10px; font-weight:700; color:#b45309; text-transform:uppercase; letter-spacing:.4px; padding:4px 0 6px 2px; }
+
+/* Stats strip (replaces stacked P&L bars) */
+.rec-stats-strip { display:flex; border-top:1px solid var(--border); }
+.rec-stat        { flex:1; min-width:0; padding:8px 12px; text-align:center; border-right:1px solid var(--border); }
+.rec-stat:last-child { border-right:none; }
+.rec-stat-lbl    { font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; }
+.rec-stat-val    { font-size:14px; font-weight:700; color:var(--text); margin-top:2px; }
+
+/* P&L bar (also used by inline forms below) */
+.pnl-bar { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; border-top:1px solid var(--border); background:#f8fafc; font-size:13px; }
+.pnl-bar-lbl { color:var(--muted); font-size:12px; }
+.pnl-neu   { color:var(--muted); }
+
+/* Action bar & notices */
+.rec-action-bar { display:flex; gap:8px; padding:8px 14px; border-top:1px solid var(--border); background:#fafafa; flex-wrap:wrap; }
+.rec-adj-notice { margin:10px 14px 12px; padding:10px 14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; display:flex; align-items:flex-start; gap:10px; }
+
+/* Inline forms (push / adjust / exit) */
+.inline-action { padding:12px; border-top-width:2px; border-top-style:solid; }
+.inline-action h4 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
+.action-adj   { border-top-color:#e0e7ff; background:#f5f3ff; }
+.action-adj h4  { color:#3730a3; }
+.action-exit  { border-top-color:#fee2e2; background:#fff9f9; }
+.action-exit h4 { color:var(--red); }
+.action-push  { border-top-color:#bfdbfe; background:#f0f7ff; }
+.action-push h4 { color:#1d4ed8; }
+
+/* Account chips (unused currently — kept for forward-compat with account-chip UI) */
+.add-account-link { background:none; border:none; padding:0; font-size:12px; color:var(--blue); cursor:pointer; white-space:nowrap; text-decoration:underline; text-underline-offset:2px; flex-shrink:0; }
+.add-account-link:hover { color:var(--blue-dark,#1d4ed8); }
+
+/* Form leg rows (push / adjust / exit forms) */
+.form-leg-row      { display:grid; grid-template-columns:1fr 70px 100px; gap:8px; align-items:end; margin-bottom:8px; }
+.form-leg-row-exit { grid-template-columns:1fr 130px; }
+/* min-width:0 lets grid cells shrink below content size — prevents push form overflow */
+.form-leg-row > * { min-width:0; }
+.form-leg-info     { display:flex; gap:8px; align-items:flex-start; min-width:0; }
+.form-leg-info > div { min-width:0; }
+.rec-leg-sym      { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rec-leg-contract { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+@media (max-width:640px) {
+  /* Card header: let tabs + status selector wrap to a second row */
+  .card-header { flex-wrap: wrap; }
+}
