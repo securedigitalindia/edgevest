@@ -5,7 +5,8 @@ import { useMonthlyReport } from '../hooks/useReports'
 import { listGames, getMyReferrals } from '../api/games'
 import { shortMonthLabel, currentIstMonth, roi } from './profile/reportUtils'
 import MonthSummaryCard from './profile/MonthSummaryCard'
-import { ChartIcon, PeopleIcon, GameIcon } from '../components/common/Icons'
+import { ChartIcon, PeopleIcon, GameIcon, BookIcon } from '../components/common/Icons'
+import { ARTICLES } from '../content/education'
 import './Dashboard.css'
 
 // ─── Featured tile — one compact nav tile per feature (Trades, Reports,
@@ -14,9 +15,9 @@ import './Dashboard.css'
 // icon + title + subtitle, not a big numeric "value" like the old stat
 // cards — that fuller detail lives on the destination screen. ─────────────
 
-function FeaturedTile({ color, icon, ribbon, ribbonColor, title, subtitle, onClick }) {
+function FeaturedTile({ color, icon, ribbon, ribbonColor, title, subtitle, onClick, wide }) {
   return (
-    <div className={`ov-tile ov-tile-${color}`} onClick={onClick}>
+    <div className={`ov-tile ov-tile-${color}${wide ? ' ov-tile-wide' : ''}`} onClick={onClick}>
       {ribbon && <span className={`ov-ribbon ov-ribbon-${ribbonColor}`}>{ribbon}</span>}
       <div className={`ov-tile-icon ov-tile-icon-${color}`}>{icon}</div>
       <div className="ov-tile-title">{title}</div>
@@ -67,6 +68,12 @@ function FeaturedGrid() {
           ribbon={liveGamesCount > 0 ? `${liveGamesCount} live` : 'Play & earn'}
           title="Games" subtitle="Predictions & challenges"
           onClick={() => navigate('/games')} />
+        <FeaturedTile
+          wide
+          color="teal" ribbonColor="teal" icon={<BookIcon size={22}/>}
+          ribbon={`${ARTICLES.length} guides`}
+          title="Learn Trading & Investing" subtitle="How EdgeVest's strategies work, and the F&O basics behind them"
+          onClick={() => navigate('/profile/learn')} />
       </div>
     </>
   )

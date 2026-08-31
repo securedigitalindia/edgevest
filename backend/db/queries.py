@@ -683,14 +683,30 @@ def get_monthly_report(year: int, month: int) -> dict:
     # status was tried as a third axis (2026-08-31) and rejected — the
     # reader only cares "did this show up on the desk this month or not",
     # not the underlying lineage mechanics.
+    # A row with margin_at_entry IS NULL (unrecoverable — e.g. a rolled
+    # trade whose contract expired before its margin could ever be
+    # backfilled, see scripts/backfill_exited_rolled_trade_margins.py)
+    # still touched margin this month in every sense that matters to the
+    # Booked/Open and New/Carried counts below — it just contributes 0 to
+    # the margin *sum*, exactly like the PRD's original data-model note for
+    # margin_series already says NULL rows should. Skipping it from
+    # margin_positions entirely (as this used to do) silently shrank
+    # totalPositions while pnl_events (bookedCount)'s own query has no such
+    # filter — Total and Booked drift out of the "Total = Booked + Open"
+    # invariant the moment one exists, deflating "Open" below its true
+    # value (2026-09 incident: a prod month showed 6 open at month-end but
+    # 8 still open today, which is impossible if the invariant holds — the
+    # missing 2 were NULL-margin trades subtracted via bookedCount without
+    # ever being added to totalPositions). Only `intervals` (which feeds the
+    # margin day-by-day sum/peak/avg) still excludes NULL-margin rows —
+    # correctly, since there's no real number to contribute there.
     new_position_count, carried_position_count = 0, 0
     for trade_id, symbol, display_code, entry_time, exit_time, status, margin_at_entry, parent_trade_id in margin_rows:
-        if margin_at_entry is None:
-            continue
         entry_date = _ist_date(entry_time)
         exit_date  = _ist_date(exit_time) if (status != "open" and exit_time) else None
-        exit_inclusive = not (exit_date is not None and child_entry_date_by_parent_id.get(trade_id) == exit_date)
-        intervals.append((entry_date, exit_date, margin_at_entry, exit_inclusive))
+        if margin_at_entry is not None:
+            exit_inclusive = not (exit_date is not None and child_entry_date_by_parent_id.get(trade_id) == exit_date)
+            intervals.append((entry_date, exit_date, margin_at_entry, exit_inclusive))
         entered_this_month = month_start_str <= entry_time < effective_end_str
         if entered_this_month:
             new_position_count += 1
@@ -702,7 +718,7 @@ def get_monthly_report(year: int, month: int) -> dict:
             "display_code":    display_code,
             "entry_date":      entry_date.isoformat(),
             "exit_date":       exit_date.isoformat() if exit_date else None,
-            "margin_at_entry": round(margin_at_entry, 2),
+            "margin_at_entry": round(margin_at_entry, 2) if margin_at_entry is not None else None,
         })
 
     first_day = date(year, month, 1)
@@ -777,8 +793,10 @@ def get_monthly_report(year: int, month: int) -> dict:
         p["realized_pnl"] = pnl_by_trade.get(p["trade_id"])
 
     # Sort so the UI can show the biggest margin contributors / most recent
-    # exits first without re-sorting client-side.
-    margin_positions.sort(key=lambda p: p["margin_at_entry"], reverse=True)
+    # exits first without re-sorting client-side. A None margin_at_entry
+    # (unrecoverable, see the note above) sorts last, not first — treating
+    # it as 0 for ordering purposes only, never for the actual margin math.
+    margin_positions.sort(key=lambda p: p["margin_at_entry"] if p["margin_at_entry"] is not None else -1, reverse=True)
 
     return {
         "positions_entered":      positions_entered,

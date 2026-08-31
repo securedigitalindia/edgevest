@@ -33,6 +33,8 @@ const Users           = lazy(() => import('./screens/profile/Users'))
 const Plans           = lazy(() => import('./screens/profile/Plans'))
 const Subscriptions   = lazy(() => import('./screens/profile/Subscriptions'))
 const Reports         = lazy(() => import('./screens/profile/Reports'))
+const Learn           = lazy(() => import('./screens/profile/Learn'))
+const LearnArticle    = lazy(() => import('./screens/profile/LearnArticle'))
 
 const Loading = () => <div className="empty" style={{marginTop:80}}>Loading…</div>
 
@@ -83,6 +85,8 @@ function AppShell() {
           <Route path="/profile/plans"         element={<Plans />} />
           <Route path="/profile/subscriptions" element={<Subscriptions />} />
           <Route path="/profile/reports"       element={<Reports />} />
+          <Route path="/profile/learn"         element={<Learn />} />
+          <Route path="/profile/learn/:slug"   element={<LearnArticle />} />
           <Route path="*"                      element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Suspense>

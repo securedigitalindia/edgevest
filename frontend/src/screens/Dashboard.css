@@ -28,11 +28,19 @@
 .ov-tile-indigo { background:#f1eeff; }
 .ov-tile-amber  { background:#fff8ea; }
 .ov-tile-green  { background:#eefbf3; }
+.ov-tile-teal   { background:#eafbfa; }
+
+/* Learn is the 5th tile in a 2-col grid — rather than leave a lone tile
+   floating next to an empty gap on its own row, it spans both columns as a
+   shorter banner instead, keeping the same internal layout (ribbon/title/
+   sub/decorative icon) just wider and less tall. */
+.ov-tile-wide { grid-column:1 / -1; min-height:auto; padding:12px 14px; }
 
 .ov-ribbon        { align-self:flex-start; font-size:9.5px; font-weight:800; padding:3px 8px; border-radius:20px; margin-bottom:10px; color:#fff; white-space:nowrap; }
 .ov-ribbon-green  { background:#16a34a; }
 .ov-ribbon-amber  { background:#d97706; }
 .ov-ribbon-blue   { background:#2563eb; }
+.ov-ribbon-teal   { background:#0d9488; }
 .ov-ribbon-muted  { background:#94a3b8; }
 
 .ov-tile-icon       { position:absolute; right:10px; bottom:8px; opacity:.16; }
@@ -40,6 +48,7 @@
 .ov-tile-icon-indigo { color:#4f46e5; }
 .ov-tile-icon-amber  { color:#d97706; }
 .ov-tile-icon-green  { color:#15803d; }
+.ov-tile-icon-teal   { color:#0d9488; }
 
 .ov-tile-title { position:relative; font-size:14.5px; font-weight:800; color:#0f172a; margin-bottom:2px; }
 .ov-tile-sub   { position:relative; font-size:11px; color:var(--muted); line-height:1.4; max-width:85%; }

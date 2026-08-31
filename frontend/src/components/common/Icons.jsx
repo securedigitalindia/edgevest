@@ -183,6 +183,14 @@ export function ChartIcon({ size = 18 }) {
   )
 }
 
+export function BookIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>
+    </svg>
+  )
+}
+
 export function TrendIcon({ size = 14, up }) {
   // Base path's arrowhead sits at the top-right (17,7) — an up-right
   // ("growth") arrow by default. Flip it to point down-right for the
