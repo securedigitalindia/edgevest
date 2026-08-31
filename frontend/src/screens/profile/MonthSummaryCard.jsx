@@ -156,7 +156,7 @@ export default function MonthSummaryCard({ compact = false, status, onStatusChan
           </div>
         )}
 
-        <div className={`msc-split${showBooked && showRunning ? '' : ' msc-split-single'}`}>
+        <div className="msc-split">
           {/* Whole tile is the click target (not just a small count badge) —
               drills into Trades pre-filtered to that tile's status.
               stopPropagation'd against the card's own click-through to the
