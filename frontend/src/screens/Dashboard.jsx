@@ -35,9 +35,14 @@ function FeaturedGrid() {
   const { data: refData } = useQuery({ queryKey: ['my-referrals'], queryFn: getMyReferrals })
   const rewardGems = refData?.reward_gems
 
+  // roi() already resolves to '—' on its own when avg_margin_used is truly
+  // 0 (nothing touching margin this month at all) — gating on pnl_events'
+  // length here duplicated that check incorrectly: 0 exits doesn't mean 0
+  // margin deployed, it can mean fully-deployed capital with nothing
+  // booked yet, in which case 0.0% is the real, honest ROI to show (same
+  // bug/fix as MonthSummaryCard.jsx's Booked ROI tile).
   const { data: monthData } = useMonthlyReport()
-  const bookedCount = (monthData?.pnl_events || []).length
-  const bookedRoi   = bookedCount > 0 ? roi(monthData.realized_pnl_total, monthData.avg_margin_used) : null
+  const bookedRoi   = roi(monthData?.realized_pnl_total, monthData?.avg_margin_used)
   const month       = currentIstMonth()
   const monthShort  = shortMonthLabel(month) // "Aug" — goes in the ribbon so the month is visible even with no ROI yet
 
@@ -55,7 +60,7 @@ function FeaturedGrid() {
           onClick={() => navigate('/trades')} />
         <FeaturedTile
           color="indigo" ribbonColor="blue" icon={<ChartIcon size={22}/>}
-          ribbon={bookedRoi ? `${monthShort}: ${bookedRoi.text} ROI` : monthShort}
+          ribbon={bookedRoi.text !== '—' ? `${monthShort}: ${bookedRoi.text} ROI` : monthShort}
           title="Reports" subtitle="Monthly performance"
           onClick={() => navigate('/profile/reports')} />
         <FeaturedTile

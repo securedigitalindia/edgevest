@@ -211,8 +211,16 @@ export default function MonthSummaryCard({ compact = false, status, onStatusChan
                 </span>
                 <span className="msc-split-count">{bookedCount} exited</span>
               </div>
-              <div className="msc-split-val" style={{color: bookedCount > 0 ? bookedRoi.color : 'var(--text)'}}>
-                {bookedCount > 0 ? bookedRoi.text : '—'}
+              {/* bookedRoi already resolves to '—' on its own (roi()'s
+                  no-denominator case) when avg_margin_used is truly 0 — an
+                  entirely empty month with nothing touching margin at all.
+                  bookedCount === 0 alone doesn't imply that: margin can be
+                  fully deployed by still-open positions with nothing
+                  exited yet, in which case realised P&L is genuinely ₹0
+                  and 0.0% is the correct, honest ROI to show — not a blank
+                  dash that reads as "no data" when there actually is. */}
+              <div className="msc-split-val" style={{color: bookedRoi.color}}>
+                {bookedRoi.text}
               </div>
               <div className="msc-split-foot">
                 {bookedCount > 0
