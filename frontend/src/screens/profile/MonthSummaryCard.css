@@ -72,7 +72,13 @@
    it isn't. Colors match the exited/open convention on the Trades page
    (Trades.css's .rec-item-exited / .rec-item-open, .status-dot-*). */
 .msc-split       { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
-@media (max-width:480px) { .msc-split { grid-template-columns:1fr; } }
+/* Same bug class as Dashboard.css's .ov-tile-grid: a 480px collapse breakpoint
+   is wider than nearly every real phone's CSS viewport (~360-430px), so this
+   was silently stacking Booked/Running vertically on virtually all mobile —
+   defeating the whole point of a side-by-side split (see comment above).
+   340px only catches genuinely tiny viewports, matching .msc-hero-secondary's
+   own threshold below. */
+@media (max-width:340px) { .msc-split { grid-template-columns:1fr; } }
 /* Trades' compact card shows only the tile matching its active status
    filter — full width instead of half a row of an otherwise-empty grid. */
 .msc-split-single { grid-template-columns:1fr; }

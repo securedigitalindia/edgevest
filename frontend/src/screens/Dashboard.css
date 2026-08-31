@@ -11,9 +11,14 @@
 /* Featured — 2x2 grid of compact nav tiles (Trades / Reports / Refer & Earn
    / Games), each a colored tint with one highlight ribbon and a large,
    faint decorative icon — not a stat card with a big number, the full
-   detail for each lives on its destination screen. */
+   detail for each lives on its destination screen. Always 2 columns,
+   including on phones — a 420px collapse-to-1-column breakpoint here was a
+   bug, not a real design tier: nearly every phone's CSS viewport (~360–430px)
+   is narrower than that, so the grid was silently falling back to a single
+   stacked column on virtually all real devices instead of the intended 2x2,
+   even though a ~150-190px tile (two columns minus gap/padding on a
+   360-430px phone) is plenty for this tile's compact content. */
 .ov-tile-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:26px; }
-@media (max-width:420px) { .ov-tile-grid { grid-template-columns:1fr; } }
 
 .ov-tile        { position:relative; border:1px solid var(--border); border-radius:14px; padding:14px; overflow:hidden; cursor:pointer;
                    min-height:128px; display:flex; flex-direction:column; transition:box-shadow .15s ease, transform .15s ease; }
