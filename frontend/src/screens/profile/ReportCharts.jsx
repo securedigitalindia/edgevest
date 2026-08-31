@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { fmtRs } from '../../utils/format'
-import { fmtDayLabel, fmtCompact, niceMax, dayOfMonth, daysHeld, posLabel, shortMonthLabel, fmtPnlPlain } from './reportUtils'
+import { fmtDayLabel, fmtCompact, niceMax, dayOfMonth, posLabel, fmtPnlPlain } from './reportUtils'
 
 // ─── Chart scaffolding (hand-rolled SVG, no charting dependency) ───────────
 // Shared viewBox/padding so the margin and P&L charts line up visually.
@@ -27,9 +27,14 @@ function ChartFrame({ yTicks, yFmt, xLabels, children, zeroY }) {
       ))}
       {/* baseline axis */}
       <line x1={PAD.left} y1={zeroY} x2={CW - PAD.right} y2={zeroY} className="rep-chart-axis" />
-      {/* x-axis labels */}
-      {xLabels.map(({ x, label }, i) => (
-        <text key={i} x={x} y={CH - 4} className="rep-chart-xlabel" textAnchor={i === 0 ? 'start' : i === xLabels.length - 1 ? 'end' : 'middle'}>{label}</text>
+      {/* x-axis labels — each entry controls its own `anchor` (defaults to
+          'middle', for a label centered under a specific point) and
+          optional `row` (0 or 1) to stagger a label onto a second line, for
+          callers with several labels packed close enough on the x-axis
+          that same-row text would collide (e.g. two exit-day bars a couple
+          of days apart). */}
+      {xLabels.map(({ x, label, row = 0, anchor = 'middle' }, i) => (
+        <text key={i} x={x} y={CH - 4 - row * 9} className="rep-chart-xlabel" textAnchor={anchor}>{label}</text>
       ))}
       {children}
     </svg>
@@ -64,7 +69,7 @@ export function MarginStepChart({ series, totalDays }) {
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ y: yScale(max * f), v: max * f }))
   const xLabels = [pts[0], pts[Math.floor((pts.length - 1) / 2)], pts[pts.length - 1]]
-    .map(p => ({ x: p.x, label: fmtDayLabel(p.date) }))
+    .map((p, i, arr) => ({ x: p.x, label: fmtDayLabel(p.date), anchor: i === 0 ? 'start' : i === arr.length - 1 ? 'end' : 'middle' }))
 
   // Column width for hover targets — width per day, clamped to at least a
   // few px so a sparse (start-of-month) series is still easy to hover.
@@ -107,7 +112,7 @@ export function MarginStepChart({ series, totalDays }) {
 // no exit that day, a bar's color is simply whether that day's net booked
 // result was a gain or a loss (multiple same-day exits net into one bar).
 
-export function PnlDailyBarChart({ events, totalDays, monthStart }) {
+export function PnlDailyBarChart({ events, totalDays }) {
   const [hover, setHover] = useState(null)
 
   if (!events || events.length === 0) return <ChartEmpty label="No positions exited this month." />
@@ -133,22 +138,43 @@ export function PnlDailyBarChart({ events, totalDays, monthStart }) {
   const barW = Math.max(6, Math.min(28, (PLOT_W / Math.max(days, 1)) * 0.6))
 
   const yTicks = [-1, -0.5, 0, 0.5, 1].map(f => ({ y: yScale(maxAbs * f), v: maxAbs * f }))
-  const xLabels = [
-    { x: xForDay(1, days), label: fmtDayLabel(`${monthStart}-01`) },
-    { x: xForDay(days, days), label: fmtDayLabel(pts[pts.length - 1].date) },
-  ]
+  // Every exit day gets its own x-axis label instead of just the month's
+  // first/last day — a P&L bar is meaningless without knowing which day it
+  // is, and there are rarely more than a handful of exit days in a month to
+  // fit. Past ~10 bars, per-bar labels would start to collide, so fall back
+  // to the margin chart's own sparser start/mid/end labeling in that case.
+  // Per-bar labels always alternate rows (regardless of actual spacing) —
+  // two exit days a couple of days apart (e.g. a roll's old/new legs
+  // exiting close together) would otherwise overlap on a single line.
+  const xLabels = pts.length <= 10
+    ? pts.map((p, i) => ({ x: p.x, label: fmtDayLabel(p.date), row: i % 2 }))
+    : [pts[0], pts[Math.floor((pts.length - 1) / 2)], pts[pts.length - 1]]
+        .map((p, i, arr) => ({ x: p.x, label: fmtDayLabel(p.date), anchor: i === 0 ? 'start' : i === arr.length - 1 ? 'end' : 'middle' }))
+
+  // Value labels sit right on the chart (not hover-only) so the reader
+  // never has to guess a bar's magnitude from its height alone — small nets
+  // especially can shrink to a barely-visible sliver next to a big one on
+  // the same shared scale. Clamped inside the plot area so a near-max bar's
+  // label can't clip past the top/bottom edge.
+  const labelY = p => p.net >= 0
+    ? Math.max(p.y - 6, PAD.top + 8)
+    : Math.min(p.y + 14, CH - PAD.bottom - 4)
 
   return (
     <div className="rep-chart-wrap">
       <ChartFrame yTicks={yTicks} yFmt={fmtCompact} xLabels={xLabels} zeroY={zeroY}>
         {pts.map((p, i) => (
-          <rect key={i}
-                x={p.x - barW / 2} y={Math.min(p.y, zeroY)} width={barW} height={Math.max(Math.abs(p.y - zeroY), 1)}
-                rx={2}
-                className={p.net >= 0 ? 'rep-pnl-bar-pos' : 'rep-pnl-bar-neg'}
-                opacity={hover === i || hover == null ? 1 : .55}
-                onMouseEnter={() => setHover(i)}
-                onMouseLeave={() => setHover(h => (h === i ? null : h))} />
+          <g key={i}
+             opacity={hover === i || hover == null ? 1 : .55}
+             onMouseEnter={() => setHover(i)}
+             onMouseLeave={() => setHover(h => (h === i ? null : h))}>
+            <rect x={p.x - barW / 2} y={Math.min(p.y, zeroY)} width={barW} height={Math.max(Math.abs(p.y - zeroY), 1)}
+                  rx={2}
+                  className={p.net >= 0 ? 'rep-pnl-bar-pos' : 'rep-pnl-bar-neg'} />
+            <text x={p.x} y={labelY(p)} textAnchor="middle" className={`rep-chart-barlabel ${p.net >= 0 ? 'rep-chart-barlabel-pos' : 'rep-chart-barlabel-neg'}`}>
+              {fmtCompact(p.net)}{p.count > 1 ? ` ×${p.count}` : ''}
+            </text>
+          </g>
         ))}
       </ChartFrame>
       {hover != null && (
@@ -167,41 +193,68 @@ export function PnlDailyBarChart({ events, totalDays, monthStart }) {
 // are never just an abstract line — every figure traces back to something
 // concrete a reader can recognize (symbol + code) and click into if needed.
 
-export function MarginPositionsList({ positions, month, atCurrentMonth }) {
+// `bookedOnly` is the Realized P&L tab's view of this same list — every
+// position here already carries its own margin_at_entry AND (when it
+// exited this month) its booked P&L, so there's no separate dataset/format
+// needed for "what got booked": just this list, filtered down to the rows
+// that actually have a booked amount, hiding the still-running ones (they
+// have nothing to book yet). Kept as one shared component rather than a
+// second list with its own layout, so margin and P&L views of "which
+// positions" always read identically.
+export function MarginPositionsList({ positions, month, atCurrentMonth, bookedOnly = false }) {
   if (!positions || positions.length === 0) {
-    return <div className="empty">No positions blocked margin this month.</div>
+    return <div className="empty">{bookedOnly ? 'No positions exited this month.' : 'No positions blocked margin this month.'}</div>
   }
+
+  // A position's real exit_date can fall in a LATER month than the one being
+  // viewed (carry-forward) — showing that future date here would read as
+  // "already exited," making the margin look released during a month it was
+  // actually still blocking. Only treat it as "exited" if the exit genuinely
+  // happened within the month currently on screen.
+  const annotated = positions
+    .map(p => {
+      const exitedThisMonth   = p.exit_date && p.exit_date.slice(0, 7) === month
+      const stillOpenGlobally = !p.exit_date
+      const carriedOrOpen     = stillOpenGlobally || (p.exit_date && !exitedThisMonth)
+      return { ...p, exitedThisMonth, carriedOrOpen }
+    })
+    .filter(p => !bookedOnly || p.exitedThisMonth)
+
+  if (bookedOnly && annotated.length === 0) {
+    return <div className="empty">No positions exited this month.</div>
+  }
+
+  // Running first, closed-this-month after — within each group, keep the
+  // backend's own margin-descending order (Array.prototype.sort is stable).
+  // A no-op under bookedOnly (every remaining row is already !carriedOrOpen).
+  const sorted = [...annotated].sort((a, b) => (a.carriedOrOpen === b.carriedOrOpen) ? 0 : a.carriedOrOpen ? -1 : 1)
+
   return (
     <div className="rep-pos-list">
-      {positions.map(p => {
-        // A position's real exit_date can fall in a LATER month than the one
-        // being viewed (carry-forward) — showing that future date here would
-        // read as "already exited," making the margin look released during a
-        // month it was actually still blocking. Only treat it as "exited" if
-        // the exit genuinely happened within the month currently on screen.
-        const exitedThisMonth  = p.exit_date && p.exit_date.slice(0, 7) === month
-        const stillOpenGlobally = !p.exit_date
-        const carriedOrOpen     = stillOpenGlobally || (p.exit_date && !exitedThisMonth)
-
-        // Badge language depends on whether we're looking at the live,
-        // still-running month or a past one — "Blocking now" is only true in
-        // present tense for the current month; for a past month the honest
-        // framing is historical ("was active"), not live.
-        let badge = null
-        if (carriedOrOpen) {
-          if (atCurrentMonth) badge = 'Running'
-          else if (stillOpenGlobally) badge = `Active in ${shortMonthLabel(month)} · still open today`
-          else badge = `Active in ${shortMonthLabel(month)} · exited ${fmtDayLabel(p.exit_date)}`
+      {sorted.map(p => {
+        // The date-range text itself carries the full lifecycle now (no
+        // separate badge chip needed) — the live current month never has a
+        // real "month end" to compare against yet, so a still-running
+        // position there just reads through to today; a past month's
+        // running-at-the-time position instead shows the full progression
+        // (entered → still counted through that month's end → what
+        // happened since, if anything).
+        let rangeText
+        if (p.exitedThisMonth) {
+          rangeText = `${fmtDayLabel(p.entry_date)} → ${fmtDayLabel(p.exit_date)}`
+        } else if (atCurrentMonth) {
+          rangeText = `${fmtDayLabel(p.entry_date)} → still open today`
+        } else if (!p.exit_date) {
+          rangeText = `${fmtDayLabel(p.entry_date)} → active till month end → still open today`
+        } else {
+          rangeText = `${fmtDayLabel(p.entry_date)} → active till month end → exited ${fmtDayLabel(p.exit_date)}`
         }
 
         return (
-          <div key={p.trade_id} className={`rep-pos-row ${carriedOrOpen ? 'rep-pos-row-open' : ''}`}>
+          <div key={p.trade_id} className={`rep-pos-row ${p.carriedOrOpen ? 'rep-pos-row-open' : ''}`}>
             <div className="rep-pos-main">
               <div className="rep-pos-label">{posLabel(p)}</div>
-              <div className="rep-pos-sub">
-                {fmtDayLabel(p.entry_date)} → {exitedThisMonth ? fmtDayLabel(p.exit_date) : 'month end'}
-                {badge && <span className="rep-pos-open-badge">{badge}</span>}
-              </div>
+              <div className="rep-pos-sub">{rangeText}</div>
             </div>
             <div className="rep-pos-amt-col">
               <div className="rep-pos-amt">{fmtRs(p.margin_at_entry)}</div>
@@ -218,35 +271,3 @@ export function MarginPositionsList({ positions, month, atCurrentMonth }) {
   )
 }
 
-export function PnlPositionsList({ events, month }) {
-  if (!events || events.length === 0) {
-    return <div className="empty">No positions exited this month.</div>
-  }
-  const sorted = [...events].sort((a, b) => b.exit_date.localeCompare(a.exit_date))
-  return (
-    <div className="rep-pos-list">
-      {sorted.map(e => {
-        // Booking-date P&L puts the full amount here even if most of the
-        // hold happened in earlier months — flag that plainly rather than
-        // let a long-held trade's number look like a single-month result.
-        const heldAcrossMonths = e.entry_date && e.entry_date.slice(0, 7) !== month
-        const n = e.entry_date ? daysHeld(e.entry_date, e.exit_date) : null
-        return (
-          <div key={e.trade_id} className="rep-pos-row">
-            <div className="rep-pos-main">
-              <div className="rep-pos-label">{posLabel(e)}</div>
-              <div className="rep-pos-sub">
-                {heldAcrossMonths ? `Held ${fmtDayLabel(e.entry_date)} → ${fmtDayLabel(e.exit_date)}` : `Exited ${fmtDayLabel(e.exit_date)}`}
-                {n != null && <span className="rep-pos-days">({n} day{n === 1 ? '' : 's'})</span>}
-                {heldAcrossMonths && <span className="rep-pos-open-badge rep-pos-badge-neutral">Booked in full in {shortMonthLabel(month)}</span>}
-              </div>
-            </div>
-            <div className="rep-pos-amt" style={{ color: e.realized_pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-              {fmtPnlPlain(e.realized_pnl)}
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}

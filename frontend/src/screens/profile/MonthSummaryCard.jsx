@@ -125,6 +125,15 @@ export default function MonthSummaryCard({ compact = false, status, onStatusChan
         {!compact && (
           <div className="msc-hero-top-row">
             <div className="msc-hero-label">{monthLabel(nowMonth)}</div>
+            {/* positions_entered, not new_position_count: this pill's label
+                is time-scoped ("this month"), so it wants every row entered
+                in-range, rolls included — a roll is still a genuinely new
+                row/margin, just linked to a prior position (see queries.py's
+                get_monthly_report() docstring). new_position_count answers a
+                different question (Reports.jsx's New/Rolled chips: of
+                everything touching margin this month regardless of *when*
+                it entered, how much is/isn't a rollover) — don't conflate
+                the two here. */}
             <span className="msc-pill msc-pill-blue">{data.positions_entered ?? 0} new this month</span>
           </div>
         )}

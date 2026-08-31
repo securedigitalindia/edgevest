@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react'
 import { useMonthlyReport } from '../../hooks/useReports'
 import PageHeader from '../../components/common/PageHeader'
 import { fmtRs } from '../../utils/format'
-import { MarginStepChart, PnlDailyBarChart, MarginPositionsList, PnlPositionsList } from './ReportCharts'
+import { MarginStepChart, PnlDailyBarChart, MarginPositionsList } from './ReportCharts'
 import { currentIstMonth, shiftMonth, monthLabel, shortMonthLabel, daysInMonth, roi, fmtPnlPlain } from './reportUtils'
 import { BankIcon, TrendIcon } from '../../components/common/Icons'
+import './Profile.css'
 import './Reports.css'
 
 export default function Reports() {
@@ -28,6 +29,15 @@ export default function Reports() {
   const openAtMonthEnd    = totalPositions - bookedCount
   const stillOpenToday    = marginPositions.filter(p => !p.exit_date).length
   const showStillOpenNote = !atCurrentMonth && stillOpenToday !== openAtMonthEnd
+
+  // Two-way, mutually-exclusive split of totalPositions itself (not a
+  // date-range "entered this month" count), purely by entry timing: new
+  // (entered this month — a roll that happened this month still counts as
+  // new, same as a fresh open) vs carried (entered an earlier month, still
+  // touching margin this month, rollover or not). See queries.py's
+  // get_monthly_report() docstring for the full reasoning.
+  const newCount     = data?.new_position_count ?? 0
+  const carriedCount = data?.carried_position_count ?? 0
 
   return (
     <div className="profile-page">
@@ -54,16 +64,30 @@ export default function Reports() {
               {fmtPnlPlain(data.realized_pnl_total ?? 0)} realized on {fmtRs(data.avg_margin_used)} average capital deployed
             </p>
 
-            {/* Position counts — Booked vs Open is the one split that
-                actually partitions "Total": every position touching this
-                month's margin either exited during it or is still open as of
-                its end, nothing else. "New this month" (positions_entered) is
-                a different, overlapping axis — it can include carry-forward
-                rolls and never sums with Booked/Open — so it rides along as
-                a plain qualifier on the total line instead of sitting in the
-                split as if it were a third slice of the same pie. Booked/Open
-                colored to match the exited/open convention used everywhere
-                else (Trades page, Dashboard's own Booked/Running split card).
+            {/* Position counts — two independent partitions of the same
+                "Total" (totalPositions), shown as two separate lines rather
+                than mixed into one split: Booked vs Open (by exit status —
+                the tiles below) and New vs Carried (by entry timing — the
+                chip row right here). Each partition individually sums back
+                to Total, but they don't sum with EACH OTHER — a position
+                can be New AND Booked (opened and exited same month), New
+                AND Open, Carried AND Booked, Carried AND Open — so this
+                chip row rides as its own line instead of sitting inside the
+                Booked/Open split as if it were extra slices of the same
+                pie. Booked/Open colored to match the exited/open convention
+                used everywhere else (Trades page, Dashboard's own
+                Booked/Running split card).
+
+                New/Carried, in queries.py's get_monthly_report() terms: pure
+                entry-timing split, parent_trade_id plays no role — "new" =
+                entered THIS month (a roll that happened this month still
+                counts as new: it's a genuinely new row with its own
+                freshly-computed margin, not a continuation of the parent's
+                own identity); "carried" = entered an EARLIER month, still
+                touching margin this month (rollover or not). Rollover
+                status as a separate third bucket was tried (2026-08-31) and
+                reverted — readers only care whether a position showed up on
+                the desk this month, not the lineage mechanics behind it.
 
                 Historical framing matters here: for a PAST month, "open" must
                 mean "still open when that month ended", not "open today" —
@@ -80,8 +104,19 @@ export default function Reports() {
             <div className="rep-count-row">
               <div className="rep-count-total">
                 <span className="rep-count-total-val">{totalPositions}</span> position{totalPositions === 1 ? '' : 's'} touched margin this month
-                {(data.positions_entered ?? 0) > 0 && <span className="rep-count-new"> · {data.positions_entered} new</span>}
               </div>
+              {totalPositions > 0 && (
+                <div className="rep-count-new-row">
+                  <span className="rep-chip rep-chip-new" title={`${newCount} position${newCount === 1 ? '' : 's'} opened this month (a roll that happened this month counts as new too)`}>
+                    <span className="rep-dot rep-dot-new" />{newCount} new
+                  </span>
+                  {carriedCount > 0 && (
+                    <span className="rep-chip rep-chip-carried" title={`${carriedCount} position${carriedCount === 1 ? '' : 's'} opened in an earlier month and still touching margin this month`}>
+                      <span className="rep-dot rep-dot-carried" />{carriedCount} carried forward
+                    </span>
+                  )}
+                </div>
+              )}
               <div className="rep-count-split">
                 <div className="rep-count-tile rep-count-tile-booked">
                   <div className="rep-count-tile-top"><span className="rep-dot rep-dot-booked" />{atCurrentMonth ? 'Booked' : `Booked in ${shortMonthLabel(month)}`}</div>
@@ -134,13 +169,11 @@ export default function Reports() {
             <div className="card-body">
               {chartView === 'margin'
                 ? <MarginStepChart series={data.margin_series || []} totalDays={totalDays} />
-                : <PnlDailyBarChart events={data.pnl_events || []} totalDays={totalDays} monthStart={month} />}
+                : <PnlDailyBarChart events={data.pnl_events || []} totalDays={totalDays} />}
             </div>
             <div className="rep-pos-section-title">Positions behind this number</div>
             <div className="card-body rep-pos-body">
-              {chartView === 'margin'
-                ? <MarginPositionsList positions={data.margin_positions || []} month={month} atCurrentMonth={atCurrentMonth} />
-                : <PnlPositionsList events={data.pnl_events || []} month={month} />}
+              <MarginPositionsList positions={data.margin_positions || []} month={month} atCurrentMonth={atCurrentMonth} bookedOnly={chartView !== 'margin'} />
             </div>
           </div>
         </>

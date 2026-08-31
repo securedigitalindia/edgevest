@@ -570,6 +570,62 @@ class Nifty500MultipleTrigger(BaseTrigger):
         if not pairs:
             return None
 
+        # Margin for the new trade — computed BEFORE the row exists, exactly
+        # like a genuinely fresh entry (see this trigger's own entry path
+        # above: get_margin() is called first and margin_at_entry is passed
+        # straight into the INSERT). A roll is really two separate trade
+        # lifecycle events (old trade exits, a new one opens) — parent_
+        # trade_id is lineage tracking only, never a reason to defer/skip
+        # margin computation to a second, later step.
+        #
+        # The old two-step version (insert first, patch margin on with a
+        # follow-up recalculate_recommendation_margin() call afterwards) is
+        # exactly how trades 29/30/32/33/34 ended up with permanently-NULL
+        # margin in the 2026-08 incident: that follow-up call ran on code
+        # that predated this fix and simply never happened, and by the time
+        # anyone noticed, the trades had already exited — at which point
+        # margin becomes unrecoverable (get_current_legs nets a closed
+        # trade's legs to zero, and an expired option/future contract 400s
+        # on Upstox's margin API). Computing atomically with the insert, the
+        # same way a fresh entry does, closes that whole window.
+        from live.upstox_client import get_margin
+        margin_required = margin_final = None
+        try:
+            margin_input = [
+                {
+                    "instrument_key":   in_leg["instrument_key"],
+                    "transaction_type": in_leg["side"],
+                    "quantity":         in_leg["lots"] * (in_leg["lot_size"] or 1),
+                    "price":            in_leg["price"],
+                }
+                for _, in_leg in pairs if in_leg["instrument_key"] and in_leg["lot_size"]
+            ]
+            if margin_input:
+                m               = get_margin(margin_input)
+                margin_required = m.get("required_margin")
+                margin_final    = m.get("final_margin")
+        except Exception as e:
+            print(f"  [500-multi]  margin fetch failed for roll of trade "
+                  f"{trade['id']}: {e}", flush=True)
+
+        if margin_final is None:
+            # Fail loudly instead of silently inserting a NULL-margin row —
+            # this is the one case an operator needs to know about *now*,
+            # while the trade is still open and margin is still recoverable
+            # (e.g. by re-running this trigger cycle, or manually via
+            # recalculate_recommendation_margin() before the trade exits).
+            try:
+                from live.alert import send_telegram
+                send_telegram(
+                    f"⚠️ Margin fetch failed while rolling trade #{trade['id']} "
+                    f"({self.symbol}) forward — the new trade will be inserted "
+                    f"with margin_at_entry=NULL. Investigate before it exits/"
+                    f"rolls again, or the margin becomes unrecoverable."
+                )
+            except Exception as e:
+                print(f"  [500-multi]  margin-failure alert itself failed for "
+                      f"roll of trade {trade['id']}: {e}", flush=True)
+
         new_trade_id = roll_recommended_trade(
             old_trade_id     = trade["id"],
             exit_time        = now_utc,
@@ -582,15 +638,12 @@ class Nifty500MultipleTrigger(BaseTrigger):
             in_legs          = [pr[1] for pr in pairs],
             note             = trade.get("note"),
             risk_level       = trade.get("risk_level"),
+            margin_required  = margin_required,
+            margin_final     = margin_final,
+            margin_at_entry  = margin_final,
         )
         print(f"  [500-multi]  rolled trade {trade['id']} -> {new_trade_id}  "
               f"({len(pairs)} leg(s))", flush=True)
-
-        try:
-            from live.manual_trade import recalculate_recommendation_margin
-            recalculate_recommendation_margin(new_trade_id)
-        except Exception as e:
-            print(f"  [500-multi]  margin recalc skipped for rolled trade {new_trade_id}: {e}", flush=True)
 
         self._roll_linked_account_trades(trade["id"], new_trade_id, pairs, now_utc)
 

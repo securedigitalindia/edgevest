@@ -578,7 +578,9 @@ def get_monthly_report(year: int, month: int) -> dict:
 
     Returns:
         {
-          "positions_entered":  int,
+          "positions_entered":      int,   # every row entered in [month_start, effective_end) — a pure date-range count, unrelated to the two counts below
+          "new_position_count":     int,   # of margin_positions (below): entered THIS month (rolls included — see note)
+          "carried_position_count": int,   # of margin_positions: entered in an EARLIER month, still touching margin this month
           "margin_series":      [{"date": "YYYY-MM-DD", "margin": float}, ...],
           "peak_margin_used":   float,
           "avg_margin_used":    float,  # mean of margin_series' own values — the ROI denominator (not peak_margin_used)
@@ -596,6 +598,23 @@ def get_monthly_report(year: int, month: int) -> dict:
     realized_pnl is non-null only when that same row also exited within this
     month (i.e. it also appears in pnl_events) — null for anything still open
     or carried forward, since there's no outcome to show yet.
+
+    new_position_count/carried_position_count are a two-way, mutually-
+    exclusive partition of margin_positions (always sum to
+    len(margin_positions)), purely by entry timing — parent_trade_id plays
+    no role: a roll that happened this month counts as "new" (a rollover
+    creates a genuinely new trade row with its own freshly-computed margin;
+    parent_trade_id only records lineage, it doesn't make the row a
+    continuation of the parent's own identity — see roll_recommended_
+    trade()'s docstring), exactly like a non-rollover fresh open; a roll
+    from an earlier month that's still touching margin this month is
+    "carried", exactly like any other still-running older position.
+    Rollover status as a third, separate axis was tried (2026-08-31) and
+    reverted — readers only care "did this show up on the desk this month
+    or not," not the underlying lineage mechanics; a two-way split by timing
+    alone answers that directly. This is a different split than
+    positions_entered, which is a pure date-range count unrelated to
+    margin_positions' membership — don't conflate the two.
     """
     IST_OFFSET = timedelta(hours=5, minutes=30)
 
@@ -627,19 +646,56 @@ def get_monthly_report(year: int, month: int) -> dict:
     # One query fetches every row that could possibly overlap the month's day
     # range, then we walk IST calendar days in Python (avoids N per-day queries).
     margin_rows = conn.execute("""
-        SELECT id, symbol, display_code, entry_time, exit_time, status, margin_at_entry
+        SELECT id, symbol, display_code, entry_time, exit_time, status, margin_at_entry, parent_trade_id
         FROM recommended_trades
         WHERE entry_time < ? AND (status = 'open' OR exit_time >= ?)
     """, (effective_end_str, month_start_str)).fetchall()
 
-    intervals = []        # (entry_date, exit_date_or_None, margin_at_entry) — for the day-walk below
+    # A roll's exit and its replacement's entry share the exact same instant
+    # (roll_recommended_trade() stamps both with the same exit_time —
+    # queries.py's own roll function, see its "atomically close old_trade_id
+    # ... open replacement" docstring) — the old position was never actually
+    # live at the same time as its replacement, not even for a moment. At
+    # day granularity that self-roll pair still lands on the same calendar
+    # day, so naively summing "every row live at any point on day d" double-
+    # counts that one day's margin (old row's exit day + new row's entry day
+    # both include it). Map parent id -> child's entry_date so the day-walk
+    # below can treat the parent's own exit_date as *exclusive* only in this
+    # specific same-day-rollover case — every other exit (including a normal
+    # exit with no rollover) keeps the inclusive-exit-day rule the PRD's
+    # carry-forward rule locks in (recommended-report PRD, "Margin" section).
+    child_entry_date_by_parent_id = {}
+    for row in margin_rows:
+        if row[7] is not None:  # parent_trade_id
+            child_entry_date_by_parent_id[row[7]] = _ist_date(row[3])  # entry_time
+
+    intervals = []        # (entry_date, exit_date_or_None, margin_at_entry, exit_inclusive) — for the day-walk below
     margin_positions = []  # display-friendly version of the same rows, for the UI
-    for trade_id, symbol, display_code, entry_time, exit_time, status, margin_at_entry in margin_rows:
+    # Two-way split of margin_positions, mutually exclusive, summing to
+    # len(margin_positions) always — purely by entry timing, parent_trade_id
+    # plays no role: a roll that happened this month is "new" (its own row,
+    # its own freshly-computed margin — a roll is a genuinely new position,
+    # not a continuation of the parent's own identity, see roll_recommended_
+    # trade()'s docstring), exactly the same as a non-rollover fresh open;
+    # a roll from an earlier month that's still open/still touched margin
+    # this month is "carried forward", exactly the same as any other
+    # position that's just still running from before this month. Rollover
+    # status was tried as a third axis (2026-08-31) and rejected — the
+    # reader only cares "did this show up on the desk this month or not",
+    # not the underlying lineage mechanics.
+    new_position_count, carried_position_count = 0, 0
+    for trade_id, symbol, display_code, entry_time, exit_time, status, margin_at_entry, parent_trade_id in margin_rows:
         if margin_at_entry is None:
             continue
         entry_date = _ist_date(entry_time)
         exit_date  = _ist_date(exit_time) if (status != "open" and exit_time) else None
-        intervals.append((entry_date, exit_date, margin_at_entry))
+        exit_inclusive = not (exit_date is not None and child_entry_date_by_parent_id.get(trade_id) == exit_date)
+        intervals.append((entry_date, exit_date, margin_at_entry, exit_inclusive))
+        entered_this_month = month_start_str <= entry_time < effective_end_str
+        if entered_this_month:
+            new_position_count += 1
+        else:
+            carried_position_count += 1
         margin_positions.append({
             "trade_id":        trade_id,
             "symbol":          symbol,
@@ -660,8 +716,8 @@ def get_monthly_report(year: int, month: int) -> dict:
     d = first_day
     while d <= walk_end:
         total = sum(
-            margin for entry_date, exit_date, margin in intervals
-            if entry_date <= d and (exit_date is None or exit_date >= d)
+            margin for entry_date, exit_date, margin, exit_inclusive in intervals
+            if entry_date <= d and (exit_date is None or (exit_date >= d if exit_inclusive else exit_date > d))
         )
         margin_series.append({"date": d.isoformat(), "margin": round(total, 2)})
         peak_margin = max(peak_margin, total)
@@ -725,13 +781,15 @@ def get_monthly_report(year: int, month: int) -> dict:
     margin_positions.sort(key=lambda p: p["margin_at_entry"], reverse=True)
 
     return {
-        "positions_entered":  positions_entered,
-        "margin_series":      margin_series,
-        "peak_margin_used":   round(peak_margin, 2),
-        "avg_margin_used":    round(avg_margin, 2),
-        "margin_positions":   margin_positions,
-        "pnl_events":         pnl_events,
-        "realized_pnl_total": round(realized_pnl_total, 2),
+        "positions_entered":      positions_entered,
+        "new_position_count":     new_position_count,
+        "carried_position_count": carried_position_count,
+        "margin_series":          margin_series,
+        "peak_margin_used":       round(peak_margin, 2),
+        "avg_margin_used":        round(avg_margin, 2),
+        "margin_positions":       margin_positions,
+        "pnl_events":             pnl_events,
+        "realized_pnl_total":     round(realized_pnl_total, 2),
     }
 
 
@@ -1978,6 +2036,9 @@ def roll_recommended_trade(
     new_entry_ltp: float, new_exit_level: float, in_legs: list[dict],
     note: str | None = None,
     risk_level: str | None = None,
+    margin_required:  float | None = None,
+    margin_final:     float | None = None,
+    margin_at_entry:  float | None = None,
 ) -> int:
     """
     Roll a trade forward: atomically close old_trade_id (exit legs = out_legs)
@@ -1996,6 +2057,17 @@ def roll_recommended_trade(
     trade's, so get_open_recommended_trade() keeps recognizing the level as
     occupied — the trigger's dedup logic doesn't care whether a trade is an
     original or a rolled successor, only (symbol, entry_level, status).
+
+    A roll is really two separate trade lifecycle events (the old trade
+    exits, a genuinely new one opens) — parent_trade_id is lineage tracking
+    only, not a reason to skip or defer margin computation. margin_required/
+    margin_final/margin_at_entry must be computed by the caller for the new
+    in_legs (the same way any freshly-opened trade's margin is computed,
+    e.g. Nifty500MultipleTrigger's entry path) and passed in here so the new
+    row gets its margin atomically, in the same INSERT as everything else —
+    never left to a separate follow-up UPDATE that can silently fail or run
+    too late (see backfill_exited_rolled_trade_margins.py for the 2026-08
+    incident this caused when margin was patched on in a second step).
 
     Returns the new trade's id.
     """
@@ -2030,10 +2102,12 @@ def roll_recommended_trade(
         cur2 = conn.execute("""
             INSERT INTO recommended_trades
                 (trigger_name, symbol, parent_trade_id,
-                 entry_level, entry_ltp, entry_time, exit_level, status, display_code, note, risk_level)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)
+                 entry_level, entry_ltp, entry_time, exit_level, status,
+                 margin_required, margin_final, margin_at_entry, display_code, note, risk_level)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
         """, (new_trigger_name, new_symbol, old_trade_id,
-              new_entry_level, new_entry_ltp, exit_time, new_exit_level, display_code, note or None, risk_level))
+              new_entry_level, new_entry_ltp, exit_time, new_exit_level,
+              margin_required, margin_final, margin_at_entry, display_code, note or None, risk_level))
         new_trade_id = cur2.lastrowid
 
         for leg in in_legs:

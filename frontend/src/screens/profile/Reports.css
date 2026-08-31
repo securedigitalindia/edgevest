@@ -16,9 +16,21 @@
    + colored left border) so the same two numbers read identically wherever
    they show up in the app. */
 .rep-count-row       { margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
-.rep-count-total     { font-size:12px; color:var(--muted); margin-bottom:10px; }
+.rep-count-total     { font-size:12px; color:var(--muted); margin-bottom:6px; }
 .rep-count-total-val { font-weight:800; color:#0f172a; }
-.rep-count-new        { color:#1d4ed8; font-weight:600; }
+
+/* "New this month" — small pill chips (not a buried inline suffix or a
+   run-on sentence) so a carried-forward position reads as visibly distinct
+   from a genuinely new one at a glance. Mirrors .rep-live-chip's pill shape
+   for a consistent chip language across the page. */
+.rep-count-new-row     { display:flex; align-items:center; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
+.rep-chip               { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700;
+                           border:1px solid var(--border); border-radius:20px; padding:3px 10px 3px 8px; background:#f8fafc; }
+.rep-chip-new           { color:#1d4ed8; }
+.rep-chip-carried       { color:#7c6f4f; }
+.rep-dot-new            { background:#1d4ed8; }
+.rep-dot-carried        { background:#d4a72c; }
+
 .rep-count-split     { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .rep-count-tile        { border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:#f8fafc; }
 .rep-count-tile-booked { border-left:3px solid #94a3b8; }
@@ -35,7 +47,7 @@
 
 /* Secondary stats — bordered icon chips (matches the Dashboard's Monthly
    Report card) rather than plain numbers divided by thin vertical rules.
-   "Positions entered" moved up into the month-nav's "X new" chip, so this
+   "Positions entered" has its own line above (.rep-count-new-row), so this
    row is just the two margin figures. */
 .rep-hero-secondary { display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-top:16px; padding-top:16px; border-top:1px solid var(--border); }
 .rep-hero-stat      { border:1px solid var(--border); border-radius:10px; background:#f8fafc; padding:10px 12px; }
@@ -71,6 +83,13 @@
 
 .rep-pnl-bar-pos { fill:var(--green); cursor:pointer; transition:opacity .1s; }
 .rep-pnl-bar-neg { fill:var(--red);   cursor:pointer; transition:opacity .1s; }
+
+/* On-bar value labels — shown always, not just on hover, so a bar's
+   magnitude (especially a small one dwarfed by a bigger bar on the same
+   scale) never depends on the reader finding and hovering it. */
+.rep-chart-barlabel     { font-size:9px; font-weight:700; cursor:pointer; }
+.rep-chart-barlabel-pos { fill:var(--green); }
+.rep-chart-barlabel-neg { fill:var(--red); }
 
 /* ── Tooltip ── */
 .rep-chart-tooltip { position:absolute; transform:translate(-50%,-115%); background:#1e293b; color:#fff; padding:6px 9px; border-radius:6px;

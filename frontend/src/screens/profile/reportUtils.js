@@ -96,13 +96,6 @@ export function niceMax(v) {
   return nice * mag
 }
 
-// Days between two 'YYYY-MM-DD' strings, inclusive of both ends — read as IST
-// midnight so this can't drift a day depending on the browser's own timezone.
-export function daysHeld(entryDate, exitDate) {
-  const ms = new Date(`${exitDate}T00:00:00+05:30`) - new Date(`${entryDate}T00:00:00+05:30`)
-  return Math.round(ms / 86400000) + 1
-}
-
 export function posLabel(p) {
   return p.display_code ? `${p.symbol} · ${p.display_code}` : p.symbol
 }

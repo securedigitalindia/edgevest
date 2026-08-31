@@ -17,7 +17,7 @@ from flask import (Flask, request, jsonify,
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
 
-APP_VERSION = "6.0.2"
+APP_VERSION = "7.0.0"
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
@@ -709,6 +709,8 @@ def api_reports_monthly():
         ok=True,
         month=f"{year:04d}-{month:02d}",
         positions_entered=report["positions_entered"],
+        new_position_count=report["new_position_count"],
+        carried_position_count=report["carried_position_count"],
         peak_margin_used=report["peak_margin_used"],
         avg_margin_used=report["avg_margin_used"],
         margin_series=report["margin_series"],
