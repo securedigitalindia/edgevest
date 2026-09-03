@@ -119,24 +119,36 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
-## Status as of 2026-08-26 (`v5.4` — frontend released to prod; backend released through `v5.2`)
+## Status as of 2026-09-04 (`v7.3.0` — frontend released to prod; backend released through `v7.2.0`)
 
-- ✅ `edgevest.in`/`www.edgevest.in` — serving `releases/v5.4` (frontend-only
-  CSS spacing fix, no backend changes this release).
-  `dev.edgevest.in`/`staging.edgevest.in` are still on `v5.1` (last deployed
-  there); they'll read as behind until someone runs
-  `deploy.sh deploy dev v5.4` / `deploy.sh deploy staging v5.4`.
-- ⚠️ Prod backend is still running `v5.2`'s `APP_VERSION` (`5.2.0`). `v5.3`
-  and `v5.4` bumped `APP_VERSION` in lockstep with the frontend per
-  convention, but neither actually touched backend code, so no EC2 release
-  was done for either — `git tag`/`APP_VERSION` and "what's actually
-  deployed on EC2" have diverged by two versions. Not urgent (nothing to
-  deploy), but worth remembering next time a real backend change ships:
-  the EC2 steps need to run for that release specifically, not just
-  whichever `APP_VERSION` string is currently in `server.py`.
-- ✅ `main` fast-forwarded to `dev` at each release since `v5.2` (`v5.3`,
-  `v5.4`) — same branching model, no divergence issues.
-- Previous status (`v5.2`, 2026-08-26): frontend + backend both released to
-  prod, `main` fast-forwarded to `dev` for the first time.
-- ⚠️ 34 Dependabot vulnerabilities (15 high, 18 moderate, 1 low) flagged on
-  every push to `dev` — not triaged yet, worth a look now that `v5.0` is out.
+- ✅ `edgevest.in`/`www.edgevest.in` — serving `releases/v7.3.0` (frontend-only
+  this release: Dashboard "no subscription" tile, an OAuth back-button fix
+  on Landing, and a reworked/responsive Trades unlock panel — see the
+  `v7.3.0` commit for detail). No backend code changed this release.
+  `dev.edgevest.in`/`staging.edgevest.in` were last deployed further back
+  and will read as behind until someone runs `deploy.sh deploy dev v7.3.0`
+  / `deploy.sh deploy staging v7.3.0`.
+- ✅ Prod backend (EC2) is running `v7.2.0` — includes the admin Payments
+  page's backend (`GET /api/payments`, `POST /api/payments/<id>/reconcile`)
+  and the `get_all_subscriptions()` `user_id`/`plan_gem_cost` fields. No
+  schema migration was required for that release (additive columns already
+  existed on `subscription_plans`/`users`).
+- ⚠️ Prod backend has **not** been updated to `v7.3.0`'s `APP_VERSION`
+  string yet — same "bumped in lockstep, nothing to actually deploy"
+  situation called out in earlier status notes here, since `v7.3.0` was
+  frontend-only. Not urgent, but the next release that *does* touch backend
+  code needs the EC2 steps run for that release specifically, not assumed
+  from whatever `APP_VERSION` currently reads in `server.py`.
+- ⚠️ `main`/`dev` have diverged from the branching model this doc describes:
+  work has been landing directly on `main` for the last several releases
+  (`v7.1.2` through `v7.3.0`) rather than `dev` → fast-forward `main`.
+  `dev` is currently 3 commits behind `main` (stuck at `v7.1.1`). Worth
+  deciding whether to keep `dev` around at all, or formally retire it and
+  update this doc's Branching model section to match actual practice.
+- ⚠️ Whether the `/api/payments/reconcile` cron got scheduled on EC2 as
+  part of the `v7.2.0` backend release (checklist step 5, Backend release
+  section above) hasn't been confirmed in this session — worth checking
+  directly on the box (`crontab -l` / systemd timers) rather than assuming.
+- Dependabot vulnerability count not re-checked this session (`gh` CLI
+  unavailable here) — check the repo's Security tab directly for a current
+  number rather than trusting the stale one this line used to carry.
