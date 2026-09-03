@@ -63,6 +63,7 @@ export default function ProfileHub() {
           <MenuRow icon={PeopleIcon}    label="Users"          onClick={() => navigate('/profile/users')} />
           <MenuRow icon={ClipboardIcon} label="Plans"          onClick={() => navigate('/profile/plans')} />
           <MenuRow icon={ReceiptIcon}   label="Subscriptions"  onClick={() => navigate('/profile/subscriptions')} />
+          <MenuRow icon={CardIcon}      label="Payments"       onClick={() => navigate('/profile/payments')} />
         </div>
       )}
 

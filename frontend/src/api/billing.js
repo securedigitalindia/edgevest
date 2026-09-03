@@ -4,6 +4,10 @@ export const createOrder      = plan_id => api.post('/billing/create-order', { p
 export const verifyPayment    = payload => api.post('/billing/verify-payment', payload).then(r => r.data)
 export const getMySubscription = ()     => api.get('/my-subscription').then(r => r.data)
 
+// Admin only
+export const listPayments     = ()      => api.get('/payments').then(r => r.data.payments)
+export const reconcilePayment = orderId => api.post(`/payments/${orderId}/reconcile`).then(r => r.data)
+
 // Loaded on-demand rather than in index.html, so the PWA's initial
 // load/precache isn't touched by a 3rd-party script most users won't need.
 let _rzpLoading = null

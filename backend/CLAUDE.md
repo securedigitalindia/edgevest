@@ -103,8 +103,8 @@ Startup      holiday check → expiry cache refresh → load triggers → mornin
 
 Razorpay Standard Checkout for paid subscription plans — the one modular package in the backend (everywhere else is flat: `server.py` for routes, `db/queries.py` for all SQL). Registered into `server.py` as a Blueprint via a factory (`create_payments_blueprint`), not a module-level `Blueprint`, since `require_login`/`require_role`/`current_user` live in `server.py` and importing them at this package's module-load time would be circular — `server.py` passes them in at registration instead.
 
-- `routes.py` — four routes: `POST /api/billing/create-order`, `POST /api/billing/verify-payment` (session auth), `POST /api/payments/reconcile` (cron-only, shared-secret `X-Cron-Secret` header instead of a session), `GET /api/payments/flagged` (admin).
-- `service.py` — orchestration (`get_or_create_order`, `verify_and_activate`, `reconcile_pending_orders`); no Flask/HTTP concerns.
+- `routes.py` — six routes: `POST /api/billing/create-order`, `POST /api/billing/verify-payment` (session auth), `POST /api/payments/reconcile` (cron-only, shared-secret `X-Cron-Secret` header instead of a session, sweeps every stale order), `POST /api/payments/<order_id>/reconcile` (admin, same check/activate/refund logic for one order — the Payments UI's per-row "Refresh" button), `GET /api/payments` (admin, all orders any status), `GET /api/payments/flagged` (admin, `duplicate_refunded` only).
+- `service.py` — orchestration (`get_or_create_order`, `verify_and_activate`, `reconcile_pending_orders`, `reconcile_order_by_id`); no Flask/HTTP concerns. The cron sweep and the single-order admin check share one `_reconcile_order()` helper — the actual "ask Razorpay, then activate or refund" logic exists in exactly one place.
 - `razorpay_client.py` — the only file that calls the `razorpay` SDK directly.
 - SQL stays in `db/queries.py` per the project-wide convention — this package never touches SQL itself.
 

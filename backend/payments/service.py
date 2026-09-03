@@ -7,7 +7,7 @@ import time
 
 from db.queries import (
     get_active_plans, create_payment_order, get_pending_order_for_user_plan,
-    get_payment_order_by_razorpay_id, activate_subscription_from_payment,
+    get_payment_order_by_razorpay_id, get_payment_order, activate_subscription_from_payment,
     get_stale_pending_orders, get_covering_subscription_order,
     mark_order_reconciled, mark_order_duplicate_refunded,
 )
@@ -64,49 +64,82 @@ def verify_and_activate(razorpay_order_id: str, razorpay_payment_id: str,
     )
 
 
+def _reconcile_order(order: dict) -> dict:
+    """
+    Check one `payment_orders` row directly against Razorpay and either
+    late-activate a genuinely-paid order, auto-refund it if the user already
+    has an unexpired subscription for this exact plan (a genuine duplicate
+    purchase, as opposed to a renewal — which only happens once the prior
+    subscription has actually lapsed), or leave it as still pending.
+
+    Shared by both callers so "check + activate/refund" is defined in exactly
+    one place: `reconcile_pending_orders` (the unattended cron sweep, scoped
+    by grace period) and `reconcile_order_by_id` (an admin manually clicking
+    "Refresh" on one payment, no grace period — they've already decided it's
+    worth checking now).
+    """
+    try:
+        payments = razorpay_client.fetch_order_payments(order["razorpay_order_id"])
+    except Exception as e:
+        return {"order_id": order["id"], "outcome": "error", "error": str(e)}
+
+    mark_order_reconciled(order["id"])
+    captured = next((p for p in payments if p.get("status") == "captured"), None)
+    if not captured:
+        return {"order_id": order["id"], "outcome": "still_pending"}
+
+    covering_order = get_covering_subscription_order(
+        order["user_id"], order["plan_id"], exclude_payment_order_id=order["id"],
+    )
+    if covering_order:
+        try:
+            refund = razorpay_client.refund_payment(captured["id"], captured["amount"])
+            mark_order_duplicate_refunded(
+                order["id"], captured["id"], covering_order["razorpay_order_id"], refund["id"],
+            )
+            return {"order_id": order["id"], "outcome": "duplicate_refunded"}
+        except Exception as e:
+            return {"order_id": order["id"], "outcome": "error", "error": f"refund failed: {e}"}
+
+    result = activate_subscription_from_payment(
+        order["user_id"], order["plan_id"], order["razorpay_order_id"], captured["id"], order["amount"],
+    )
+    return {"order_id": order["id"], "outcome": "synced", "result": result}
+
+
 def reconcile_pending_orders(grace_minutes: int = 10) -> dict:
-    """
-    Pull-based reconciliation instead of a webhook receiver (webhooks can
-    themselves fail to deliver): for every order never synced via
-    verify-payment and past the grace period, ask Razorpay directly what
-    really happened, then either late-activate a genuinely-paid order or
-    auto-refund it if the user already has an unexpired subscription for
-    this exact plan (a genuine duplicate purchase, as opposed to a renewal —
-    which only happens once the prior subscription has actually lapsed).
-    """
+    """Pull-based reconciliation instead of a webhook receiver (webhooks can
+    themselves fail to deliver): sweep every order never synced via
+    verify-payment and past the grace period through `_reconcile_order`."""
     stale  = get_stale_pending_orders(grace_minutes)
     report = {"synced": [], "duplicate_refunded": [], "still_pending": [], "errors": []}
 
     for order in stale:
-        try:
-            payments = razorpay_client.fetch_order_payments(order["razorpay_order_id"])
-        except Exception as e:
-            report["errors"].append({"order_id": order["id"], "error": str(e)})
-            continue
-
-        mark_order_reconciled(order["id"])
-        captured = next((p for p in payments if p.get("status") == "captured"), None)
-        if not captured:
-            report["still_pending"].append(order["id"])
-            continue
-
-        covering_order = get_covering_subscription_order(
-            order["user_id"], order["plan_id"], exclude_payment_order_id=order["id"],
-        )
-        if covering_order:
-            try:
-                refund = razorpay_client.refund_payment(captured["id"], captured["amount"])
-                mark_order_duplicate_refunded(
-                    order["id"], captured["id"], covering_order["razorpay_order_id"], refund["id"],
-                )
-                report["duplicate_refunded"].append(order["id"])
-            except Exception as e:
-                report["errors"].append({"order_id": order["id"], "error": f"refund failed: {e}"})
-            continue
-
-        result = activate_subscription_from_payment(
-            order["user_id"], order["plan_id"], order["razorpay_order_id"], captured["id"], order["amount"],
-        )
-        report["synced"].append({"order_id": order["id"], "result": result})
+        r = _reconcile_order(order)
+        if r["outcome"] == "synced":
+            report["synced"].append({"order_id": r["order_id"], "result": r["result"]})
+        elif r["outcome"] == "duplicate_refunded":
+            report["duplicate_refunded"].append(r["order_id"])
+        elif r["outcome"] == "still_pending":
+            report["still_pending"].append(r["order_id"])
+        else:
+            report["errors"].append({"order_id": r["order_id"], "error": r["error"]})
 
     return report
+
+
+def reconcile_order_by_id(order_id: int) -> dict:
+    """Admin-triggered manual check for one payment — same `_reconcile_order`
+    logic as the cron sweep, just scoped to a single order and without
+    waiting on the grace period (an admin clicking "Refresh" has already
+    decided it's worth checking now)."""
+    order = get_payment_order(order_id)
+    if not order:
+        return {"ok": False, "error": "Order not found"}
+    if order["status"] != "created":
+        return {"ok": False, "error": f"Order already {order['status']} — nothing to reconcile"}
+
+    result = _reconcile_order(order)
+    if result["outcome"] == "error":
+        return {"ok": False, "error": result["error"]}
+    return {"ok": True, "outcome": result["outcome"], **({"result": result["result"]} if "result" in result else {})}

@@ -57,7 +57,8 @@ src/
 │       ├── Brokers.jsx          — admin: broker list
 │       ├── Users.jsx            — admin: user management
 │       ├── Plans.jsx            — admin: subscription plan editor
-│       └── Subscriptions.jsx    — admin: all users' subscriptions
+│       ├── Subscriptions.jsx    — admin: all users' subscriptions
+│       └── Payments.jsx         — admin: all Razorpay payment orders (paid/pending/refunded), filterable, cross-linked from Users/Subscriptions by email
 ├── store/
 │   └── authStore.js   — Zustand: { user, ready } + setUser()
 ├── styles/
@@ -102,6 +103,7 @@ Bottom nav (mobile, ≤768px) / top nav (desktop) has 5 peer tabs: `Dashboard | 
 | `/profile/users` | Users | admin only |
 | `/profile/plans` | Plans | admin only |
 | `/profile/subscriptions` | Subscriptions | admin only |
+| `/profile/payments` | Payments | admin only; accepts `?u=<email>` to pre-filter |
 | `*` | redirect → `/dashboard` | |
 
 ## API Conventions

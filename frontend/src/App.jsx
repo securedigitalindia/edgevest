@@ -32,6 +32,7 @@ const Brokers         = lazy(() => import('./screens/profile/Brokers'))
 const Users           = lazy(() => import('./screens/profile/Users'))
 const Plans           = lazy(() => import('./screens/profile/Plans'))
 const Subscriptions   = lazy(() => import('./screens/profile/Subscriptions'))
+const Payments        = lazy(() => import('./screens/profile/Payments'))
 const Reports         = lazy(() => import('./screens/profile/Reports'))
 const Learn           = lazy(() => import('./screens/profile/Learn'))
 const LearnArticle    = lazy(() => import('./screens/profile/LearnArticle'))
@@ -84,6 +85,7 @@ function AppShell() {
           <Route path="/profile/users"         element={<Users />} />
           <Route path="/profile/plans"         element={<Plans />} />
           <Route path="/profile/subscriptions" element={<Subscriptions />} />
+          <Route path="/profile/payments"      element={<Payments />} />
           <Route path="/profile/reports"       element={<Reports />} />
           <Route path="/profile/learn"         element={<Learn />} />
           <Route path="/profile/learn/:slug"   element={<LearnArticle />} />

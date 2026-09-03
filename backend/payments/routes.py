@@ -66,6 +66,20 @@ def create_payments_blueprint(require_login, require_role, current_user):
         report = service.reconcile_pending_orders()
         return jsonify(ok=True, **report)
 
+    @bp.route("/api/payments", methods=["GET"])
+    @require_role("super_admin", "admin")
+    def api_payments_list():
+        from db.queries import get_all_payments
+        return jsonify(ok=True, payments=get_all_payments())
+
+    @bp.route("/api/payments/<int:order_id>/reconcile", methods=["POST"])
+    @require_role("super_admin", "admin")
+    def api_payment_reconcile_one(order_id):
+        if not razorpay_client.is_configured():
+            return jsonify(ok=False, error="Payments not configured"), 500
+        result = service.reconcile_order_by_id(order_id)
+        return jsonify(result), (200 if result["ok"] else 400)
+
     @bp.route("/api/payments/flagged", methods=["GET"])
     @require_role("super_admin", "admin")
     def api_payments_flagged():

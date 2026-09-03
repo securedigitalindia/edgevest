@@ -1448,15 +1448,15 @@ def get_all_subscriptions() -> list[dict]:
     conn = get_connection()
     try:
         rows = conn.execute("""
-            SELECT s.id, u.name, u.email, p.name, s.status,
-                   s.start_date, s.end_date, s.amount_paid
+            SELECT s.id, u.id, u.name, u.email, p.name, s.status,
+                   s.start_date, s.end_date, s.amount_paid, p.gem_cost
             FROM subscriptions s
             JOIN users u ON u.id = s.user_id
             JOIN subscription_plans p ON p.id = s.plan_id
             ORDER BY s.id DESC
         """).fetchall()
-        cols = ["id", "user_name", "email", "plan_name", "status",
-                "start_date", "end_date", "amount_paid"]
+        cols = ["id", "user_id", "user_name", "email", "plan_name", "status",
+                "start_date", "end_date", "amount_paid", "plan_gem_cost"]
         return [dict(zip(cols, r)) for r in rows]
     finally:
         conn.close()
@@ -2857,6 +2857,23 @@ def get_payment_order_by_razorpay_id(razorpay_order_id: str) -> dict | None:
         conn.close()
 
 
+def get_payment_order(order_id: int) -> dict | None:
+    conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT id, user_id, plan_id, razorpay_order_id, razorpay_payment_id,
+                   amount, currency, status, created_at, updated_at
+            FROM payment_orders WHERE id = ?
+        """, (order_id,)).fetchone()
+        if not row:
+            return None
+        cols = ["id", "user_id", "plan_id", "razorpay_order_id", "razorpay_payment_id",
+                "amount", "currency", "status", "created_at", "updated_at"]
+        return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+
 def activate_subscription_from_payment(user_id: int, plan_id: int, razorpay_order_id: str,
                                         razorpay_payment_id: str, amount: int) -> dict:
     """
@@ -3010,6 +3027,25 @@ def mark_order_duplicate_refunded(payment_order_id: int, razorpay_payment_id: st
             WHERE id=?
         """, (razorpay_payment_id, duplicate_of_order_id, refund_id, now_str, now_str, now_str, payment_order_id))
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_all_payments(limit: int = 300) -> list[dict]:
+    """All payment orders (any status) with user and plan info — for admin view."""
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT po.id, po.user_id, u.name AS user_name, u.email, po.plan_id, p.name AS plan_name,
+                   po.razorpay_order_id, po.razorpay_payment_id, po.amount, po.currency, po.status,
+                   po.duplicate_of_order_id, po.refund_id, po.refunded_at, po.reconciled_at,
+                   po.created_at, po.updated_at
+            FROM payment_orders po
+            JOIN users u ON u.id = po.user_id
+            JOIN subscription_plans p ON p.id = po.plan_id
+            ORDER BY po.id DESC LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()
 
