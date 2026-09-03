@@ -14,7 +14,7 @@ import { newLeg, collectLegs } from '../components/trades/legHelpers'
 import LegGroup from '../components/trades/LegDisplay'
 import { fmtRs, fmtPnl, fmtQty, fmtContract } from '../utils/format'
 import { unrealizedPnl, realizedPnl } from '../utils/pnl'
-import { BankIcon, GameIcon, GemIcon, LockIcon, RefreshIcon } from '../components/common/Icons'
+import { BankIcon, GameIcon, GemIcon, LockIcon, RefreshIcon, CardIcon } from '../components/common/Icons'
 import MonthSummaryCard from './profile/MonthSummaryCard'
 import { currentIstMonth, monthLabel, istMonthFromDisplay } from './profile/reportUtils'
 import './Trades.css'
@@ -423,7 +423,8 @@ function RecItem({ rec, prices, onPushed, highlight }) {
 
 const SEGMENTS = ['all', 'F&O', 'Equity', 'ETF', 'Commodities']
 
-function RecsPanel({ isAdmin }) {
+function RecsPanel({ isAdmin, subscribed }) {
+  const canSeeList = isAdmin || subscribed
   const navigate = useNavigate()
   const [status,  setStatus]  = useState('open')
   const [segment, setSegment] = useState('all')
@@ -513,8 +514,11 @@ function RecsPanel({ isAdmin }) {
     <div>
       {isAdmin && <CreateRecForm />}
 
-      {/* Client setup banner */}
-      {!isAdmin && accounts.length === 0 && (
+      {/* Client setup banner — only once they can actually push a trade to
+          an account, i.e. once subscribed; showing this to an unsubscribed
+          client would push them toward account setup before they even have
+          anything to push. */}
+      {!isAdmin && subscribed && accounts.length === 0 && (
         <div className="card">
           <div className="card-body" style={{textAlign:'center',padding:'28px 20px'}}>
             <div style={{color:'var(--muted)',display:'flex',justifyContent:'center',marginBottom:10}}><BankIcon size={30}/></div>
@@ -529,52 +533,175 @@ function RecsPanel({ isAdmin }) {
           Exited toggle at its top), not just a display that mirrors one
           kept elsewhere: the position list below reads the very state this
           card controls, so the two can never disagree on which status is
-          active. */}
+          active. This is the one thing that stays visible without a
+          subscription — everything position-specific (segment/risk filters,
+          the list itself) is bundled into the gate below instead. */}
       <MonthSummaryCard compact status={status} onStatusChange={setStatus}
                         month={bookedMonth} onMonthChange={setBookedMonth} />
 
-      <div className="card">
-        <div className="card-header">
-          <h2>{status === 'open' ? 'Open Positions' : 'Exited Positions'}</h2>
-          <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto',display:'inline-flex'}} onClick={refetch}><RefreshIcon/></button>
-        </div>
+      {!canSeeList && <UnlockPanel />}
 
-        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',padding:'8px 16px 6px',borderBottom:'1px solid var(--border)',background:'#fafafa'}}>
-          <Dropdown value={segment} onChange={setSegment}
-            options={SEGMENTS.filter(s => s === 'all' || usedSegs.has(s)).map(s => ({value:s, label: s === 'all' ? 'All Segments' : s}))} />
-          <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
-            {/* Status (Open/Exited) is no longer a dropdown here — it's the
-                toggle at the top of MonthSummaryCard above, which this list
-                reads directly (see the `status` state and its comment). */}
-            <Dropdown value={risk} onChange={setRisk} align="right"
-              options={[
-                {value:'all', label:'All Risk'},
-                ...RISK_LEVELS.map(r => ({
-                  value: r.value,
-                  label: <><span className={`status-dot status-dot-risk-${r.value}`} style={{marginRight:6}}/>{r.label}</>,
-                })),
-              ]} />
+      {canSeeList && (
+        <div className="card">
+          <div className="card-header">
+            <h2>{status === 'open' ? 'Open Positions' : 'Exited Positions'}</h2>
+            <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto',display:'inline-flex'}} onClick={refetch}><RefreshIcon/></button>
+          </div>
+
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',padding:'8px 16px 6px',borderBottom:'1px solid var(--border)',background:'#fafafa'}}>
+            <Dropdown value={segment} onChange={setSegment}
+              options={SEGMENTS.filter(s => s === 'all' || usedSegs.has(s)).map(s => ({value:s, label: s === 'all' ? 'All Segments' : s}))} />
+            <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
+              <Dropdown value={risk} onChange={setRisk} align="right"
+                options={[
+                  {value:'all', label:'All Risk'},
+                  ...RISK_LEVELS.map(r => ({
+                    value: r.value,
+                    label: <><span className={`status-dot status-dot-risk-${r.value}`} style={{marginRight:6}}/>{r.label}</>,
+                  })),
+                ]} />
+            </div>
+          </div>
+
+          <div className="card-body" style={{padding:10}}>
+            {isLoading && <div className="empty">Loading…</div>}
+            {!isLoading && !filtered.length && (
+              <div className="empty">
+                No {segment !== 'all' ? segment + ' ' : ''}{status} recommendations
+                {status === 'exited' ? ` in ${monthLabel(bookedMonth)}` : ''}.
+              </div>
+            )}
+            {filtered.map(r => <RecItem key={r.id} rec={r} prices={prices} onPushed={handlePushed} highlight={r.id === highlightId} />)}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
 
-        <div className="card-body" style={{padding:10}}>
-          {isLoading && <div className="empty">Loading…</div>}
-          {!isLoading && !filtered.length && (
-            <div className="empty">
-              No {segment !== 'all' ? segment + ' ' : ''}{status} recommendations
-              {status === 'exited' ? ` in ${monthLabel(bookedMonth)}` : ''}.
-            </div>
-          )}
-          {filtered.map(r => <RecItem key={r.id} rec={r} prices={prices} onPushed={handlePushed} highlight={r.id === highlightId} />)}
+// ─── Unlock panel — replaces just the recommendation list (not the whole
+// screen) when the client has no active subscription; the ROI summary and
+// the segment/risk/status filters above it stay live regardless. ─────────
+
+// One plan's two independent unlock paths, laid out so it reads as "pay OR
+// redeem" — never both required, never "this card is selected". A plan is
+// only ever server-side "free" when price === 0 (docs/apis.md's
+// POST /api/subscribe: "Only free plans (price == 0)") — gem_cost === 0
+// means "no gem option for this plan", not "free", so those two must never
+// be conflated even though today every active plan happens to price both.
+function OrDivider() {
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:10,margin:'2px 0'}}>
+      <div style={{flex:1,height:1,background:'#eef0f4'}}/>
+      <span style={{fontSize:9.5,fontWeight:800,color:'#cbd5e1',letterSpacing:.6}}>OR</span>
+      <div style={{flex:1,height:1,background:'#eef0f4'}}/>
+    </div>
+  )
+}
+
+function PlanUnlockCard({ plan, balance, onRedeem, onPay, redeeming, paying }) {
+  const gemCost   = plan.gem_cost ?? 0
+  const price     = plan.price ?? 0
+  const isFree    = price === 0
+  const hasMoney  = !isFree && price > 0
+  const hasGems   = !isFree && gemCost > 0
+  const afford    = gemCost > 0 && balance >= gemCost
+  const need      = gemCost - balance
+
+  return (
+    <div className="plan-scroll-card" style={{
+      border:'1px solid #e6e9f0', borderRadius:14, background:'#fff',
+      boxShadow:'0 1px 2px rgba(15,23,42,.04)', overflow:'hidden',
+    }}>
+      <div style={{padding:'14px 16px 12px'}}>
+        {/* fontSize clamp()s with the viewport so the name shrinks along
+            with the card at the narrow end of .plan-scroll-card's own
+            clamp() width — without it, the fixed 15px name + the nowrap
+            duration pill didn't both fit on one line at the card's minimum
+            (210px) width and the name wrapped to a second line. minWidth:0
+            + ellipsis is the hard backstop for a plan name long enough that
+            even the shrunk font still doesn't fit — truncates instead of
+            wrapping or pushing the pill out of the card. */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:4}}>
+          <span style={{fontWeight:800,fontSize:'clamp(13px,4.2vw,15px)',color:'#0f172a',minWidth:0,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{plan.name}</span>
+          <span style={{fontSize:'clamp(9.5px,2.6vw,10.5px)',fontWeight:800,color:'#4338ca',background:'#eef2ff',padding:'3px 10px',borderRadius:20,flexShrink:0,whiteSpace:'nowrap'}}>
+            {plan.duration_days} DAYS
+          </span>
         </div>
+        {/* Fixed height (not content-driven) so a plan with no description
+            — e.g. the real "Janmashtami Offer" plan, description:'' today —
+            reserves the exact same space as one that has it. Without this,
+            that card's button row would start higher than its neighbors',
+            and in a horizontal scroll row that misalignment is much more
+            visible than it was stacked vertically. Single line + ellipsis
+            for the same reason in the other direction: an unusually long
+            description shouldn't grow one card taller than the rest either. */}
+        <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,height:18,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>
+          {plan.description}
+        </div>
+      </div>
+
+      <div style={{height:1,background:'#f1f4f8'}}/>
+
+      <div style={{padding:'12px 16px 14px'}}>
+        {isFree ? (
+          <button className="btn btn-primary" style={{width:'100%',justifyContent:'center',padding:'10px 14px',fontSize:'clamp(11.5px,3.4vw,13.5px)'}}
+            disabled={redeeming} onClick={() => onRedeem(plan.id)}>
+            Claim Free
+          </button>
+        ) : (
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {/* Button fontSize clamp()s down at narrow card widths, same
+                fluid-not-fixed reasoning as the name/badge row above. The
+                label (icon+text) span gets minWidth:0 + ellipsis so it's
+                the one that truncates if it's still tight after shrinking
+                — the price/gem-count on the right is the number the user
+                actually needs to see, so it stays flexShrink:0/nowrap and
+                is never the thing that gives up space. */}
+            {hasMoney && (
+              <button disabled={paying} onClick={() => onPay(plan)}
+                style={{
+                  display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%',
+                  padding:'11px 16px', borderRadius:9, border:'1.5px solid #6366f1', background:'#fbfbff',
+                  color:'#4f46e5', fontWeight:700, fontSize:'clamp(11.5px,3.4vw,13.5px)', cursor: paying ? 'not-allowed' : 'pointer',
+                }}>
+                <span style={{display:'flex',alignItems:'center',gap:7,minWidth:0,overflow:'hidden'}}>
+                  <CardIcon size={14}/>
+                  <span style={{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>Pay with money</span>
+                </span>
+                <span style={{fontSize:'clamp(13px,3.8vw,15px)',fontWeight:800,flexShrink:0,whiteSpace:'nowrap',marginLeft:8}}>{paying ? 'Opening…' : `₹${price}`}</span>
+              </button>
+            )}
+            {hasMoney && hasGems && <OrDivider />}
+            {hasGems && (
+              <button disabled={!afford || redeeming} onClick={() => onRedeem(plan.id)}
+                style={{
+                  display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%',
+                  padding:'11px 16px', borderRadius:9, border:'none',
+                  background: afford ? 'linear-gradient(135deg,#6366f1,#4f46e5)' : '#eef0f4',
+                  color: afford ? '#fff' : '#94a3b8', boxShadow: afford ? '0 2px 6px rgba(79,70,229,.28)' : 'none',
+                  fontWeight:700, fontSize:'clamp(11.5px,3.4vw,13.5px)', cursor: afford ? 'pointer' : 'not-allowed',
+                }}>
+                <span style={{display:'flex',alignItems:'center',gap:7,minWidth:0,overflow:'hidden'}}>
+                  <GemIcon size={14}/>
+                  <span style={{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>Redeem with gems</span>
+                </span>
+                <span style={{fontSize:'clamp(13px,3.8vw,15px)',fontWeight:800,flexShrink:0,whiteSpace:'nowrap',marginLeft:8}}>{gemCost}</span>
+              </button>
+            )}
+            {hasGems && !afford && (
+              <div style={{textAlign:'center',fontSize:11,fontWeight:700,color:'#b45309',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:20,padding:'3px 10px'}}>
+                {need} more gem{need===1?'':'s'} needed
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
-function NoSubscriptionGate() {
+function UnlockPanel() {
   const navigate = useNavigate()
   const toast = useToast()
   const qc    = useQueryClient()
@@ -627,109 +754,51 @@ function NoSubscriptionGate() {
   }
 
   const balance = credits?.balance ?? 0
-  const cheapest = plans.length ? Math.min(...plans.map(p => p.gem_cost ?? 0).filter(c => c > 0)) : null
-  const canUnlock = cheapest != null && balance >= cheapest
 
   return (
-    <div>
-      <div className="card">
-        <div className="card-header">
-          <h2>Recommended Positions</h2>
-          <span style={{marginLeft:'auto',fontSize:11,fontWeight:600,color:'#94a3b8',display:'flex',alignItems:'center',gap:4}}>
-            <LockIcon size={12}/> Subscription required
-          </span>
+    <div className="card">
+      <div className="card-header">
+        <h2>Recommended Positions</h2>
+        <span style={{marginLeft:'auto',fontSize:11,fontWeight:600,color:'#94a3b8',display:'flex',alignItems:'center',gap:4}}>
+          <LockIcon size={12}/> Subscription required
+        </span>
+      </div>
+      <div className="card-body" style={{padding:'18px 16px'}}>
+
+      <div style={{textAlign:'center',marginBottom:16}}>
+        <div style={{color:'var(--muted)',display:'flex',justifyContent:'center',marginBottom:8}}><LockIcon size={26}/></div>
+        <div style={{fontSize:14,fontWeight:700,color:'#0f172a',marginBottom:4}}>Subscribe to see recommendations</div>
+        <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.55,maxWidth:320,margin:'0 auto'}}>
+          Pay once, or redeem <GemIcon size={11}/> gems you&apos;ve earned playing games — either one unlocks the same plan.
         </div>
-        <div className="card-body" style={{padding:'20px 16px'}}>
+      </div>
 
-        {/* Header */}
-        <div style={{textAlign:'center',marginBottom:20}}>
-          <div style={{color:'var(--muted)',display:'flex',justifyContent:'center',marginBottom:10}}><LockIcon size={30}/></div>
-          <div style={{fontSize:15,fontWeight:700,color:'#0f172a',marginBottom:6}}>Unlock live signals</div>
-          <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.6}}>
-            Play games to earn <GemIcon size={12}/> gems, then redeem them below to unlock recommendations.
-          </div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'#fefce8',border:'1px solid #fde68a',borderRadius:10,padding:'10px 14px',marginBottom:14}}>
+        <span style={{fontSize:12,color:'#92400e',fontWeight:600}}>Your gem balance</span>
+        <span style={{fontSize:17,fontWeight:800,color:'#d97706',display:'inline-flex',alignItems:'center',gap:5}}><GemIcon size={14}/> {balance}</span>
+      </div>
+
+      <div className="plan-scroll">
+        {plans.map(plan => (
+          <PlanUnlockCard key={plan.id} plan={plan} balance={balance}
+            onRedeem={id => buy.mutate(id)} onPay={payWithRazorpay}
+            redeeming={buy.isPending} paying={payingPlanId === plan.id} />
+        ))}
+      </div>
+      {plans.length > 1 && (
+        <div style={{textAlign:'center',fontSize:10.5,color:'#cbd5e1',fontWeight:600,margin:'-6px 0 12px'}}>
+          ‹ swipe for more plans ›
         </div>
+      )}
 
-        {/* Gem balance + how to earn */}
-        <div style={{background:'#fefce8',border:'1px solid #fde68a',borderRadius:10,padding:'14px 18px',marginBottom:16}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-            <span style={{fontSize:13,color:'#92400e',fontWeight:600}}>Your gem balance</span>
-            <span style={{fontSize:20,fontWeight:800,color:'#d97706',display:'inline-flex',alignItems:'center',gap:5}}><GemIcon size={17}/> {balance}</span>
-          </div>
-          <div style={{fontSize:11,color:'#b45309',lineHeight:1.5}}>
-            Earn gems by playing games — price predictions, quizzes, and trading challenges. Winners get <GemIcon size={10}/> gems from the reward pool.
-          </div>
-        </div>
+      <button
+        className="btn btn-ghost"
+        style={{width:'100%',justifyContent:'center',marginTop:4,fontSize:13,display:'flex',alignItems:'center',gap:6}}
+        onClick={() => navigate('/games')}
+      >
+        <GameIcon size={13}/> Earn more gems in Games →
+      </button>
 
-        {/* Plans */}
-        {plans.map(plan => {
-          const gemCost  = plan.gem_cost ?? 0
-          const isFree   = gemCost === 0
-          const afford   = isFree || balance >= gemCost
-          const need     = gemCost - balance
-          const active   = afford && !buy.isPending
-          return (
-            <div key={plan.id} style={{
-              border:`1.5px solid ${afford ? '#6366f1' : 'var(--border)'}`,
-              borderRadius:10, padding:'14px 16px', marginBottom:10,
-              background: afford ? '#f5f3ff' : '#fff',
-              display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
-            }}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:700,fontSize:14,color:'#1e293b'}}>{plan.name}</div>
-                <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{plan.duration_days} days · {plan.description}</div>
-                <div style={{fontSize:12,fontWeight:700,color: afford ? '#6366f1' : '#94a3b8',marginTop:4,display:'flex',alignItems:'center',gap:4}}>
-                  {isFree ? 'Free' : <><GemIcon size={11}/> {gemCost} gems</>}{plan.price > 0 ? `  ·  ₹${plan.price}` : ''}
-                </div>
-                {!afford && need > 0 && (
-                  <div style={{fontSize:11,color:'#f59e0b',marginTop:3,fontWeight:600}}>
-                    {need} more gems needed — go play games!
-                  </div>
-                )}
-              </div>
-              <div style={{display:'flex',flexDirection:'column',gap:6,flexShrink:0}}>
-                <button
-                  disabled={!active}
-                  onClick={() => buy.mutate(plan.id)}
-                  style={{
-                    padding:'8px 16px', borderRadius:7, border:'none',
-                    background: active ? '#6366f1' : '#e2e8f0',
-                    color: active ? '#fff' : '#94a3b8',
-                    fontWeight:700, fontSize:13,
-                    cursor: active ? 'pointer' : 'not-allowed', whiteSpace:'nowrap',
-                    display:'inline-flex', alignItems:'center', justifyContent:'center', gap:5,
-                  }}
-                >
-                  {isFree ? 'Claim Free' : afford ? <>Redeem <GemIcon size={12}/> {gemCost}</> : <><GemIcon size={12}/> {gemCost}</>}
-                </button>
-                {plan.price > 0 && (
-                  <button
-                    disabled={payingPlanId === plan.id}
-                    onClick={() => payWithRazorpay(plan)}
-                    style={{
-                      padding:'8px 16px', borderRadius:7, border:'1.5px solid #6366f1',
-                      background:'#fff', color:'#6366f1', fontWeight:700, fontSize:13,
-                      cursor: payingPlanId === plan.id ? 'not-allowed' : 'pointer', whiteSpace:'nowrap',
-                    }}
-                  >
-                    {payingPlanId === plan.id ? 'Opening…' : `Pay ₹${plan.price}`}
-                  </button>
-                )}
-              </div>
-            </div>
-          )
-        })}
-
-        {/* CTA to Games */}
-        <button
-          className="btn btn-ghost"
-          style={{width:'100%',justifyContent:'center',marginTop:8,fontSize:13,display:'flex',alignItems:'center',gap:6}}
-          onClick={() => navigate('/games')}
-        >
-          {canUnlock ? 'Play more games →' : <><GameIcon size={13}/> Go earn gems in Games →</>}
-        </button>
-
-        </div>
       </div>
     </div>
   )
@@ -741,9 +810,7 @@ export default function Trades({ subscribed }) {
 
   return (
     <div className="trades-layout">
-      {isAdmin || subscribed
-        ? <RecsPanel isAdmin={isAdmin} />
-        : <NoSubscriptionGate />}
+      <RecsPanel isAdmin={isAdmin} subscribed={subscribed} />
     </div>
   )
 }

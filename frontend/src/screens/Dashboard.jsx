@@ -1,11 +1,12 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import useAuthStore from '../store/authStore'
 import { useRecs } from '../hooks/useTrades'
 import { useMonthlyReport } from '../hooks/useReports'
 import { listGames, getMyReferrals } from '../api/games'
 import { shortMonthLabel, currentIstMonth, roi } from './profile/reportUtils'
 import MonthSummaryCard from './profile/MonthSummaryCard'
-import { ChartIcon, PeopleIcon, GameIcon, BookIcon } from '../components/common/Icons'
+import { ChartIcon, PeopleIcon, GameIcon, BookIcon, LockIcon } from '../components/common/Icons'
 import { ARTICLES } from '../content/education'
 import './Dashboard.css'
 
@@ -28,6 +29,10 @@ function FeaturedTile({ color, icon, ribbon, ribbonColor, title, subtitle, onCli
 
 function FeaturedGrid() {
   const navigate = useNavigate()
+  const user = useAuthStore(s => s.user)
+  // Renders nothing for admins (subscription_valid is hardcoded true
+  // server-side for admin roles per /api/me) or subscribed clients.
+  const needsSubscription = user?.role === 'client' && user.subscription_valid === false
 
   const { data: recs = [] } = useRecs()
   const activeCount = recs.filter(r => r.status === 'open').length
@@ -53,6 +58,14 @@ function FeaturedGrid() {
     <>
       <div className="ov-section-label">Featured</div>
       <div className="ov-tile-grid">
+        {needsSubscription && (
+          <FeaturedTile
+            wide
+            color="red" ribbonColor="red" icon={<LockIcon size={22}/>}
+            ribbon="Action needed"
+            title="No active subscription" subtitle="Subscribe to unlock recommended trades and positions"
+            onClick={() => navigate('/trades')} />
+        )}
         <FeaturedTile
           color="blue" ribbonColor="green" icon={<ChartIcon size={22}/>}
           ribbon={`${activeCount} open now`}

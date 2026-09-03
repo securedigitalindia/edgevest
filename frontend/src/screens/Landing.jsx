@@ -2,6 +2,19 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { authUrl } from '../api/client'
 
+// Plain <a href> navigation pushes a history entry for this (logged-out)
+// page before leaving the SPA for the OAuth round-trip — after login
+// completes, "Back" pops right back to it (sometimes from bfcache, so it
+// can even show a stale "logged out" snapshot despite a valid session).
+// location.replace() swaps the entry instead of adding one, same fix
+// ProfileHub.jsx's sign-out button already uses for /logout. Keep `href`
+// on the <a> itself (middle-click/right-click-copy-link still work) and
+// only intercept a plain left-click.
+function loginClick(e, href) {
+  e.preventDefault()
+  window.location.replace(href)
+}
+
 // Dev-only Google-login bypass — Google rejects any redirect_uri that isn't a
 // public-TLD domain (raw LAN IPs, .local, etc.), so a phone on the same
 // Wi-Fi as the dev laptop can never complete real Google OAuth against a
@@ -18,6 +31,7 @@ function DevLogin({ refCode }) {
       <input value={email} onChange={e => setEmail(e.target.value)} placeholder="dev login: email"
              style={{fontSize:12,padding:'6px 10px',border:'1px solid #e2e8f0',borderRadius:6,width:200}} />
       <a href={email ? authUrl('/auth/dev-login', { ref: refCode }) + `&email=${encodeURIComponent(email)}` : undefined}
+         onClick={email ? e => loginClick(e, e.currentTarget.href) : undefined}
          style={{fontSize:12,padding:'6px 12px',border:'1px solid #e2e8f0',borderRadius:6,color:'#64748b',
                  textDecoration:'none',pointerEvents:email ? 'auto' : 'none',opacity:email ? 1 : .5}}>
         Dev login
@@ -47,7 +61,8 @@ export default function Landing() {
         <div style={{fontSize:17,fontWeight:800,letterSpacing:'-.3px',color:'#0f172a'}}>
           Edge<span style={{color:'#3b82f6'}}>Vest</span>
         </div>
-        <a href={authUrl('/auth/google', { ref })} style={{display:'inline-flex',alignItems:'center',gap:8,background:'#0f172a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer',textDecoration:'none'}}>
+        <a href={authUrl('/auth/google', { ref })} onClick={e => loginClick(e, e.currentTarget.href)}
+           style={{display:'inline-flex',alignItems:'center',gap:8,background:'#0f172a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer',textDecoration:'none'}}>
           {GOOGLE_SVG}
           Sign in with Google
         </a>
@@ -67,7 +82,8 @@ export default function Landing() {
           portfolio tools — all in one clean interface.
         </p>
         <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>
-          <a href={authUrl('/auth/google', { ref })} style={{display:'inline-flex',alignItems:'center',gap:10,background:'#fff',color:'#0f172a',border:'1.5px solid #e2e8f0',borderRadius:10,padding:'12px 24px',fontSize:14,fontWeight:600,cursor:'pointer',textDecoration:'none',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+          <a href={authUrl('/auth/google', { ref })} onClick={e => loginClick(e, e.currentTarget.href)}
+             style={{display:'inline-flex',alignItems:'center',gap:10,background:'#fff',color:'#0f172a',border:'1.5px solid #e2e8f0',borderRadius:10,padding:'12px 24px',fontSize:14,fontWeight:600,cursor:'pointer',textDecoration:'none',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
             {GOOGLE_SVG}
             Continue with Google
           </a>

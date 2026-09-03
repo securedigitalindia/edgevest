@@ -107,3 +107,30 @@
   /* Card header: let tabs + status selector wrap to a second row */
   .card-header { flex-wrap: wrap; }
 }
+
+/* Unlock panel plan cards — a horizontal swipeable row instead of a long
+   vertical stack, so plans are comparable at a glance. Card width uses
+   clamp(min, preferred%, max) rather than either extreme tried before:
+   a pure percentage (2nd attempt) scales with the container, but on this
+   page's ~560px-wide desktop content area that meant a ~420px card — way
+   past what the card's internals (icon + label + price per button) were
+   designed for, so it looked bloated. A flat fixed px (3rd attempt) fixed
+   that but stopped adjusting at all — same size on a small phone as a
+   tablet, not actually responsive. clamp()'s middle term is still a
+   percentage of the row, so the card keeps scaling fluidly with the
+   viewport between the two bounds, and only stops scaling once it hits
+   the min (small phones, stays usable) or the max (desktop, stays the
+   size it was designed at) — auto-adjusting per screen without either
+   under- or over-shooting. Peek falls out naturally whenever total card
+   width exceeds the row's width, true almost whenever there's more than
+   ~2 plans (the common case here). Snap-scroll settles on a card boundary
+   instead of a half-scrolled resting state. Scrollbar hidden — the
+   peeking card edge plus the "swipe for more" hint below it (Trades.jsx)
+   are the affordance. */
+.plan-scroll {
+  display: flex; gap: 12px; overflow-x: auto; padding-bottom: 2px;
+  scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.plan-scroll::-webkit-scrollbar { display: none; }
+.plan-scroll-card { flex: 0 0 auto; width: clamp(210px, 68%, 260px); scroll-snap-align: start; }
