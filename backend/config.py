@@ -219,18 +219,25 @@ TRIGGERS = [
         "timeframe":  "live",
         "symbols":    ["NIFTY50"],
         "risk_level": "high",  # naked short fut+PE combo — stamped on every trade this trigger opens/rolls
-        "trades": [
-            {
-                "type": "nifty_500_short_entry",
-                "params": {
-                    "min_pe_distance_pct": 3,    # PE strike >= 3% below LTP
-                    "strike_step":         500,  # round PE strike to nearest 500
-                    "exit_distance":       500,  # exit when Nifty falls 500 pts
-                    "fut_lots":            1,
-                    "pe_lots":             2,
-                },
-            },
-        ],
+        # New entries disabled (2026-09-03) — empty "trades" skips the entry
+        # block entirely (Nifty500MultipleTrigger.check(), triggers.py) while
+        # any already-open position from this strategy still gets exited /
+        # auto-rolled normally by the live poller.
+        #
+        # To re-enable, restore this "trades" value:
+        # "trades": [
+        #     {
+        #         "type": "nifty_500_short_entry",
+        #         "params": {
+        #             "min_pe_distance_pct": 3,    # PE strike >= 3% below LTP
+        #             "strike_step":         500,  # round PE strike to nearest 500
+        #             "exit_distance":       500,  # exit when Nifty falls 500 pts
+        #             "fut_lots":            1,
+        #             "pe_lots":             2,
+        #         },
+        #     },
+        # ],
+        "trades": [],
     },
 
     # --- Trade suggestion alerts ---
