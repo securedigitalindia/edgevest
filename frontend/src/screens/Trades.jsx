@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useRecs, useRecPrices, useCreateRec, useDeleteRec, useExitRec, useAdjustRec, useCreateAccountTrade,
-         useAccounts } from '../hooks/useTrades'
+         useAccounts, useDraftRecs, usePublishRec, useDiscardRec } from '../hooks/useTrades'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getCredits, getPlans, subscribeWithCredits } from '../api/games'
 import { loadRazorpayScript } from '../api/billing'
@@ -14,7 +14,8 @@ import { newLeg, collectLegs } from '../components/trades/legHelpers'
 import LegGroup from '../components/trades/LegDisplay'
 import { fmtRs, fmtPnl, fmtQty, fmtContract } from '../utils/format'
 import { unrealizedPnl, realizedPnl } from '../utils/pnl'
-import { BankIcon, GameIcon, GemIcon, LockIcon, RefreshIcon, CardIcon } from '../components/common/Icons'
+import { copyToClipboard } from '../utils/clipboard'
+import { BankIcon, GameIcon, GemIcon, LockIcon, RefreshIcon, CardIcon, ShareIcon } from '../components/common/Icons'
 import MonthSummaryCard from './profile/MonthSummaryCard'
 import { currentIstMonth, monthLabel, istMonthFromDisplay } from './profile/reportUtils'
 import './Trades.css'
@@ -48,7 +49,7 @@ function CreateRecForm() {
     if (!data) return
     const res = await create.mutateAsync({ ...data, note, risk_level: riskLevel })
     if (res.ok) {
-      toast(`Recommendation created (id=${res.trade_id}) ✓`, 'ok')
+      toast(`Saved as draft (id=${res.trade_id}) — publish it below when ready ✓`, 'ok')
       setLegs([newLeg()]); setNote(''); setRiskLevel('')
     } else {
       toast(res.error || 'Create failed', 'err')
@@ -71,8 +72,45 @@ function CreateRecForm() {
         <LegBuilder legs={legs} onChange={setLegs} />
         <button className="btn btn-primary" style={{width:'100%',justifyContent:'center',marginTop:16}}
                 onClick={submit} disabled={create.isPending}>
-          Create &amp; Send Alert
+          {create.isPending ? 'Saving…' : 'Save as Draft'}
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Draft strategies (admin) ────────────────────────────────────────────────
+// Surfaces recommended_trades rows staged via backend/strategy_cli.py's
+// create/add-leg workflow, or the Dashboard's own "New Recommendation" form
+// (both default to status='draft', never visible to clients — see
+// docs/prd/manual-strategy-cli.md). Renders each draft with the exact same
+// RecItem component the open/exited list below uses (collapse behavior,
+// stats strip, leg display, live price tracking all identical) — the
+// backend's GET /api/recommendations/drafts returns the same row shape as
+// GET /api/recommendations specifically so this works with zero special
+// leg/stats markup here. Purely additive alongside the existing list —
+// separate query key/section, doesn't touch that list's data or rendering.
+
+function DraftsPanel() {
+  const { data: drafts = [], isLoading } = useDraftRecs()
+
+  // Poll live LTPs for draft legs too — same shared price poller RecsPanel
+  // uses for open positions (hooks/usePrices.js dedupes/unions every
+  // consumer's keys into one request).
+  const instrKeys = [...new Set(drafts.flatMap(d => (d.legs || []).map(l => l.instrument_key).filter(Boolean)))]
+  const { data: prices = {} } = useRecPrices(instrKeys)
+
+  // No terminal-authored drafts pending — nothing worth a permanent card for
+  // an admin who never touches strategy_cli.py; mirrors how e.g. the client
+  // no-accounts banner above only appears when there's something to act on.
+  if (!isLoading && drafts.length === 0) return null
+
+  return (
+    <div className="card">
+      <div className="card-header"><h2>Draft Strategies</h2></div>
+      <div className="card-body" style={{padding:10}}>
+        {isLoading && <div className="empty">Loading…</div>}
+        {!isLoading && drafts.map(d => <RecItem key={d.id} rec={d} prices={prices} />)}
       </div>
     </div>
   )
@@ -280,6 +318,34 @@ function ExitRecForm({ rec, onClose }) {
 
 // ─── Single recommendation item ───────────────────────────────────────────────
 
+// Deep-links into RecsPanel's existing `?rec=<id>` mechanism (see that
+// effect below — switches to the right Open/Exited tab, scrolls to the card,
+// highlights it) so a shared link actually lands the recipient on this exact
+// position, not just the Trades screen in general.
+function positionShareLink(rec) {
+  return `${window.location.origin}/trades?rec=${rec.id}`
+}
+
+const STATUS_LABEL = { open: 'Live', draft: 'Draft', exited: 'Exited' }
+
+// navigator.share's `text`/`title` are two separate fields many share
+// targets (WhatsApp, SMS, etc.) just concatenate on send, and `url` is
+// appended after — so `text` here reads correctly whether the target shows
+// title+text+url all together or drops the title. copyPositionShareText()
+// below builds the clipboard-fallback version, same content, one string.
+function positionShareTitle(rec) {
+  return `EdgeVest · ${rec.note || rec.symbol}`
+}
+
+function positionShareBody(rec) {
+  const status = STATUS_LABEL[rec.status] || rec.status
+  return `#${rec.display_code || rec.id} · ${status}\n\nTrack this position on EdgeVest:`
+}
+
+function positionShareText(rec) {
+  return `📊 ${positionShareTitle(rec)}\n${positionShareBody(rec)}\n${positionShareLink(rec)}`
+}
+
 function RecItem({ rec, prices, onPushed, highlight }) {
   const user    = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
@@ -289,11 +355,17 @@ function RecItem({ rec, prices, onPushed, highlight }) {
   const [adjOpen,  setAdjOpen]  = useState(false)
   const [exitOpen, setExitOpen] = useState(false)
   const [pushOpen, setPushOpen] = useState(false)
-  const doDel  = useDeleteRec()
-  const isOpen = rec.status === 'open'
+  const doDel   = useDeleteRec()
+  const publish = usePublishRec()
+  const discard = useDiscardRec()
+  const isOpen  = rec.status === 'open'
+  const isDraft = rec.status === 'draft'
 
   // Realized/unrealized P&L — shared with Dashboard.jsx's monthly summary,
   // see utils/pnl.js for why instrument_key matching (not positional zip()).
+  // unrealizedPnl covers 'open' and 'draft' (a draft's legs already carry a
+  // real recorded price, so a live running P&L is just as meaningful before
+  // publish — see docs/prd/manual-strategy-cli.md's 2026-09-06 addendum).
   const totalPnl      = realizedPnl(rec)
   const unrealisedPnl = unrealizedPnl(rec, prices)
 
@@ -302,6 +374,44 @@ function RecItem({ rec, prices, onPushed, highlight }) {
     const res = await doDel.mutateAsync(rec.id)
     if (res.ok) toast('Recommendation deleted', 'ok')
     else toast(res.error || 'Failed', 'err')
+  }
+
+  async function handlePublish() {
+    const res = await publish.mutateAsync(rec.id)
+    if (res.ok) toast(`Published as trade #${res.trade_id} — alert sent ✓`, 'ok')
+    else toast(res.error || 'Publish failed', 'err')
+  }
+
+  async function handleDiscard() {
+    if (!confirm('Discard this draft strategy? This cannot be undone.')) return
+    const res = await discard.mutateAsync(rec.id)
+    if (res.ok) toast('Draft discarded', 'ok')
+    else toast(res.error || 'Discard failed', 'err')
+  }
+
+  async function handleShare() {
+    const link = positionShareLink(rec)
+    if (navigator.share) {
+      try {
+        // title/text/url stay separate fields here — most share targets
+        // (WhatsApp, SMS, Telegram) append `url` themselves, so folding it
+        // into `text` too would duplicate the link. The clipboard fallback
+        // below has no separate url field, so it uses the fully-combined
+        // positionShareText() instead.
+        await navigator.share({ title: positionShareTitle(rec), text: `📊 ${positionShareBody(rec)}`, url: link })
+        return
+      } catch (e) {
+        if (e?.name === 'AbortError') return // user cancelled the share sheet — not an error
+        // Same finding as Referrals.jsx's shareOrCopy(): a rejected
+        // navigator.share() call consumes this click's transient user
+        // activation, so chaining a clipboard call right here would likely
+        // fail too — fall through to the plain copy attempt below anyway
+        // since there's only one button here (no separate Copy button to
+        // point at), accepting it may also need a retry click.
+      }
+    }
+    const ok = await copyToClipboard(positionShareText(rec))
+    toast(ok ? 'Link copied ✓' : 'Could not share — copy the link manually', ok ? 'ok' : 'err')
   }
 
   return (
@@ -313,16 +423,16 @@ function RecItem({ rec, prices, onPushed, highlight }) {
             <span className="rec-symbol" style={{fontSize:15}}>{rec.note || rec.symbol}</span>
             {rec.segment && <span className="rec-seg-tag">{rec.segment}</span>}
             {rec.risk_level && <span className={`risk-badge risk-${rec.risk_level}`}>{RISK_LABEL[rec.risk_level] || rec.risk_level}</span>}
-            <span className={`status-dot status-dot-${rec.status === 'open' ? 'open' : 'exited'}`}
-                  title={rec.status === 'open' ? 'Live' : 'Exited'} />
+            <span className={`status-dot status-dot-${rec.status === 'open' ? 'open' : rec.status === 'draft' ? 'draft' : 'exited'}`}
+                  title={rec.status === 'open' ? 'Live' : rec.status === 'draft' ? 'Draft' : 'Exited'} />
           </div>
           <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
-            {collapsed && !isOpen && totalPnl != null && (
+            {collapsed && rec.status === 'exited' && totalPnl != null && (
               <span style={{fontSize:12,fontWeight:700,color:totalPnl>=0?'var(--green)':'var(--red)'}}>
                 {fmtPnl(totalPnl)}
               </span>
             )}
-            {collapsed && isOpen && unrealisedPnl != null && (
+            {collapsed && (isOpen || isDraft) && unrealisedPnl != null && (
               <span style={{fontSize:12,fontWeight:700,color:unrealisedPnl>=0?'var(--green)':'var(--red)'}}>
                 {fmtPnl(unrealisedPnl)}
               </span>
@@ -345,10 +455,10 @@ function RecItem({ rec, prices, onPushed, highlight }) {
       <div className={`rec-body${collapsed ? ' rec-body-collapsed' : ''}`}>
 
       {/* Legs */}
-      <RecLegs rec={rec} prices={isOpen ? prices : null} />
+      <RecLegs rec={rec} prices={(isOpen || isDraft) ? prices : null} />
 
       {/* Stats strip */}
-      {isOpen && (rec.margin_final || unrealisedPnl != null) && (
+      {(isOpen || isDraft) && (rec.margin_final || unrealisedPnl != null) && (
         <div className="rec-stats-strip">
           {rec.margin_final && (
             <div className="rec-stat">
@@ -364,7 +474,7 @@ function RecItem({ rec, prices, onPushed, highlight }) {
           </div>
         </div>
       )}
-      {!isOpen && totalPnl != null && (
+      {rec.status === 'exited' && totalPnl != null && (
         <div className="rec-stats-strip">
           <div className="rec-stat">
             <div className="rec-stat-lbl">Realized P&amp;L</div>
@@ -386,28 +496,49 @@ function RecItem({ rec, prices, onPushed, highlight }) {
           <button className="btn btn-primary btn-sm" onClick={() => { setAdjOpen(v=>!v); setExitOpen(false) }}>Adjust</button>
           <button className="btn btn-danger btn-sm"  onClick={() => { setExitOpen(v=>!v); setAdjOpen(false) }}>Exit</button>
           <button className="btn btn-ghost btn-sm"   style={{color:'var(--red)',borderColor:'#fca5a5'}} onClick={handleDelete}>Delete</button>
+          <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} title="Share this position" onClick={handleShare}>
+            <ShareIcon size={13} />
+          </button>
         </div>
         {adjOpen  && <AdjustForm  rec={rec} onClose={() => setAdjOpen(false)} />}
         {exitOpen && <ExitRecForm rec={rec} onClose={() => setExitOpen(false)} />}
       </>}
 
+      {isAdmin && isDraft && (
+        <div className="rec-action-bar" onClick={e => e.stopPropagation()}>
+          <button className="btn btn-primary btn-sm" onClick={handlePublish} disabled={publish.isPending || discard.isPending}>
+            {publish.isPending ? 'Publishing…' : 'Publish'}
+          </button>
+          <button className="btn btn-ghost btn-sm" style={{color:'var(--red)',borderColor:'#fca5a5'}}
+                  onClick={handleDiscard} disabled={publish.isPending || discard.isPending}>
+            {discard.isPending ? 'Discarding…' : 'Discard'}
+          </button>
+        </div>
+      )}
+
       {/* Client actions */}
       {!isAdmin && isOpen && (
         rec.adj_count > 0
-          ? <div style={{borderTop:'1px solid var(--border)',padding:'10px 14px'}}>
-              <div className="rec-adj-notice" style={{margin:0}}>
+          ? <div style={{display:'flex',gap:8,alignItems:'center',borderTop:'1px solid var(--border)',padding:'10px 14px'}} onClick={e => e.stopPropagation()}>
+              <div className="rec-adj-notice" style={{margin:0,flex:1}}>
                 <span style={{fontSize:18}}>ℹ️</span>
                 <div>
                   <div style={{fontSize:12,fontWeight:700,color:'#1d4ed8',marginBottom:2}}>New entries not available</div>
                   <div style={{fontSize:12,color:'#1e40af',lineHeight:1.5}}>This trade has been adjusted. Contact your advisor to join the current position.</div>
                 </div>
               </div>
+              <button className="btn btn-ghost btn-sm" title="Share this position" onClick={handleShare}>
+                <ShareIcon size={13} />
+              </button>
             </div>
           : <>
-              <div style={{padding:'10px 14px',borderTop:'1px solid var(--border)'}} onClick={e => e.stopPropagation()}>
-                <button className="btn btn-success" style={{width:'100%',justifyContent:'center',fontWeight:700,fontSize:13,padding:'9px'}}
+              <div style={{display:'flex',gap:8,padding:'10px 14px',borderTop:'1px solid var(--border)'}} onClick={e => e.stopPropagation()}>
+                <button className="btn btn-success" style={{flex:1,justifyContent:'center',fontWeight:700,fontSize:13,padding:'9px'}}
                         onClick={() => setPushOpen(v=>!v)}>
                   {pushOpen ? 'Cancel' : '+ Add to My Account'}
+                </button>
+                <button className="btn btn-ghost btn-sm" title="Share this position" onClick={handleShare}>
+                  <ShareIcon size={13} />
                 </button>
               </div>
               {pushOpen && <PushForm rec={rec} prices={prices} onClose={() => setPushOpen(false)} onPushed={onPushed} />}
@@ -513,6 +644,7 @@ function RecsPanel({ isAdmin, subscribed }) {
   return (
     <div>
       {isAdmin && <CreateRecForm />}
+      {isAdmin && <DraftsPanel />}
 
       {/* Client setup banner — only once they can actually push a trade to
           an account, i.e. once subscribed; showing this to an unsubscribed

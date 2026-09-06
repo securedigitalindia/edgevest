@@ -6,6 +6,7 @@ Sends two types of messages:
   2. Trade idea    — one message per trade suggestion
 """
 
+import os
 import requests
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -15,6 +16,17 @@ IST      = ZoneInfo("Asia/Kolkata")
 _DIV     = "─" * 30
 _DIV_MSG = "\n" + _DIV + "\n"
 
+
+def _frontend_url(path: str) -> str:
+    """Absolute link into the frontend, e.g. for a Telegram alert's 'view on
+    EdgeVest' link. Same FRONTEND_URL env var server.py uses for post-auth
+    redirects (backend/.env.<FLASK_ENV>) — read directly here (this module
+    has no other Flask dependency) rather than importing it from server.py,
+    which would be circular. Empty/unset FRONTEND_URL gracefully omits the
+    link line entirely rather than sending a broken one."""
+    base = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    return f"{base}{path}" if base else ""
+
 _EVENT_META = {
     "CROSS UP":           ("↑",  "Price crossed ABOVE"),
     "CROSS DOWN":         ("↓",  "Price crossed BELOW"),
@@ -23,7 +35,6 @@ _EVENT_META = {
     "500-MULTI ENTRY":    ("📉", "Nifty crossed 500-level — short entry"),
     "500-MULTI EXIT":     ("🔺", "Short exit — Nifty fell 500 pts from entry"),
     "500-MULTI AUTO ROLL":("🔄", "Expiry auto-roll — leg moved to next month"),
-    "MANUAL ENTRY":       ("✍️", "Manual trade entry"),
     "MANUAL EXIT":        ("✅", "Manual trade exit"),
     "ADJUSTMENT":         ("⚙️", "Trade adjustment applied"),
 }
@@ -190,26 +201,45 @@ def send_alert(signal: dict):
         send_telegram(text)
 
 
-def send_rec_exit_alert(symbol: str, legs: list[dict], spot: float):
-    """Notify clients that a recommendation has been exited — they should close their positions."""
-    now_ist = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
-    leg_lines = []
-    for l in legs:
-        strike = f"{int(l['strike']):,} " if l.get("strike") else ""
-        side_icon = "🔴 SELL" if l["side"] == "SELL" else "🟢 BUY "
-        price_str = f"  @₹{l['price']:,.2f}" if l.get("price") else ""
-        leg_lines.append(f"{side_icon}  <b>{_h(strike + l['instrument_type'])}</b>  {l['lots']}L{price_str}")
-    legs_str = "\n".join(leg_lines) or "—"
-    text = (
-        f"✅ <b>EXIT SIGNAL  •  {_h(symbol)}</b>\n"
-        f"{_DIV}\n"
-        f"<i>Close your positions for this trade.</i>\n\n"
-        f"{legs_str}\n\n"
-        f"{_DIV}\n"
-        f"{_row('Spot', f'{spot:,.2f}', bold_value=False)}\n"
-        f"{_row('Alert at', now_ist, bold_value=False)}"
-    )
-    send_telegram(text)
+# ---------------------------------------------------------------------------
+# recommended_trades lifecycle alerts — new trade / adjustment / exit.
+#
+# All three share one lean format: EdgeVest-branded header, a one-line
+# summary (display_code, what happened, leg count — never a full leg-by-leg
+# dump or the spot price, both dropped 2026-09-06 per founder feedback: once
+# there's a link, the website is the source of truth for detail, the
+# Telegram message is just the "something happened, go look" prompt), and a
+# "View & track on EdgeVest" link (built via _frontend_url()) so the reader
+# clicks through instead of reading a wall of numbers in the chat. No
+# internal naming ("Manual Trade", trigger_name, etc.) ever appears — these
+# are client-facing, EdgeVest is the only brand a client should see.
+# ---------------------------------------------------------------------------
+
+def _rec_code(trade_id: int, display_code: str | None) -> str:
+    return f"#{_h(display_code)}" if display_code else f"#{trade_id}"
+
+
+def send_new_trade_alert(trade_id: int, symbol: str, display_code: str | None,
+                          note: str, legs: list[dict]):
+    """A draft was just published — the position is live. Fires once, from
+    publish_manual_trade() (both strategy_cli.py's `publish` and the
+    Dashboard's Publish button go through that one function)."""
+    now_ist  = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
+    n        = len(legs)
+    leg_word = "leg" if n == 1 else "legs"
+    link     = _frontend_url(f"/trades?rec={trade_id}")
+
+    lines = [
+        f"🆕 <b>EdgeVest</b>  •  <b>{_h(symbol)}</b>  •  🆕 <b>New Trade</b>",
+        _DIV,
+        f"<b>{_h(note) if note else _h(symbol)}</b>",
+        f"{_rec_code(trade_id, display_code)}  ·  {n} {leg_word}",
+        "",
+    ]
+    if link:
+        lines += ["👉 <i>View &amp; track this trade on EdgeVest:</i>", link, ""]
+    lines.append(_row("Alert at", now_ist, bold_value=False))
+    send_telegram("\n".join(lines))
 
 
 _ADJ_TYPE_LABEL = {
@@ -221,34 +251,48 @@ _ADJ_TYPE_LABEL = {
 }
 
 
-def send_adjustment_alert(
-    symbol:   str,
-    adj_type: str,
-    legs:     list[dict],
-    note:     str = "",
-):
-    """Notify clients that a trade adjustment has been recorded — they should apply it."""
-    now_ist = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
-    label   = _ADJ_TYPE_LABEL.get(adj_type, adj_type.replace("_", " ").title())
-    icon, _ = _EVENT_META.get("ADJUSTMENT", ("⚙️", ""))
+def send_adjustment_alert(trade_id: int, symbol: str, display_code: str | None,
+                           adj_type: str, legs: list[dict], note: str = ""):
+    """Notify clients that a trade adjustment has been recorded."""
+    now_ist  = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
+    label    = _ADJ_TYPE_LABEL.get(adj_type, adj_type.replace("_", " ").title())
+    n        = len(legs)
+    leg_word = "leg" if n == 1 else "legs"
+    link     = _frontend_url(f"/trades?rec={trade_id}")
 
     lines = [
-        f"{icon} <b>ADJUSTMENT  •  {_h(symbol)}  •  {_h(label)}</b>",
+        f"🆕 <b>EdgeVest</b>  •  <b>{_h(symbol)}</b>  •  ⚙️ <b>New Adjustment</b>",
         _DIV,
+        f"{_rec_code(trade_id, display_code)}  ·  {_h(label)}  ·  {n} {leg_word} adjusted",
+        "",
     ]
-
-    for l in legs:
-        strike  = f"{int(l['strike']):,} " if l.get("strike") else ""
-        price   = f"  @₹{l['price']:,.2f}" if l.get("price") else ""
-        side_ic = "🟢 BUY " if l["side"] == "BUY" else "🔴 SELL"
-        lines.append(f"  {side_ic}  <b>{_h(strike + l['instrument_type'])}</b>"
-                     f"  {l.get('lots', 1)}L{price}")
-
-    lines += ["", _DIV]
     if note:
-        lines.append(f"<i>{_h(note)}</i>")
+        lines += [f"<i>{_h(note)}</i>", ""]
+    if link:
+        lines += ["👉 <i>View &amp; track this trade on EdgeVest:</i>", link, ""]
     lines.append(_row("Alert at", now_ist, bold_value=False))
+    send_telegram("\n".join(lines))
 
+
+def send_rec_exit_alert(trade_id: int, symbol: str, display_code: str | None,
+                         legs: list[dict]):
+    """Notify clients that a recommendation has been exited — they should
+    close their positions."""
+    now_ist  = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
+    n        = len(legs)
+    leg_word = "leg" if n == 1 else "legs"
+    link     = _frontend_url(f"/trades?rec={trade_id}")
+
+    lines = [
+        f"🆕 <b>EdgeVest</b>  •  <b>{_h(symbol)}</b>  •  ✅ <b>Trade Exited</b>",
+        _DIV,
+        f"{_rec_code(trade_id, display_code)}  ·  Position closed  ·  {n} {leg_word} exited",
+        "<i>Close your positions for this trade.</i>",
+        "",
+    ]
+    if link:
+        lines += ["👉 <i>View full details on EdgeVest:</i>", link, ""]
+    lines.append(_row("Alert at", now_ist, bold_value=False))
     send_telegram("\n".join(lines))
 
 

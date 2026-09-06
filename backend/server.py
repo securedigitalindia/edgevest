@@ -17,7 +17,7 @@ from flask import (Flask, request, jsonify,
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
 
-APP_VERSION = "7.3.0"
+APP_VERSION = "7.4.0"
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
@@ -524,57 +524,70 @@ def api_account_portfolio(aid):
 # API: recommendations
 # ─────────────────────────────────────────────────────────
 
+def _shape_recommendation_row(r, margin_required, margin_final):
+    """
+    Shared row shaper for GET /api/recommendations and
+    GET /api/recommendations/drafts — same output shape regardless of status,
+    so the frontend's RecItem component can render an open, exited, OR draft
+    row identically (collapse behavior, stats strip, leg display, live price
+    tracking) with no per-status special-casing on the frontend side. The
+    only difference between callers is where margin_required/margin_final
+    come from: the persisted DB columns for open/exited, a live (never
+    persisted) preview for draft — see api_recommendations_drafts().
+    """
+    from db.queries import get_original_entry_legs, get_current_legs, get_trade_adjustments, get_trade_legs
+    original_legs = get_original_entry_legs(r["id"])
+    current_legs  = get_current_legs(r["id"])
+    adjustments   = get_trade_adjustments(r["id"])
+    for a in adjustments:
+        a["ts_ist"] = _ist_str(a["ts"]) if a.get("ts") else None
+
+    exit_legs, realized_pnl = [], None
+    if r["status"] == "exited":
+        all_legs   = get_trade_legs(r["id"])
+        entry_legs = [l for l in all_legs if l["action"] == "entry" and l["adjustment_id"] is None]
+        exit_legs  = [l for l in all_legs if l["action"] == "exit"]
+        if entry_legs and exit_legs:
+            total, has_pnl = 0.0, False
+            for e, x in zip(entry_legs, exit_legs):
+                if e["price"] is not None and x["price"] is not None:
+                    qty = e["lots"] * e["lot_size"] if e["lot_size"] else e["lots"]
+                    total += (e["price"] - x["price"]) * qty if e["side"] == "SELL" \
+                             else (x["price"] - e["price"]) * qty
+                    has_pnl = True
+            realized_pnl = total if has_pnl else None
+
+    segment = _compute_segment(original_legs + current_legs)
+
+    return {
+        "id":              r["id"],
+        "display_code":    r.get("display_code"),
+        "risk_level":      r.get("risk_level"),
+        "note":            r.get("note"),
+        "symbol":          r["symbol"],
+        "trigger":         r["trigger_name"],
+        "status":          r["status"],
+        "entry_ist":       _ist_str(r["entry_time"]),
+        "exit_ist":        _ist_str(r["exit_time"]) if r.get("exit_time") else None,
+        "account_count":   r.get("account_count", 0),
+        "adj_count":       len(adjustments),
+        "segment":         segment,
+        "legs":            original_legs,
+        "current_legs":    current_legs,
+        "exit_legs":       exit_legs,
+        "realized_pnl":    realized_pnl,
+        "adjustments":     adjustments,
+        "margin_required": margin_required,
+        "margin_final":    margin_final,
+    }
+
+
 @app.route("/api/recommendations")
 @require_login
 def api_recommendations():
-    from db.queries import get_all_recommendations, get_original_entry_legs, get_current_legs, get_trade_adjustments, get_trade_legs
+    from db.queries import get_all_recommendations
     recs = get_all_recommendations()
-    out  = []
-    for r in recs:
-        original_legs = get_original_entry_legs(r["id"])
-        current_legs  = get_current_legs(r["id"])
-        adjustments   = get_trade_adjustments(r["id"])
-        for a in adjustments:
-            a["ts_ist"] = _ist_str(a["ts"]) if a.get("ts") else None
-
-        exit_legs, realized_pnl = [], None
-        if r["status"] == "exited":
-            all_legs   = get_trade_legs(r["id"])
-            entry_legs = [l for l in all_legs if l["action"] == "entry" and l["adjustment_id"] is None]
-            exit_legs  = [l for l in all_legs if l["action"] == "exit"]
-            if entry_legs and exit_legs:
-                total, has_pnl = 0.0, False
-                for e, x in zip(entry_legs, exit_legs):
-                    if e["price"] is not None and x["price"] is not None:
-                        qty = e["lots"] * e["lot_size"] if e["lot_size"] else e["lots"]
-                        total += (e["price"] - x["price"]) * qty if e["side"] == "SELL" \
-                                 else (x["price"] - e["price"]) * qty
-                        has_pnl = True
-                realized_pnl = total if has_pnl else None
-
-        segment = _compute_segment(original_legs + current_legs)
-
-        out.append({
-            "id":              r["id"],
-            "display_code":    r.get("display_code"),
-            "risk_level":      r.get("risk_level"),
-            "note":            r.get("note"),
-            "symbol":          r["symbol"],
-            "trigger":         r["trigger_name"],
-            "status":          r["status"],
-            "entry_ist":       _ist_str(r["entry_time"]),
-            "exit_ist":        _ist_str(r["exit_time"]) if r.get("exit_time") else None,
-            "account_count":   r["account_count"],
-            "adj_count":       len(adjustments),
-            "segment":         segment,
-            "legs":            original_legs,
-            "current_legs":    current_legs,
-            "exit_legs":       exit_legs,
-            "realized_pnl":    realized_pnl,
-            "adjustments":     adjustments,
-            "margin_required": r.get("margin_required"),
-            "margin_final":    r.get("margin_final"),
-        })
+    out  = [_shape_recommendation_row(r, r.get("margin_required"), r.get("margin_final")) for r in recs]
     return jsonify(recommendations=out)
 
 
@@ -609,7 +622,7 @@ def api_rec_exit(rec_id):
     try:
         from live.alert import send_rec_exit_alert
         exit_info = [{**l, "price": prices[i]} for i, l in enumerate(entry_legs)]
-        send_rec_exit_alert(trade["symbol"], exit_info, exit_ltp)
+        send_rec_exit_alert(rec_id, trade["symbol"], trade.get("display_code"), exit_info)
     except Exception as e:
         print(f"  [exit alert failed]  {e}", flush=True)
     try:
@@ -643,7 +656,7 @@ def api_rec_adjust(rec_id):
         adj_id = add_trade_adjustment(rec_id, "adjustment", note or None, now, legs)
         try:
             from live.alert import send_adjustment_alert
-            send_adjustment_alert(trade["symbol"], "adjustment", legs, note)
+            send_adjustment_alert(rec_id, trade["symbol"], trade.get("display_code"), "adjustment", legs, note)
         except Exception as e:
             print(f"  [adjust alert failed]  {e}", flush=True)
         try:
@@ -673,10 +686,64 @@ def api_rec_create():
         return jsonify(ok=False, error="Invalid risk_level"), 400
     try:
         from live.manual_trade import add_manual_trade
-        trade_id = add_manual_trade(symbol, legs, note, risk_level)
-        return jsonify(ok=True, trade_id=trade_id)
+        # Dashboard-authored strategies now default to draft too, matching
+        # strategy_cli.py's `create` — no alert/margin until explicitly
+        # published (POST /api/recommendations/<id>/publish or the Draft
+        # Strategies panel's Publish button).
+        trade_id = add_manual_trade(symbol, legs, note, risk_level, status="draft")
+        return jsonify(ok=True, trade_id=trade_id, status="draft")
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 400
+
+
+@app.route("/api/recommendations/drafts")
+@require_role("super_admin", "admin")
+def api_recommendations_drafts():
+    # Same row shape as GET /api/recommendations (via the shared shaper) so
+    # the frontend can render a draft with the exact same RecItem component
+    # it already uses for open/exited rows — only margin_required/
+    # margin_final differ in source: live-computed here (never persisted —
+    # the DB columns stay NULL until publish, see
+    # docs/prd/manual-strategy-cli.md), read from the DB there.
+    from db.queries import list_recommendations_by_status
+    from live.manual_trade import preview_margin_for_trade
+    drafts = list_recommendations_by_status("draft")
+    out = [_shape_recommendation_row(r, *preview_margin_for_trade(r["id"])) for r in drafts]
+    return jsonify(drafts=out)
+
+
+@app.route("/api/recommendations/<int:rec_id>/publish", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_rec_publish(rec_id):
+    from db.queries import get_recommendation
+    trade = get_recommendation(rec_id)
+    if not trade:
+        return jsonify(ok=False, error="Recommendation not found"), 404
+    try:
+        from live.manual_trade import publish_manual_trade
+        publish_manual_trade(rec_id)
+        return jsonify(ok=True, trade_id=rec_id)
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
+
+
+@app.route("/api/recommendations/<int:rec_id>/discard", methods=["POST"])
+@require_role("super_admin", "admin")
+def api_rec_discard(rec_id):
+    # Mirrors api_recommendation_delete below, but for a still-draft row —
+    # kept as a separate route/gate rather than widening that one's
+    # status=='open' check, so the existing open-trade delete path is
+    # untouched. delete_recommendation() itself already accepts both
+    # ('open', 'draft') — added for strategy_cli.py's own `discard` command —
+    # this route just adds the 'draft'-only HTTP surface for it.
+    from db.queries import get_recommendation, delete_recommendation
+    rec = get_recommendation(rec_id)
+    if not rec:
+        return jsonify(ok=False, error="Not found"), 404
+    if rec["status"] != "draft":
+        return jsonify(ok=False, error="Only draft strategies can be discarded"), 400
+    delete_recommendation(rec_id)
+    return jsonify(ok=True)
 
 
 # ─────────────────────────────────────────────────────────
@@ -803,6 +870,12 @@ def api_account_trade_create():
     own_ids = {a["id"] for a in get_accounts_for_user(user["id"])}
     if account_id not in own_ids:
         return jsonify(ok=False, error="Forbidden — not your account"), 403
+
+    if rec_id:
+        from db.queries import get_recommendation
+        rec = get_recommendation(rec_id)
+        if rec and rec["status"] == "draft":
+            return jsonify(ok=False, error="Cannot push a draft recommendation to an account"), 400
 
     try:
         from live.manual_trade import push_to_account

@@ -1,6 +1,9 @@
 import api from './client'
 
 export const listRecs           = ()               => api.get('/recommendations').then(r => r.data.recommendations)
+export const listDraftRecs      = ()               => api.get('/recommendations/drafts').then(r => r.data.drafts)
+export const publishRec         = id               => api.post(`/recommendations/${id}/publish`).then(r => r.data)
+export const discardRec         = id               => api.post(`/recommendations/${id}/discard`).then(r => r.data)
 export const fetchPrices        = (keys)           => api.post('/prices', { keys }).then(r => r.data)
 export const createRec          = data              => api.post('/recommendations/create', data).then(r => r.data)
 export const deleteRec          = id               => api.post(`/recommendations/${id}/delete`).then(r => r.data)

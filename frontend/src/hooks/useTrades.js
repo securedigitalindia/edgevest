@@ -4,6 +4,7 @@ import {
   listTrades, listHistory, exitTrade, applyAdjTrade, deleteTrade,
   listBrokers, addBroker, listAccounts, addAccount,
   updateAccountCapital, getAccountPortfolio,
+  listDraftRecs, publishRec, discardRec,
 } from '../api/trades'
 import { useTrackedPrices } from './usePrices'
 
@@ -19,7 +20,29 @@ export function useCreateRec() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: createRec,
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['recs'] }),
+    // Creates as a draft now (see server.py's api_rec_create) — invalidate
+    // both keys since callers used to only care about ['recs'].
+    onSuccess:  () => { qc.invalidateQueries({ queryKey: ['recs'] }); qc.invalidateQueries({ queryKey: ['draft-recs'] }) },
+  })
+}
+
+export function useDraftRecs() {
+  return useQuery({ queryKey: ['draft-recs'], queryFn: listDraftRecs, refetchInterval: 10000 })
+}
+
+export function usePublishRec() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: publishRec,
+    onSuccess:  () => { qc.invalidateQueries({ queryKey: ['draft-recs'] }); qc.invalidateQueries({ queryKey: ['recs'] }) },
+  })
+}
+
+export function useDiscardRec() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: discardRec,
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ['draft-recs'] }),
   })
 }
 

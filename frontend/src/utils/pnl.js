@@ -6,7 +6,12 @@
 // Dashboard.jsx's monthly summary (aggregated across every open trade).
 
 export function unrealizedPnl(rec, prices) {
-  if (rec.status !== 'open' || !prices) return null
+  // 'draft' included so Trades.jsx's Draft Strategies card can show a live
+  // running P&L the same way an open position does — the math is identical
+  // (entry price vs current LTP), status only ever gated it because
+  // 'exited'/legless rows don't have a meaningful "current" price to diff
+  // against.
+  if ((rec.status !== 'open' && rec.status !== 'draft') || !prices) return null
   const legs = [...(rec.legs || []), ...(rec.adjustments || []).flatMap(a => a.legs || [])]
   let net = 0
   for (const l of legs) {

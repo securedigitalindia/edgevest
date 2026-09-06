@@ -389,8 +389,16 @@ def open_recommended_trade(
     expiry_strs       = None,  # iterable of each leg's expiry_str, for display_code
     note:             str   | None = None,
     risk_level:       str   | None = None,
+    status:           str   = "open",
 ) -> int:
-    """Insert a new open trade header. Returns the new row id."""
+    """
+    Insert a new trade header. Returns the new row id.
+
+    status defaults to 'open' (every pre-existing caller is unaffected);
+    strategy_cli.py's `create` command passes status='draft' to stage a
+    hand-authored strategy before it's visible to any client-facing read
+    path — see publish_recommended_trade() for the draft -> open transition.
+    """
     conn = get_connection()
     display_code = _compute_display_code(conn, expiry_strs or [])
     cur = conn.execute("""
@@ -398,14 +406,41 @@ def open_recommended_trade(
             (trigger_name, symbol, parent_trade_id,
              entry_level, entry_ltp, entry_time, exit_level, status,
              margin_required, margin_final, margin_at_entry, display_code, note, risk_level)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (trigger_name, symbol, parent_trade_id,
-          entry_level, entry_ltp, entry_time, exit_level,
+          entry_level, entry_ltp, entry_time, exit_level, status,
           margin_required, margin_final, margin_at_entry, display_code, note or None, risk_level))
     row_id = cur.lastrowid
     conn.commit()
     conn.close()
     return row_id
+
+
+def publish_recommended_trade(trade_id: int, entry_time: str, entry_ltp: float) -> bool:
+    """
+    Flip a draft trade to 'open', stamping the real entry_time/entry_ltp at
+    the moment it actually goes live (a draft's own entry_time/entry_ltp are
+    just placeholders from create-time until this runs — see
+    open_recommended_trade()'s status='draft' path).
+
+    Returns True iff this call actually performed the flip. The
+    `AND status='draft'` guard makes a double-invocation safe at the SQL
+    level (a second call is a no-op, never double-applies the update), but
+    callers MUST check this return value before doing anything else
+    (margin recalc, alert) — two concurrent publish calls on the same draft
+    both pass a status check made *before* this runs, so without checking
+    the actual result here, both would proceed to send a duplicate "New
+    Trade" alert even though only one of them really flipped the row.
+    """
+    conn = get_connection()
+    cur = conn.execute(
+        "UPDATE recommended_trades SET status='open', entry_time=?, entry_ltp=? "
+        "WHERE id=? AND status='draft'",
+        (entry_time, entry_ltp, trade_id),
+    )
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
 
 
 def add_trade_legs(trade_id: int, legs: list[dict]) -> None:
@@ -521,13 +556,22 @@ def get_recommendation(rec_id: int) -> dict | None:
 
 
 def get_all_recommendations() -> list[dict]:
-    """All recommended_trades newest-first, with account push count."""
+    """
+    All non-draft recommended_trades newest-first, with account push count.
+
+    Excludes status='draft' rows unconditionally — this backs
+    GET /api/recommendations, which every logged-in client (not just admins)
+    can call, so a hand-authored draft (strategy_cli.py) must never be
+    visible here before it's published. Use list_recommendations_by_status()
+    or get_recommendation() to read a draft directly.
+    """
     conn = get_connection()
     rows = conn.execute(f"""
         SELECT {', '.join('rt.' + c for c in _TRADE_COLS)},
                COUNT(DISTINCT at.id) AS account_count
         FROM recommended_trades rt
         LEFT JOIN account_trades at ON at.recommended_trade_id = rt.id
+        WHERE rt.status != 'draft'
         GROUP BY rt.id
         ORDER BY rt.entry_time DESC
     """).fetchall()
@@ -2266,7 +2310,15 @@ def delete_account_trade(account_trade_id: int) -> None:
 
 
 def delete_recommendation(trade_id: int) -> None:
-    """Hard-delete an open recommendation, its legs and adjustments."""
+    """
+    Hard-delete an open or draft recommendation, its legs and adjustments.
+
+    Widened from status='open' only so strategy_cli.py's `discard` can
+    hard-delete a still-draft trade via this same function. Safe for the
+    existing HTTP /api/recommendations/<id>/delete route — that route
+    already gates on status != 'open' before ever calling this, so it never
+    reaches a 'draft' row regardless of what this WHERE clause allows.
+    """
     conn = get_connection()
     linked = conn.execute(
         "SELECT COUNT(*) FROM account_trades WHERE recommended_trade_id = ?", (trade_id,)
@@ -2276,19 +2328,43 @@ def delete_recommendation(trade_id: int) -> None:
         raise ValueError(f"Cannot delete: {linked} account trade{'s' if linked > 1 else ''} linked to this recommendation")
     conn.execute("DELETE FROM trade_legs WHERE trade_id = ?", (trade_id,))
     conn.execute("DELETE FROM trade_adjustments WHERE trade_id = ?", (trade_id,))
-    conn.execute("DELETE FROM recommended_trades WHERE id = ? AND status = 'open'", (trade_id,))
+    conn.execute("DELETE FROM recommended_trades WHERE id = ? AND status IN ('open', 'draft')", (trade_id,))
     conn.commit()
     conn.close()
 
 
+def list_recommendations_by_status(status: str) -> list[dict]:
+    """
+    All recommended_trades with the given status, newest-first by id.
+
+    Ordered by id (not entry_time) because a 'draft' row's entry_time is
+    just a create-time placeholder until publish_recommended_trade() stamps
+    the real one — id order is the true creation order regardless of status.
+    Backs strategy_cli.py's `list-drafts` command.
+    """
+    conn = get_connection()
+    rows = conn.execute(f"""
+        SELECT {_TRADE_SELECT} FROM recommended_trades
+        WHERE status = ?
+        ORDER BY id DESC
+    """, (status,)).fetchall()
+    conn.close()
+    return [dict(zip(_TRADE_COLS, r)) for r in rows]
+
+
 def get_open_trade_ikeys() -> list[str]:
-    """All distinct instrument_keys currently held in open recommended + account trades."""
+    """All distinct instrument_keys currently held in open/draft recommended
+    trades + open account trades. Drafts included (as of the Dashboard's
+    Draft Strategies panel showing live unrealised P&L, see
+    docs/prd/manual-strategy-cli.md) so their legs get a live-polled price
+    the same way an open position's do — otherwise get_cached_prices() can
+    never return anything for a draft leg and the UI can only ever show '—'."""
     conn = get_connection()
     rows = conn.execute("""
         SELECT DISTINCT tl.instrument_key
         FROM   trade_legs tl
         JOIN   recommended_trades rt ON rt.id = tl.trade_id
-        WHERE  rt.status = 'open'
+        WHERE  rt.status IN ('open', 'draft')
           AND  tl.instrument_key IS NOT NULL
           AND  tl.action = 'entry'
         UNION

@@ -43,17 +43,67 @@ from db.queries import (
     open_recommended_trade, add_trade_legs, close_recommended_trade, get_trade_legs,
     create_account_trade, get_account_trade_legs, mark_account_trade_closed,
     get_open_account_trades, _ACCT_TRADE_COLS,
+    get_current_legs, get_recommendation, publish_recommended_trade,
 )
 from live.fo_instruments import fo_ikey, fo_lot_size, resolve_expiry, SPOT_IKEYS
-from live.alert import send_alert, send_telegram, _h, _DIV
+from live.alert import send_new_trade_alert, send_telegram, _h, _DIV
 
 IST = ZoneInfo("Asia/Kolkata")
 
 
-def add_manual_trade(symbol: str, legs: list[dict], note: str = "", risk_level: str | None = None) -> int:
+def _compute_margin(legs: list[dict]) -> tuple[float | None, float | None]:
     """
-    Create a manual trade: resolve instrument keys, fetch spot + margin,
-    write to DB, and send a Telegram alert.
+    SPAN margin for a set of legs (any shape carrying instrument_key/side/
+    lots/lot_size/price) — shared by add_manual_trade(),
+    recalculate_recommendation_margin(), and preview_margin_for_trade().
+    Never raises; (None, None) on any failure or an empty/unresolved leg set.
+    """
+    try:
+        from live.upstox_client import get_margin
+        margin_input = [
+            {
+                "instrument_key":   l["instrument_key"],
+                "transaction_type": l["side"],
+                "quantity":         l["lots"] * (l["lot_size"] or 1),
+                "price":            l["price"],
+            }
+            for l in legs if l.get("instrument_key") and l.get("lot_size")
+        ]
+        if not margin_input:
+            return None, None
+        m = get_margin(margin_input)
+        return m.get("required_margin"), m.get("final_margin")
+    except Exception as e:
+        print(f"  [manual_trade]  margin fetch failed: {e}", flush=True)
+        return None, None
+
+
+def preview_margin_for_trade(rec_id: int) -> tuple[float | None, float | None]:
+    """
+    Live SPAN margin for a trade's *current* legs — read-only, never writes
+    margin_required/margin_final/margin_at_entry. Used to show a draft an
+    on-screen margin estimate without persisting anything (margin is only
+    ever persisted at publish, see publish_manual_trade() /
+    docs/prd/manual-strategy-cli.md's "margin deferred to publish" decision —
+    this function must stay strictly read-only or that guarantee breaks).
+    """
+    from db.queries import get_current_legs
+    live_legs = get_current_legs(rec_id)
+    if not live_legs:
+        return None, None
+    return _compute_margin(live_legs)
+
+
+def add_manual_trade(symbol: str, legs: list[dict], note: str = "", risk_level: str | None = None,
+                      status: str = "open") -> int:
+    """
+    Create a manual trade: resolve instrument keys, fetch spot, write to DB.
+
+    status="open" (default): also computes margin and sends the Telegram
+    alert immediately, exactly as this function has always behaved.
+    status="draft": skips margin (deferred to publish_manual_trade(), same
+    reasoning as strategy_cli.py's `create` — see docs/prd/manual-strategy-cli.md)
+    and sends no alert — the trade sits invisible to clients until published.
 
     Returns the new trade_id.
     """
@@ -116,25 +166,14 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "", risk_level: 
     except Exception as e:
         print(f"  [manual_trade]  spot fetch failed: {e}", flush=True)
 
-    # --- 3. Calculate margin ---
+    # --- 3. Calculate margin (skipped for a draft — deferred to publish,
+    #        same reasoning as strategy_cli.py's `create`: computing it now
+    #        would be wasted work for legs that might still change, and
+    #        margin_at_entry means "captured once at entry" everywhere else
+    #        in the schema — a draft hasn't entered anything yet) ---
     margin_required = margin_final = None
-    try:
-        from live.upstox_client import get_margin
-        margin_input = [
-            {
-                "instrument_key":   l["instrument_key"],
-                "transaction_type": l["side"],
-                "quantity":         l["lots"] * l["lot_size"],
-                "price":            l["price"],
-            }
-            for l in resolved_legs if l["instrument_key"] and l["lot_size"]
-        ]
-        if margin_input:
-            m = get_margin(margin_input)
-            margin_required = m["required_margin"]
-            margin_final    = m["final_margin"]
-    except Exception as e:
-        print(f"  [manual_trade]  margin fetch failed: {e}", flush=True)
+    if status == "open":
+        margin_required, margin_final = _compute_margin(resolved_legs)
 
     # --- 4. Insert trade header ---
     trade_id = open_recommended_trade(
@@ -150,6 +189,7 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "", risk_level: 
         expiry_strs     = [l.get("expiry_str") for l in resolved_legs],
         note            = note,
         risk_level      = risk_level,
+        status          = status,
     )
 
     # --- 5. Insert legs ---
@@ -170,81 +210,88 @@ def add_manual_trade(symbol: str, legs: list[dict], note: str = "", risk_level: 
     ]
     add_trade_legs(trade_id, leg_rows)
 
-    # --- 6. Send Telegram alert ---
-    _send_manual_alert(
-        trade_id, symbol, resolved_legs,
-        spot_ltp, margin_required, margin_final, note, now_utc,
-    )
-
+    # --- 6. Send Telegram alert (draft: silent — see publish_manual_trade()) ---
     now_ist = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b %Y  %H:%M IST")
-    print(f"  [manual_trade]  trade id={trade_id}  {symbol}  "
-          f"{len(resolved_legs)} legs  added at {now_ist}", flush=True)
+    if status == "open":
+        try:
+            display_code = get_recommendation(trade_id).get("display_code")
+            send_new_trade_alert(trade_id, symbol, display_code, note, resolved_legs)
+        except Exception as e:
+            print(f"  [manual_trade]  alert failed: {e}", flush=True)
+        print(f"  [manual_trade]  trade id={trade_id}  {symbol}  "
+              f"{len(resolved_legs)} legs  added at {now_ist}", flush=True)
+    else:
+        print(f"  [manual_trade]  draft trade id={trade_id}  {symbol}  "
+              f"{len(resolved_legs)} legs  staged at {now_ist} — no alert sent", flush=True)
     return trade_id
 
 
-def _send_manual_alert(
-    trade_id, symbol, resolved_legs,
-    spot_ltp, margin_required, margin_final,
-    note, now_utc,
-):
-    # Number of positions entered — GCD of all leg lots
-    all_lots = [l["lots"] for l in resolved_legs if l["lots"] > 0]
-    n_pos    = reduce(gcd, all_lots) if all_lots else 1
+# ---------------------------------------------------------------------------
+# Publish a draft (strategy_cli.py `create` -> `publish` workflow)
+# ---------------------------------------------------------------------------
 
-    # Build display legs at 1-position scale
-    display_legs = []
-    for l in resolved_legs:
-        if l["instrument_type"] == "FUT":
-            instrument = f"{symbol} {l['expiry_str']} FUT"
-        elif l["instrument_type"] in ("PE", "CE"):
-            instrument = f"{symbol} {l['expiry_str']} {int(l['strike']):,} {l['instrument_type']}"
-        else:
-            instrument = f"{symbol} {l['instrument_type']}"
+def publish_manual_trade(trade_id: int) -> dict:
+    """
+    Publish a draft recommended_trades row: flips status draft->open, stamps
+    real entry_time/entry_ltp, computes margin for the first time, sends the
+    one Telegram alert. Shared by strategy_cli.py's `publish` command and the
+    admin HTTP `POST /api/recommendations/<id>/publish` route so the publish
+    logic lives in exactly one place.
 
-        base_lots  = l["lots"] // n_pos
-        base_qty   = base_lots * l["lot_size"] if l["lot_size"] else base_lots
-        note_parts = [f"{base_lots}L × {l['lot_size']} = {base_qty} qty" if l["lot_size"]
-                      else f"{base_lots} lot(s)"]
-        note_parts.append(f"@ ₹{l['price']:,.2f}")
-        display_legs.append({
-            "action":     l["side"],
-            "instrument": instrument,
-            "note":       "  ".join(note_parts),
-        })
+    Raises ValueError if the trade isn't currently a draft, or has no legs.
+    Returns the updated recommendation dict (get_recommendation(trade_id)
+    after the flip).
+    """
+    trade = get_recommendation(trade_id)
+    if not trade:
+        raise ValueError(f"trade {trade_id} not found")
+    if trade["status"] != "draft":
+        raise ValueError(f"trade {trade_id} is '{trade['status']}' — publish only works on a draft")
 
-    # Rationale line — margin shown per position
-    pos_label = f"{n_pos} positions" if n_pos > 1 else "1 position"
-    rationale_parts = [pos_label]
-    if margin_required is not None:
-        per = margin_required / n_pos
-        rationale_parts.append(f"Margin/pos: ₹{per:,.0f}")
-    if margin_final is not None and margin_final != margin_required:
-        per_final = margin_final / n_pos
-        rationale_parts.append(f"final ₹{per_final:,.0f}")
-    if note:
-        rationale_parts.append(note)
-    rationale = "  |  ".join(rationale_parts)
+    legs = get_current_legs(trade_id)
+    if not legs:
+        raise ValueError(f"trade {trade_id} has no legs — cannot publish an empty draft")
 
-    pos_tag = f"  ×{n_pos} pos" if n_pos > 1 else ""
-    trade_suggestion = {
-        "title":     f"Manual Trade  ·  {symbol}  ·  id={trade_id}{pos_tag}",
-        "legs":      display_legs,
-        "rationale": rationale,
-    }
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    signal = {
-        "trigger_name":  "MANUAL",
-        "trigger_type":  "manual",
-        "symbol":        symbol,
-        "timeframe":     "—",
-        "ltp":           spot_ltp,
-        "indicator_val": spot_ltp,
-        "event":         "MANUAL ENTRY",
-        "candle_ts":     None,
-        "trades":        [trade_suggestion],
-    }
+    spot_ltp = 0.0
+    try:
+        from db.queries import get_cached_prices
+        spot_ikey = SPOT_IKEYS.get(trade["symbol"])
+        if spot_ikey:
+            cached, _ = get_cached_prices([spot_ikey])
+            spot_ltp  = cached.get(spot_ikey, 0.0)
+    except Exception as e:
+        print(f"  [publish_manual_trade]  spot fetch failed: {e}", flush=True)
 
-    send_alert(signal)
+    flipped = publish_recommended_trade(trade_id, entry_time=now_utc, entry_ltp=spot_ltp)
+    if not flipped:
+        # Lost a race — another concurrent publish() call on this same draft
+        # already flipped it (e.g. a double-click, or two admin tabs) between
+        # our status check above and this UPDATE. Stop here: proceeding would
+        # recompute margin redundantly and, worse, send a second "New Trade"
+        # Telegram alert for one publish. The winning call already did all of
+        # this correctly.
+        raise ValueError(f"trade {trade_id} was published by a concurrent request — no action taken")
+    recalculate_recommendation_margin(trade_id)
+
+    updated = get_recommendation(trade_id)
+
+    # Best-effort: the DB state above already committed (draft is live now
+    # regardless), so a formatting/Telegram hiccup here must never surface
+    # as a publish failure — same guarding pattern server.py's /adjust and
+    # /exit routes already use around their own alert calls. Reads
+    # symbol/note/display_code from `updated` (not the pre-flip `trade`
+    # snapshot) throughout — all three happen to be immutable across publish
+    # today, but sourcing them all from one dict removes any need to reason
+    # about which fields are safe to read stale if that ever changes.
+    try:
+        send_new_trade_alert(trade_id, updated["symbol"], updated.get("display_code"),
+                              updated.get("note") or "", legs)
+    except Exception as e:
+        print(f"  [publish_manual_trade]  alert failed: {e}", flush=True)
+
+    return updated
 
 
 # ---------------------------------------------------------------------------
@@ -411,24 +458,7 @@ def recalculate_recommendation_margin(rec_id: int) -> float | None:
     if not live_legs:
         return None
 
-    margin_required = margin_final = None
-    try:
-        from live.upstox_client import get_margin
-        margin_input = [
-            {
-                "instrument_key":   l["instrument_key"],
-                "transaction_type": l["side"],
-                "quantity":         l["lots"] * (l["lot_size"] or 1),
-                "price":            l["price"],
-            }
-            for l in live_legs if l["instrument_key"] and l["lot_size"]
-        ]
-        if margin_input:
-            m               = get_margin(margin_input)
-            margin_required = m.get("required_margin")
-            margin_final    = m.get("final_margin")
-    except Exception as e:
-        print(f"  [recalculate_rec_margin rec_id={rec_id}]  {e}", flush=True)
+    margin_required, margin_final = _compute_margin(live_legs)
 
     if margin_required is not None:
         conn = get_connection()

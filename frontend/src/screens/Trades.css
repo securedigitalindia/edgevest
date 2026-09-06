@@ -6,6 +6,7 @@
 .rec-item:hover   { box-shadow:0 4px 14px rgba(0,0,0,.1); }
 .rec-item-open    { border-left-color:#22c55e; }
 .rec-item-exited  { border-left-color:#94a3b8; }
+.rec-item-draft   { border-left-color:#f59e0b; }
 
 /* Collapse toggle chevron */
 .rec-collapse-btn { display:inline-flex; align-items:center; justify-content:center; margin-left:auto; color:var(--muted); transition:transform .22s ease; flex-shrink:0; }
