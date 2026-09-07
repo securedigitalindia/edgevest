@@ -2,7 +2,7 @@
 
 How to cut and ship an EdgeVest release — versioning convention, backend
 steps, frontend steps, and the current outstanding items as of the last time
-this doc was updated (2026-08-26, `v5.4`).
+this doc was updated (2026-09-07, `v7.5.0`).
 
 ## Branching model
 
@@ -119,36 +119,33 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
-## Status as of 2026-09-04 (`v7.3.0` — frontend released to prod; backend released through `v7.2.0`)
+## Status as of 2026-09-07 (`v7.5.0` — frontend and backend both released to prod)
 
-- ✅ `edgevest.in`/`www.edgevest.in` — serving `releases/v7.3.0` (frontend-only
-  this release: Dashboard "no subscription" tile, an OAuth back-button fix
-  on Landing, and a reworked/responsive Trades unlock panel — see the
-  `v7.3.0` commit for detail). No backend code changed this release.
-  `dev.edgevest.in`/`staging.edgevest.in` were last deployed further back
-  and will read as behind until someone runs `deploy.sh deploy dev v7.3.0`
-  / `deploy.sh deploy staging v7.3.0`.
-- ✅ Prod backend (EC2) is running `v7.2.0` — includes the admin Payments
-  page's backend (`GET /api/payments`, `POST /api/payments/<id>/reconcile`)
-  and the `get_all_subscriptions()` `user_id`/`plan_gem_cost` fields. No
-  schema migration was required for that release (additive columns already
-  existed on `subscription_plans`/`users`).
-- ⚠️ Prod backend has **not** been updated to `v7.3.0`'s `APP_VERSION`
-  string yet — same "bumped in lockstep, nothing to actually deploy"
-  situation called out in earlier status notes here, since `v7.3.0` was
-  frontend-only. Not urgent, but the next release that *does* touch backend
-  code needs the EC2 steps run for that release specifically, not assumed
-  from whatever `APP_VERSION` currently reads in `server.py`.
-- ⚠️ `main`/`dev` have diverged from the branching model this doc describes:
-  work has been landing directly on `main` for the last several releases
-  (`v7.1.2` through `v7.3.0`) rather than `dev` → fast-forward `main`.
-  `dev` is currently 3 commits behind `main` (stuck at `v7.1.1`). Worth
-  deciding whether to keep `dev` around at all, or formally retire it and
-  update this doc's Branching model section to match actual practice.
-- ⚠️ Whether the `/api/payments/reconcile` cron got scheduled on EC2 as
-  part of the `v7.2.0` backend release (checklist step 5, Backend release
-  section above) hasn't been confirmed in this session — worth checking
-  directly on the box (`crontab -l` / systemd timers) rather than assuming.
-- Dependabot vulnerability count not re-checked this session (`gh` CLI
-  unavailable here) — check the repo's Security tab directly for a current
-  number rather than trusting the stale one this line used to carry.
+- ✅ `main` tagged `v7.5.0` (commit `a53f30a`) and pushed to origin, along
+  with the tag. This release adds: admin Refer & Earn tracking (`GET
+  /api/referrals` + `ReferralsAdmin.jsx`), Subscriptions admin page summary
+  tiles (paid/gems/renewed/no-subscription, active-only) + a month-on-month
+  active-clients trend (Paid/Gems/Both filter, with churned/newly-active
+  reconciliation) + a longest-active-clients panel, and a Users admin page
+  month-on-month new-signup trend. No new tables/columns — all additive
+  queries/routes against existing schema.
+- ✅ `edgevest.in`/`www.edgevest.in` — serving `releases/v7.5.0` (deployed via
+  `frontend/deploy/deploy.sh deploy prod v7.5.0` from this session; previous
+  release `v7.4.0` still sits untouched in S3 for instant rollback).
+  `dev.edgevest.in`/`staging.edgevest.in` were last deployed further back and
+  will read as behind until someone runs `deploy.sh deploy dev v7.5.0` /
+  `deploy.sh deploy staging v7.5.0`.
+- ✅ Prod backend (EC2) released to `v7.5.0` by the user directly (backend is
+  never run from inside a Claude Code session — see root `CLAUDE.md`) ahead
+  of the frontend deploy above. Steps actually run on the box (env sync,
+  `poller.py init`, cron check, service restart) weren't confirmed back to
+  this session — verify `APP_VERSION` on `/api/me` reads `7.5.0` and the
+  admin pages above actually work end-to-end if anything looks off.
+- ⚠️ `main`/`dev` divergence (called out in earlier status notes) is
+  unchanged this release — work continues to land directly on `main`. Still
+  worth formally deciding whether to retire `dev` or resume the documented
+  branching model.
+- Dependabot: GitHub reported **5 vulnerabilities (2 high, 3 moderate)** on
+  the default branch as of this push (2026-09-07) — check
+  `https://github.com/securedigitalindia/edgevest/security/dependabot` for
+  current detail; not investigated or fixed as part of this release.
