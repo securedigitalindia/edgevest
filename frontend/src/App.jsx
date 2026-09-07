@@ -28,6 +28,7 @@ const MyPlan          = lazy(() => import('./screens/profile/MyPlan'))
 const MyAccounts      = lazy(() => import('./screens/profile/MyAccounts'))
 const Gems            = lazy(() => import('./screens/profile/Gems'))
 const Referrals       = lazy(() => import('./screens/profile/Referrals'))
+const ReferralsAdmin  = lazy(() => import('./screens/profile/ReferralsAdmin'))
 const Brokers         = lazy(() => import('./screens/profile/Brokers'))
 const Users           = lazy(() => import('./screens/profile/Users'))
 const Plans           = lazy(() => import('./screens/profile/Plans'))
@@ -86,6 +87,7 @@ function AppShell() {
           <Route path="/profile/plans"         element={<Plans />} />
           <Route path="/profile/subscriptions" element={<Subscriptions />} />
           <Route path="/profile/payments"      element={<Payments />} />
+          <Route path="/profile/referrals-admin" element={<ReferralsAdmin />} />
           <Route path="/profile/reports"       element={<Reports />} />
           <Route path="/profile/learn"         element={<Learn />} />
           <Route path="/profile/learn/:slug"   element={<LearnArticle />} />

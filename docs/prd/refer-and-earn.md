@@ -15,7 +15,7 @@ An existing user can share a personal referral link. A new user who signs up thr
 - No multi-tier / pyramid referrals (referrer of a referrer earning anything).
 - No vanity/custom referral codes — system-generated only.
 - No email/SMS invite sending — the codebase has no transactional email or SMS integration today; sharing is copy-link/native-share only, client-side.
-- No admin UI for managing/auditing all referrals in v1 (e.g. no referral column added to `profile/Users.jsx`) — `credit_transactions` (reason `referral_signup_bonus` / `referral_reward`) already gives an auditable trail if this is needed later.
+- No admin UI for managing/auditing all referrals in v1 (e.g. no referral column added to `profile/Users.jsx`) — `credit_transactions` (reason `referral_signup_bonus` / `referral_reward`) already gives an auditable trail if this is needed later. **Superseded 2026-09-07**: an admin tracking view was added — `GET /api/referrals` + `frontend/src/screens/profile/ReferralsAdmin.jsx` (`/profile/referrals-admin`, admin-only). It's read-only (list all referrals, aggregate gems paid out, top-referrers rollup) — no edit/delete/clawback actions, so the rest of this non-goal (no management actions, no clawback logic) still stands.
 - No clawback logic for a referred user who is later deactivated/banned — see Open questions; the capability to deactivate a user doesn't currently exist in the API surface anyway.
 - No retroactive referral crediting for users who already signed up before this feature ships.
 

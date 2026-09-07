@@ -14,5 +14,6 @@ export const getPortfolio    = id        => api.get(`/games/${id}/portfolio`).th
 export const submitVirtualTrade = (id, data) => api.post(`/games/${id}/trade`, data).then(r => r.data)
 export const getCredits            = ()       => api.get('/credits').then(r => r.data)
 export const getMyReferrals        = ()       => api.get('/my-referrals').then(r => r.data)
+export const listAllReferrals      = ()       => api.get('/referrals').then(r => r.data) // admin only
 export const getPlans              = ()       => api.get('/plans').then(r => r.data.plans)
 export const subscribeWithCredits  = plan_id  => api.post('/subscribe-with-credits', { plan_id }).then(r => r.data)

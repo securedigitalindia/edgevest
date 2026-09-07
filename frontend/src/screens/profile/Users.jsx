@@ -125,11 +125,59 @@ function UserRow({ u, isSuperAdmin, totalPaid }) {
   )
 }
 
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+function monthLabel(m) {
+  const [y, mo] = m.split('-').map(Number)
+  return `${MONTH_NAMES[mo - 1]} '${String(y).slice(2)}`
+}
+
+// Hand-rolled, no charting dependency — same posture as ReportCharts.jsx and
+// Subscriptions.jsx's own monthly trend. One series (new_signups) drives the
+// bar; cumulative_users rides along as plain text underneath (never
+// dual-axis — a running total is a different scale from a monthly count).
+function SignupTrend({ data }) {
+  if (!data.length) return null
+  const max = Math.max(1, ...data.map(d => d.new_signups))
+  return (
+    <div className="stab-panel active" style={{marginBottom:14}}>
+      <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:.5,color:'var(--muted)',marginBottom:10}}>
+        New Clients — Month on Month
+      </div>
+      <div style={{display:'flex',alignItems:'flex-end',gap:8,height:76}}>
+        {data.map(d => {
+          const h = Math.max(4, Math.round((d.new_signups / max) * 60))
+          return (
+            <div key={d.month} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',gap:4,height:'100%'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#1e293b'}}>{d.new_signups}</div>
+              <div
+                title={`${d.new_signups} new client${d.new_signups===1?'':'s'} in ${monthLabel(d.month)} · ${d.cumulative_users} total clients by month end`}
+                style={{width:'100%',maxWidth:30,height:h,background:'#0369a1',borderRadius:'4px 4px 2px 2px'}}
+              />
+            </div>
+          )
+        })}
+      </div>
+      <div style={{display:'flex',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid #f1f5f9'}}>
+        {data.map(d => (
+          <div key={d.month} style={{flex:1,textAlign:'center',minWidth:0}}>
+            <div style={{fontSize:10,fontWeight:700,color:'var(--muted)'}}>{monthLabel(d.month)}</div>
+            <div style={{fontSize:9,color:'#94a3b8',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+              {d.cumulative_users} total
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Users() {
   const user          = useAuthStore(s => s.user)
   const isAdmin       = user?.role === 'super_admin' || user?.role === 'admin'
   const isSuperAdmin  = user?.role === 'super_admin'
-  const { data: users = [], isLoading } = useUsers()
+  const { data, isLoading } = useUsers()
+  const users          = data?.users ?? []
+  const signupTrend    = data?.monthly_signup_trend ?? []
   const { data: payments = [] } = usePayments()
 
   const paidByUser = useMemo(() => {
@@ -146,6 +194,7 @@ export default function Users() {
   return (
     <div className="profile-page">
       <PageHeader title="Users" fallback="/profile" />
+      <SignupTrend data={signupTrend} />
       <div className="stab-panel active">
         {isLoading && <div className="empty">Loading…</div>}
         {!isLoading && !users.length && <div className="empty">No users found.</div>}

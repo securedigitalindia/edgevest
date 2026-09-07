@@ -996,6 +996,58 @@ def update_user_role(user_id: int, role: str) -> None:
     conn.close()
 
 
+def get_monthly_user_signup_trend(months: int = 6) -> list[dict]:
+    """
+    Month-by-month new-client-signup trend for the admin Users page, oldest
+    first — same shape/posture as get_monthly_subscription_trend(). Client
+    users only (`role='client'`) — admin/super_admin rows are operator
+    accounts, not growth.
+      - `new_signups`: a flow — COUNT of client users whose `created_at`
+        falls in that calendar month.
+      - `cumulative_users`: a stock — COUNT of client users created ON OR
+        BEFORE that month's last day, i.e. the running total through that
+        month, not the month's new-signup count alone.
+    """
+    from datetime import date
+    import calendar
+    conn = get_connection()
+    try:
+        today = date.today()
+        month_keys = []
+        y, m = today.year, today.month
+        for i in range(months - 1, -1, -1):
+            mm, yy = m - i, y
+            while mm <= 0:
+                mm += 12
+                yy -= 1
+            month_keys.append((yy, mm))
+
+        result = []
+        for yy, mm in month_keys:
+            month_str = f"{yy:04d}-{mm:02d}"
+            last_day  = calendar.monthrange(yy, mm)[1]
+            month_end = f"{yy:04d}-{mm:02d}-{last_day:02d}T23:59:59Z"
+
+            new_signups = conn.execute("""
+                SELECT COUNT(*) FROM users
+                WHERE role='client' AND strftime('%Y-%m', created_at) = ?
+            """, (month_str,)).fetchone()[0]
+
+            cumulative_users = conn.execute("""
+                SELECT COUNT(*) FROM users
+                WHERE role='client' AND created_at <= ?
+            """, (month_end,)).fetchone()[0]
+
+            result.append({
+                "month":             month_str,
+                "new_signups":       new_signups,
+                "cumulative_users":  cumulative_users,
+            })
+        return result
+    finally:
+        conn.close()
+
+
 # ── Refer & Earn — docs/prd/refer-and-earn.md ─────────────────
 
 # Uppercase, unambiguous alphabet — excludes 0/O/1/I.
@@ -1091,6 +1143,80 @@ def get_referral_history(user_id: int) -> list[dict]:
             WHERE r.referrer_user_id = ?
             ORDER BY r.created_at DESC
         """, (user_id,)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_all_referrals(limit: int = 500) -> list[dict]:
+    """
+    Admin-wide referral audit list — every `referrals` row, newest first,
+    joined to both referrer and referee identity plus the actual gems paid
+    out for each side (looked up from `credit_transactions` rather than
+    stored redundantly, same posture as `get_referral_stats()`).
+    """
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT r.id, r.status, r.created_at, r.rewarded_at,
+                   ru.id AS referrer_id, ru.name AS referrer_name, ru.email AS referrer_email,
+                   ee.id AS referee_id, ee.name AS referee_name, ee.email AS referee_email,
+                   (SELECT amount FROM credit_transactions
+                     WHERE user_id = ee.id AND reason = 'referral_signup_bonus' LIMIT 1) AS signup_bonus_gems,
+                   (SELECT amount FROM credit_transactions
+                     WHERE user_id = ru.id AND reason = 'referral_reward' AND ref_id = CAST(ee.id AS TEXT)
+                     LIMIT 1) AS reward_gems
+            FROM referrals r
+            JOIN users ru ON ru.id = r.referrer_user_id
+            JOIN users ee ON ee.id = r.referee_user_id
+            ORDER BY r.created_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_referral_admin_summary() -> dict:
+    """Aggregate totals for the admin Refer & Earn dashboard."""
+    conn = get_connection()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM referrals").fetchone()[0]
+        rewarded = conn.execute("SELECT COUNT(*) FROM referrals WHERE status='rewarded'").fetchone()[0]
+        pending = total - rewarded
+        signup_bonus_paid = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM credit_transactions WHERE reason='referral_signup_bonus'"
+        ).fetchone()[0]
+        reward_paid = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM credit_transactions WHERE reason='referral_reward'"
+        ).fetchone()[0]
+        return {
+            "total_referrals":    total,
+            "pending_count":      pending,
+            "rewarded_count":     rewarded,
+            "signup_bonus_gems_paid": signup_bonus_paid,
+            "reward_gems_paid":   reward_paid,
+        }
+    finally:
+        conn.close()
+
+
+def get_top_referrers(limit: int = 20) -> list[dict]:
+    """Per-referrer rollup — who referred the most / earned the most gems."""
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT ru.id, ru.name, ru.email,
+                   COUNT(*) AS referred_count,
+                   SUM(CASE WHEN r.status='rewarded' THEN 1 ELSE 0 END) AS rewarded_count,
+                   COALESCE((SELECT SUM(amount) FROM credit_transactions ct
+                             WHERE ct.user_id = ru.id AND ct.reason = 'referral_reward'), 0) AS gems_earned
+            FROM referrals r
+            JOIN users ru ON ru.id = r.referrer_user_id
+            GROUP BY ru.id
+            ORDER BY gems_earned DESC, referred_count DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -1502,6 +1628,211 @@ def get_all_subscriptions() -> list[dict]:
         cols = ["id", "user_id", "user_name", "email", "plan_name", "status",
                 "start_date", "end_date", "amount_paid", "plan_gem_cost"]
         return [dict(zip(cols, r)) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_subscription_admin_summary() -> dict:
+    """
+    Current-state counts for the admin Subscriptions summary tiles: how many
+    *client* users right now have a paid subscription, one redeemed with
+    gems, a free one (price=0 plan — theoretically possible via
+    `POST /api/subscribe`, not seen in practice today since every active
+    plan currently prices both money and gems), or no active subscription at
+    all. Based on today's active subscriptions, same definition as
+    `is_subscription_valid()`/`get_all_users()` — not a row count of
+    `get_all_subscriptions()`, which includes expired history.
+    """
+    from datetime import date
+    today = date.today().isoformat()
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT s.amount_paid, p.gem_cost
+            FROM subscriptions s
+            JOIN subscription_plans p ON p.id = s.plan_id
+            WHERE s.status='active' AND s.end_date >= ?
+        """, (today,)).fetchall()
+        paid_count = sum(1 for r in rows if r[0] > 0)
+        gems_count = sum(1 for r in rows if r[0] == 0 and r[1] > 0)
+        free_count = sum(1 for r in rows if r[0] == 0 and r[1] == 0)
+        total_clients = conn.execute("SELECT COUNT(*) FROM users WHERE role='client'").fetchone()[0]
+        no_sub_count = max(total_clients - len(rows), 0)
+        # "Renewed" = subscribed more than once, ever (any status) — counts a
+        # client who churned and came back just as much as one who resubscribed
+        # back-to-back at expiry; both bought a second subscription.
+        renewed_count = conn.execute("""
+            SELECT COUNT(*) FROM (
+                SELECT user_id FROM subscriptions GROUP BY user_id HAVING COUNT(*) > 1
+            )
+        """).fetchone()[0]
+        return {
+            "paid_count":     paid_count,
+            "gems_count":     gems_count,
+            "free_count":     free_count,
+            "no_sub_count":   no_sub_count,
+            "renewed_count":  renewed_count,
+            "total_clients":  total_clients,
+        }
+    finally:
+        conn.close()
+
+
+def get_monthly_subscription_trend(months: int = 6) -> list[dict]:
+    """
+    Month-by-month paid-subscription trend, oldest first, for the admin
+    Subscriptions page — answers "is a payment from a year ago still being
+    counted as Paid?" as a trend instead of a single always-current snapshot
+    (the `paid_count` summary tile above is already scoped to `status='active'
+    AND end_date >= today`, so a lapsed subscription never inflates it — this
+    adds the month-on-month view on top of that).
+
+    Two independent signals per month per track, since they answer different
+    questions, tracked separately for the two ways a subscription is ever
+    obtained (money vs. gems — never both for the same subscription row, see
+    `get_subscription_admin_summary()`'s free/paid/gems split):
+      - `new_paid_orders`/`revenue`: money actually collected THAT month
+        (from `payment_orders`, `status='paid'`, bucketed by `created_at`) —
+        a flow, same source `Payments.jsx`'s "Collected" total already uses.
+      - `new_gems_redemptions`/`gems_spent`: the gems equivalent, from
+        `credit_transactions` (`reason='subscription_purchase'`, `amount` is
+        stored negative — a deduction — so it's negated back to a positive
+        spend figure here).
+      - `active_paid_clients`/`active_gems_clients`: distinct users holding a
+        paid / gems-redeemed subscription (respectively) that covered that
+        month's last day — a stock/snapshot each, so a subscription bought a
+        year ago only counts in the months it actually covered, never after
+        it lapsed. **This does NOT accumulate month to month** — it's a fresh
+        count of who's active as of that specific month-end, not last
+        month's count plus this month's `new_paid_orders`. A client counted
+        last month drops out of this month's number the moment their
+        subscription lapses without renewal, same month a brand-new
+        subscriber can appear — the two moves are independent, so the count
+        can rise, fall, or hold regardless of how many payments came in.
+      - `churned_paid_clients`/`churned_gems_clients`: distinct users who
+        WERE active at the end of the previous month but are NOT active at
+        the end of THIS month — the piece that makes the snapshot's
+        month-to-month change legible instead of a mystery. `active_new`
+        (below) is the complementary piece: distinct users active THIS month
+        who were NOT active last month. Together they reconcile exactly:
+        `active_paid_clients[this] == active_paid_clients[prev]
+         - churned_paid_clients[this] + active_new_paid_clients[this]`
+        — always, by construction (set arithmetic on the same two
+        snapshots), regardless of what `new_paid_orders` says (a renewal
+        payment from an already-active client changes `new_paid_orders`/
+        `revenue` but contributes 0 to `active_new`, since that client was
+        already counted active last month too).
+    The frontend's Paid/Gems/Both filter is a client-side toggle over these
+    already-fetched parallel fields — no extra request per filter choice.
+    """
+    from datetime import date
+    import calendar
+    conn = get_connection()
+    try:
+        today = date.today()
+        # One extra month before the display window, solely to compute churn
+        # for the first displayed month against its true prior month.
+        month_keys = []
+        y, m = today.year, today.month
+        for i in range(months, -1, -1):
+            mm, yy = m - i, y
+            while mm <= 0:
+                mm += 12
+                yy -= 1
+            month_keys.append((yy, mm))
+
+        def active_ids(amount_filter_sql, month_end):
+            rows = conn.execute(f"""
+                SELECT DISTINCT s.user_id FROM subscriptions s
+                JOIN subscription_plans p ON p.id = s.plan_id
+                WHERE {amount_filter_sql} AND s.start_date <= ? AND s.end_date >= ?
+            """, (month_end, month_end)).fetchall()
+            return {r[0] for r in rows}
+
+        month_ends = []
+        for yy, mm in month_keys:
+            last_day = calendar.monthrange(yy, mm)[1]
+            month_ends.append(f"{yy:04d}-{mm:02d}-{last_day:02d}")
+
+        paid_sets = [active_ids("s.amount_paid > 0", me) for me in month_ends]
+        gems_sets = [active_ids("s.amount_paid = 0 AND p.gem_cost > 0", me) for me in month_ends]
+
+        result = []
+        for idx in range(1, len(month_keys)):  # skip index 0 — the extra lookback month
+            yy, mm = month_keys[idx]
+            month_str = f"{yy:04d}-{mm:02d}"
+
+            new_orders, revenue = conn.execute("""
+                SELECT COUNT(*), COALESCE(SUM(amount), 0)
+                FROM payment_orders
+                WHERE status='paid' AND strftime('%Y-%m', created_at) = ?
+            """, (month_str,)).fetchone()
+
+            new_redemptions, gems_spent = conn.execute("""
+                SELECT COUNT(*), COALESCE(SUM(-amount), 0)
+                FROM credit_transactions
+                WHERE reason='subscription_purchase' AND strftime('%Y-%m', created_at) = ?
+            """, (month_str,)).fetchone()
+
+            prev_paid, this_paid = paid_sets[idx - 1], paid_sets[idx]
+            prev_gems, this_gems = gems_sets[idx - 1], gems_sets[idx]
+
+            result.append({
+                "month":                    month_str,
+                "new_paid_orders":          new_orders,
+                "revenue":                  revenue,
+                "active_paid_clients":      len(this_paid),
+                "churned_paid_clients":     len(prev_paid - this_paid),
+                "active_new_paid_clients":  len(this_paid - prev_paid),
+                "new_gems_redemptions":     new_redemptions,
+                "gems_spent":               gems_spent,
+                "active_gems_clients":      len(this_gems),
+                "churned_gems_clients":     len(prev_gems - this_gems),
+                "active_new_gems_clients":  len(this_gems - prev_gems),
+            })
+        return result
+    finally:
+        conn.close()
+
+
+def get_longest_active_clients(limit: int = 10) -> list[dict]:
+    """
+    Currently-active clients ordered by how long ago they FIRST ever
+    subscribed — `MIN(start_date)` across ALL of a user's subscription rows,
+    active or long expired. Deliberately not "longest unbroken streak": a
+    client who subscribed 2 years ago, lapsed for 6 months with no active
+    subscription at all, then resubscribed last week is still "active", and
+    still counts as a 2-year-old client here — same as one who never lapsed.
+    `total_subscriptions` (row count) is how an admin tells the two apart at
+    a glance.
+    """
+    from datetime import date
+    today = date.today().isoformat()
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT u.id, u.name, u.email,
+                   MIN(s.start_date) AS first_subscribed,
+                   COUNT(*) AS total_subscriptions,
+                   MAX(CASE WHEN s.status='active' AND s.end_date >= ? THEN s.end_date END) AS current_end_date
+            FROM subscriptions s
+            JOIN users u ON u.id = s.user_id
+            GROUP BY u.id
+            HAVING current_end_date IS NOT NULL
+            ORDER BY first_subscribed ASC
+            LIMIT ?
+        """, (today, limit)).fetchall()
+        cols = ["user_id", "user_name", "email", "first_subscribed", "total_subscriptions", "current_end_date"]
+        clients = [dict(zip(cols, r)) for r in rows]
+        for c in clients:
+            plan_row = conn.execute("""
+                SELECT p.name FROM subscriptions s
+                JOIN subscription_plans p ON p.id = s.plan_id
+                WHERE s.user_id=? AND s.status='active' AND s.end_date >= ?
+                ORDER BY s.id DESC LIMIT 1
+            """, (c["user_id"], today)).fetchone()
+            c["current_plan_name"] = plan_row[0] if plan_row else None
+        return clients
     finally:
         conn.close()
 

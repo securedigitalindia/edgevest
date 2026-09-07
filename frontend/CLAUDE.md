@@ -53,11 +53,12 @@ src/
 │       ├── MyAccounts.jsx       — client: brokerage accounts + capital
 │       ├── Gems.jsx             — client: gem balance + transaction history
 │       ├── Referrals.jsx        — all roles: referral code/link, share, referral history
+│       ├── ReferralsAdmin.jsx   — admin: all referrals across all users, gems paid out, top referrers
 │       ├── Reports.jsx          — all roles: monthly recommendation report (margin/P&L)
 │       ├── Brokers.jsx          — admin: broker list
-│       ├── Users.jsx            — admin: user management
+│       ├── Users.jsx            — admin: user management, with a month-on-month new-client-signups trend bar
 │       ├── Plans.jsx            — admin: subscription plan editor
-│       ├── Subscriptions.jsx    — admin: all users' subscriptions
+│       ├── Subscriptions.jsx    — admin: all users' subscriptions, with paid/gems/renewed/no-subscription summary tiles (active-only, never counts a lapsed payment), a month-on-month active-clients trend bar (Paid/Gems/Both filter), and a longest-active-clients (tenure since first subscription, gaps included) panel
 │       └── Payments.jsx         — admin: all Razorpay payment orders (paid/pending/refunded), filterable, cross-linked from Users/Subscriptions by email
 ├── store/
 │   └── authStore.js   — Zustand: { user, ready } + setUser()
@@ -104,6 +105,7 @@ Bottom nav (mobile, ≤768px) / top nav (desktop) has 5 peer tabs: `Dashboard | 
 | `/profile/plans` | Plans | admin only |
 | `/profile/subscriptions` | Subscriptions | admin only |
 | `/profile/payments` | Payments | admin only; accepts `?u=<email>` to pre-filter |
+| `/profile/referrals-admin` | ReferralsAdmin | admin only |
 | `*` | redirect → `/dashboard` | |
 
 ## API Conventions

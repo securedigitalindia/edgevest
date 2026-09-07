@@ -307,8 +307,8 @@ def api_me():
 @app.route("/api/users")
 @require_role("super_admin", "admin")
 def api_users():
-    from db.queries import get_all_users
-    return jsonify(users=get_all_users())
+    from db.queries import get_all_users, get_monthly_user_signup_trend
+    return jsonify(users=get_all_users(), monthly_signup_trend=get_monthly_user_signup_trend())
 
 @app.route("/api/users/<int:uid>/role", methods=["POST"])
 @require_role("super_admin")
@@ -390,8 +390,16 @@ def api_plans_toggle(plan_id):
 @app.route("/api/subscriptions")
 @require_role("super_admin", "admin")
 def api_subscriptions_list():
-    from db.queries import get_all_subscriptions
-    return jsonify(subscriptions=get_all_subscriptions())
+    from db.queries import (
+        get_all_subscriptions, get_subscription_admin_summary,
+        get_longest_active_clients, get_monthly_subscription_trend,
+    )
+    return jsonify(
+        subscriptions=get_all_subscriptions(),
+        summary=get_subscription_admin_summary(),
+        longest_active_clients=get_longest_active_clients(),
+        monthly_trend=get_monthly_subscription_trend(),
+    )
 
 
 # ─────────────────────────────────────────────────────────
@@ -1367,6 +1375,17 @@ def api_my_referrals():
         referrals=get_referral_history(uid),
         reward_gems=REFERRAL_REWARD_GEMS,
         signup_bonus_gems=REFERRAL_SIGNUP_BONUS_GEMS,
+    )
+
+
+@app.route("/api/referrals", methods=["GET"])
+@require_role("super_admin", "admin")
+def api_referrals_list():
+    from db.queries import get_all_referrals, get_referral_admin_summary, get_top_referrers
+    return jsonify(
+        referrals=get_all_referrals(),
+        summary=get_referral_admin_summary(),
+        top_referrers=get_top_referrers(),
     )
 
 
