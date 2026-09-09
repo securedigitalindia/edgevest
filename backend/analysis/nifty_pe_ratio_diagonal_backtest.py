@@ -50,7 +50,7 @@ from db.queries import get_merged_cadence_dates, write_option_chain_snapshot
 from db.init_db import get_connection
 from nifty_pe_ratio_diagonal_simulator import resolve_expiry_triplet, floor_strike_100
 from nifty_fut_ref import (
-    resolve_front_month_future, fetch_candles_utc, nearest_price,
+    resolve_front_month_future, fetch_candles_utc, fetch_intraday_candles_utc, nearest_price,
     resolve_option_instrument_keys, IST,
 )
 
@@ -150,12 +150,38 @@ def chain_series(conn, expiry_date: str, strike: float, opt_type: str, symbol: s
     """, (symbol, expiry_date, strike, opt_type))
     series = {row[0]: row[1] for row in cur.fetchall() if row[1]}
 
-    if backfill_from_ts and (not series or min(series) > backfill_from_ts):
+    # Two independent gaps, checked separately: a LEADING gap (local
+    # capture started tracking this contract later than backfill_from_ts —
+    # the original case this function was built for) and a TRAILING gap
+    # (local capture has near-zero rows for today specifically — e.g. a
+    # newly-added expiry type like "quarterly" whose capture only started
+    # existing partway through today, 2026-09-09, so all it has for today
+    # is the one manual snapshot that happened to trigger that addition,
+    # not real intraday coverage). The trailing check uses a row-COUNT
+    # threshold, not "any row exists" — a full trading day's real capture
+    # has ~75 rows for one leg; anything in the single digits is a stray
+    # snapshot, not coverage, and is worth topping up. This also makes the
+    # trigger naturally self-limiting: once a real backfill lands ~75 rows
+    # for today, the count clears the threshold and this stops firing for
+    # that leg — it's not a permanent per-request live call, just a
+    # one-time catch-up. A plain "== 0" check would miss this exact case
+    # (there's one stray row, not zero) while a minute-level staleness
+    # check would fire on every completely normal request (local data is
+    # always a few minutes behind the live poller's own 5-min cadence).
+    today_ist = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
+    today_row_count = sum(1 for ts in series if ts[:10] == today_ist)
+    needs_leading = backfill_from_ts and (not series or min(series) > backfill_from_ts)
+    needs_trailing_today = backfill_from_ts and backfill_from_ts[:10] <= today_ist and today_row_count < 5
+    if needs_leading or needs_trailing_today:
         try:
             ikeys = resolve_option_instrument_keys(symbol, expiry_date, {strike}, opt_type=opt_type)
             if strike in ikeys:
-                gap_to_date = (min(series)[:10] if series else backfill_from_ts[:10])
-                live = fetch_candles_utc(ikeys[strike], backfill_from_ts[:10], gap_to_date)
+                live = {}
+                if needs_leading:
+                    gap_to_date = (min(series)[:10] if series else backfill_from_ts[:10])
+                    live.update(fetch_candles_utc(ikeys[strike], backfill_from_ts[:10], gap_to_date) or {})
+                if needs_trailing_today:
+                    live.update(fetch_intraday_candles_utc(ikeys[strike]) or {})
                 if live:
                     _persist_backfill(conn, symbol, expiry_date, strike, opt_type, live)
                 series = {**{ts: v for ts, v in live.items() if v}, **series}
