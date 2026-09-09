@@ -70,7 +70,7 @@ export default function Strategies() {
       )}
 
       {selected && !loadingConfig && configured && !reconfiguring && (
-        <StrategyDetail strategy={selected} onReconfigure={() => setReconfiguring(true)} />
+        <StrategyDetail strategy={selected} onReconfigure={() => setReconfiguring(true)} configVersion={config.confirmed_at} />
       )}
 
       {selected && loadingConfig && <div className="empty">Loading configuration…</div>}
@@ -211,8 +211,8 @@ function ConfigForm({ strategy, existing, isReconfigure, onCancel, onSaved }) {
   )
 }
 
-function StrategyDetail({ strategy, onReconfigure }) {
-  const { data, isLoading, isFetching } = useStrategyRun(strategy.id, { enabled: true })
+function StrategyDetail({ strategy, onReconfigure, configVersion }) {
+  const { data, isLoading, isFetching } = useStrategyRun(strategy.id, { enabled: true, configVersion })
   const windows = data?.windows || []
   const [selectedWindow, setSelectedWindow] = useState(null)
   // Which side(s) actually got computed is a CONFIG decision (params.side,
@@ -248,7 +248,7 @@ function StrategyDetail({ strategy, onReconfigure }) {
         <div className="strat-freshness-banner">Data as of {data.data_as_of}{isFetching && !isLoading ? ' · refreshing…' : ''}</div>
       )}
 
-      {isLoading && <div className="empty">Loading…</div>}
+      {isLoading && <div className="empty">Pulling data for this configuration… (recomputes any new/open window — settled windows are cached and load instantly next time)</div>}
       {!isLoading && data && data.ok === false && <div className="empty">{data.error || 'No usable result for this strategy yet.'}</div>}
       {!isLoading && data && data.ok !== false && !windows.length && <div className="empty">No windows yet for the configured start date.</div>}
 
@@ -428,9 +428,47 @@ function SetCards({ sets, isBounded, windowLatestTs }) {
             {s.never_filled_before_rollover && (
               <div className="strat-set-note">Dropped — never filled before this window&rsquo;s rollover</div>
             )}
+            <LegBreakdown s={s} setClosed={setClosed} />
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// l1=BUY 1x K@expiry1, l2=SELL 2x K2@expiry2, l3=SELL 1x K@expiry2,
+// l4=BUY 2x K2@expiry3 — fixed strategy shape, same mapping both sides
+// (only which value is "K" vs "K2" differs, already reflected in
+// k_strike/k2_strike). See docs/prd/pe-ratio-diagonal-strategy.md.
+const LEG_META = {
+  l1: { action: 'BUY 1x', strikeKey: 'k_strike', expiryKey: 'expiry1' },
+  l2: { action: 'SELL 2x', strikeKey: 'k2_strike', expiryKey: 'expiry2' },
+  l3: { action: 'SELL 1x', strikeKey: 'k_strike', expiryKey: 'expiry2' },
+  l4: { action: 'BUY 2x', strikeKey: 'k2_strike', expiryKey: 'expiry3' },
+}
+
+function LegBreakdown({ s, setClosed }) {
+  if (!s.entry_legs) return null
+  const laterLegs = setClosed ? s.exit_legs : s.current_legs
+  const laterLabel = setClosed ? 'exit' : 'now'
+  return (
+    <div className="strat-leg-table-wrap">
+      <table className="strat-leg-table">
+        <thead>
+          <tr><th>Leg</th><th>Strike</th><th>Expiry</th><th>Entry</th><th>{laterLabel}</th></tr>
+        </thead>
+        <tbody>
+          {Object.entries(LEG_META).map(([leg, m]) => (
+            <tr key={leg}>
+              <td>{m.action}</td>
+              <td>{s[m.strikeKey]?.toFixed(0)}</td>
+              <td>{s[m.expiryKey]?.slice(5)}</td>
+              <td>{s.entry_legs[leg]?.toFixed(2)}</td>
+              <td>{laterLegs?.[leg] != null ? laterLegs[leg].toFixed(2) : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

@@ -215,11 +215,26 @@ def run_window(conn, window_start: str, window_end_ts: str | None, merged: list[
     #     harmless, not a special case that needs its own branch.
     # A set without "values" (a resolution error, or dropped for never
     # filling before rollover) has no exit_ts either, so both come out None.
+    def _leg_snapshot(legs: dict, ts: str | None) -> dict | None:
+        if ts is None:
+            return None
+        try:
+            return {leg: series[ts] for leg, series in legs.items()}
+        except KeyError:
+            return None  # this leg's own series doesn't reach ts (rare — a leg-specific gap)
+
     def _with_reference_values(s):
-        out = {k: v for k, v in s.items() if k != "values"}
+        out = {k: v for k, v in s.items() if k not in ("values", "legs")}
         vals = s.get("values") or {}
+        legs = s.get("legs") or {}
         out["current_value"] = vals.get(s.get("last_ts"))
         out["exit_value"] = vals.get(s.get("exit_ts"))
+        # Per-leg premium breakdown (2026-09-09) at the same three reference
+        # points as the aggregate values above — entry_legs already comes
+        # from build_set(); exit_legs/current_legs mirror exit_value/
+        # current_value exactly, just per-leg instead of the net combo.
+        out["exit_legs"] = _leg_snapshot(legs, s.get("exit_ts"))
+        out["current_legs"] = _leg_snapshot(legs, s.get("last_ts"))
         return out
 
     return {

@@ -153,8 +153,18 @@ def build_set(conn, trigger_ts: str, fut_price: float, merged: list[str],
         return meta
 
     values = {ts: round(l1[ts] - 2 * l2[ts] - l3[ts] + 2 * l4[ts], 2) for ts in common_ts}
+    entry_ts = common_ts[0]
+    # Per-leg premiums (2026-09-09) — l1=K@expiry1, l2=K2@expiry2, l3=K@expiry2,
+    # l4=K2@expiry3 (fixed strategy shape, same mapping both sides — see
+    # docs/prd/pe-ratio-diagonal-strategy.md). entry_legs is the snapshot at
+    # this set's own entry; the full per-leg series ("legs") is kept so a
+    # caller needing the same breakdown at a LATER ts (exit/current — see
+    # run_window's own exit_ts/last_ts) doesn't need to reconstruct it from
+    # scratch. Stripped before the final payload, same as "values" already is.
+    meta["entry_legs"] = {"l1": l1[entry_ts], "l2": l2[entry_ts], "l3": l3[entry_ts], "l4": l4[entry_ts]}
+    meta["legs"] = {"l1": l1, "l2": l2, "l3": l3, "l4": l4}
     meta.update({
-        "trigger_ts": common_ts[0], "entry_value": values[common_ts[0]],
+        "trigger_ts": entry_ts, "entry_value": values[entry_ts],
         "last_ts": common_ts[-1], "values": values, "n_ticks": len(values),
     })
     return meta

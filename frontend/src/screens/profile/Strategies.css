@@ -129,6 +129,12 @@
 .strat-set-card.dropped::before { background:var(--muted); }
 .strat-set-note { font-size:11px; font-weight:600; color:var(--muted); }
 
+.strat-leg-table-wrap { margin-top:6px; border-top:1px solid var(--border); padding-top:6px; overflow-x:auto; }
+.strat-leg-table { width:100%; border-collapse:collapse; font-size:10.5px; font-family:"IBM Plex Mono", monospace; }
+.strat-leg-table th { text-align:right; font-weight:600; color:var(--muted); padding:2px 4px; font-size:9.5px; text-transform:uppercase; letter-spacing:.02em; }
+.strat-leg-table th:first-child, .strat-leg-table td:first-child { text-align:left; }
+.strat-leg-table td { text-align:right; padding:2px 4px; }
+
 /* ── Daily tables — matches artifact's table.daily (right-aligned, mono) ── */
 .strat-section-title { font-size:13px; font-weight:600; color:var(--text); text-transform:uppercase; letter-spacing:.05em; margin:0 0 8px; }
 .strat-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
