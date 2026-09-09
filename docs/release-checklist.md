@@ -119,7 +119,7 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
-## Status as of 2026-09-09 (`v7.6.0` — tagged and pushed, not yet deployed)
+## Status as of 2026-09-09 (`v7.6.0` — frontend and backend both released to prod)
 
 - ✅ `main` tagged `v7.6.0` (commit `afaa7f5`) and pushed to origin, along
   with the tag. This release adds: admin Strategies dashboard
@@ -135,17 +135,24 @@ prod's Razorpay keys or DB.
   `option_chain_5m` capture from 15 to 9 Upstox calls per 5-min snapshot
   (per-type expiry rank depth — weekly 0-3, monthly 0-2, quarterly 0-1 —
   instead of one shared 0-4 depth for all three).
-- ⏳ **Not deployed anywhere yet.** `edgevest.in`/`www.edgevest.in`,
-  `dev.edgevest.in`, and `staging.edgevest.in` all still serve whatever was
-  last deployed (`v7.5.0` per the prior status note) — nobody has run
-  `frontend/deploy/deploy.sh deploy <env> v7.6.0` for any environment.
-- ⏳ Prod backend (EC2) not released to `v7.6.0` either — backend is never
-  run/deployed from inside a Claude Code session (root `CLAUDE.md`).
-  Whoever deploys this needs to run `poller.py init` on the box afterward
-  (idempotent — creates the two new tables above) and restart the service
-  to pick up `server.py`'s new `backend/strategies/` blueprint registration;
-  verify `/api/strategies` responds (401 unauthenticated is fine, 404 means
-  the blueprint didn't register) before calling the backend side done.
+- ✅ `edgevest.in`/`www.edgevest.in` — serving `releases/v7.6.0` (deployed via
+  `frontend/deploy/deploy.sh deploy prod v7.6.0` from this session, release-id
+  pinned explicitly since the working tree had an unrelated dirty file at
+  deploy time; CloudFront invalidation `I295AOMAKWC6QOUQFA5L9C3FU1` issued —
+  allow a few minutes for edges to catch up. Previous release `v7.5.0` still
+  sits untouched in S3 for instant rollback). `dev.edgevest.in`/
+  `staging.edgevest.in` were last deployed further back and will read as
+  behind until someone runs `deploy.sh deploy dev v7.6.0` /
+  `deploy.sh deploy staging v7.6.0`.
+- ✅ Prod backend (EC2) released to `v7.6.0` by the user directly (backend is
+  never run from inside a Claude Code session — see root `CLAUDE.md`):
+  `poller.py init` run (creates the two new tables above) and the
+  `edgevest-web` service restarted to pick up `server.py`'s new
+  `backend/strategies/` blueprint registration. Restart took a little longer
+  than usual, per the user — came back up, not independently confirmed via
+  `/api/strategies` from this session; worth a quick check if anything looks
+  off (401 unauthenticated is the healthy response, 404 would mean the
+  blueprint didn't register).
 - ⚠️ `main`/`dev` divergence (called out in earlier status notes) is
   unchanged this release — work continues to land directly on `main`. Still
   worth formally deciding whether to retire `dev` or resume the documented
