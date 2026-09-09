@@ -30,7 +30,7 @@ from db.queries import get_merged_cadence_dates
 from db.init_db import get_connection
 from live.expiry import expiry_cache
 from nifty_pe_ratio_diagonal_windowed_backtest import find_window_starts, run_window, ist_ts_for, ENTRY_TIME
-from nifty_fut_ref import resolve_front_month_future, fetch_candles_utc
+from nifty_fut_ref import resolve_front_month_future, fetch_candles_utc, fetch_intraday_candles_utc, IST
 
 SYMBOL = "NIFTY50"
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "nifty_pe_ratio_diagonal_merged_windows_template.html")
@@ -156,6 +156,20 @@ def prepare_run_inputs(conn, start_date: str, end_date: str | None, symbol: str,
         lot_size = fut["lot_size"]
         price_label = fut["trading_symbol"]
         fut_series = fetch_candles_utc(fut["instrument_key"], pad_from, pad_to)
+        # fetch_candles_utc's historical endpoint never includes today's
+        # candles (see its own docstring) — merge in today's intraday
+        # candles too whenever the requested range actually reaches today.
+        # Without this, fut_series (and everything gated on it: the chart,
+        # daily_realized — see build_merged_embed's `if f is None: continue`)
+        # silently stops one trading day behind the option-chain data it's
+        # paired with, even though the stat tiles (pe_realized_pnl_pts etc.,
+        # sourced straight from option-chain-only P&L, no fut_series
+        # dependency) correctly show through today. Found 2026-09-09 after
+        # a prod capture gap made the mismatch obvious (chart stuck on the
+        # 8th, tiles already showing the 9th).
+        today_ist = datetime.now(timezone.utc).astimezone(IST).date().isoformat()
+        if end_date >= today_ist:
+            fut_series.update(fetch_intraday_candles_utc(fut["instrument_key"]))
     else:
         # NIFTY50 index closes from local candles_5m — no live Upstox call.
         lot_size = 65  # last-known NIFTY lot size — no live resolution in spot mode
