@@ -210,10 +210,11 @@ def write_option_chain_snapshot(rows: list[dict]) -> int:
     return count
 
 
-def get_merged_cadence_dates(symbol: str) -> list[str]:
+def get_merged_cadence_dates(symbol: str, include_quarterly: bool = False) -> list[str]:
     """
     Distinct expiry_date values captured for a symbol, merging the
-    'weekly' and 'monthly' expiry_type buckets and sorting ascending.
+    'weekly' and 'monthly' expiry_type buckets (and, if include_quarterly,
+    'quarterly' too) and sorting ascending.
 
     Upstox's own weekly/monthly split excludes the monthly-coinciding
     date from the weekly bucket even though it's calendar-wise 7 days
@@ -222,13 +223,26 @@ def get_merged_cadence_dates(symbol: str) -> list[str]:
     not cadence-relative, so callers needing a true weekly-spaced sequence
     (calendar-spread strategies) must use this merged rank instead —
     see docs/prd/calendar-spread-strike-scoring.md.
+
+    include_quarterly defaults to False to preserve exact behavior for
+    existing callers (calendar_spread_strike_scoring.py's cadence_dates[1]/[2]
+    indexing was built and validated around weekly+monthly only — silently
+    interleaving quarterly dates could shift which contracts it picks).
+    Pass True for a caller that specifically needs it: confirmed 2026-09-09
+    that Upstox buckets some near-term NIFTY expiries as "quarterly" despite
+    them sitting on an otherwise-normal ~weekly/monthly cadence (e.g.
+    2026-09-29 is quarterly[0], not monthly, even though it's the very next
+    expiry after 2026-09-22) — a caller resolving a 3rd/4th expiry out that
+    only ever reads weekly+monthly can silently skip straight past it.
     """
+    types = ["weekly", "monthly", "quarterly"] if include_quarterly else ["weekly", "monthly"]
+    placeholders = ", ".join("?" * len(types))
     conn = get_connection()
-    cur = conn.execute("""
+    cur = conn.execute(f"""
         SELECT DISTINCT expiry_date FROM option_chain_5m
-        WHERE symbol = ? AND expiry_type IN ('weekly', 'monthly')
+        WHERE symbol = ? AND expiry_type IN ({placeholders})
         ORDER BY expiry_date
-    """, (symbol,))
+    """, (symbol, *types))
     dates = [row[0] for row in cur.fetchall()]
     conn.close()
     return dates
@@ -3471,5 +3485,84 @@ def get_flagged_duplicate_orders(limit: int = 50) -> list[dict]:
             ORDER BY po.id DESC LIMIT ?
         """, (limit,)).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ============================================================
+#  Strategies admin dashboard (backend/strategies/) —
+#  docs/prd/admin-strategies-dashboard.md
+# ============================================================
+
+def get_option_chain_max_ts() -> str | None:
+    """Latest captured tick across all of option_chain_5m — used both to default
+    a strategy run's end_date and (strategies/service.py) as the "data as of"
+    freshness banner. Kept here, not issued as raw SQL in service.py, per this
+    project's SQL-isolation convention (backend/CLAUDE.md)."""
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT MAX(ts) FROM option_chain_5m").fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def get_cached_strategy_window(strategy_id: str, window_start: str) -> dict | None:
+    """A previously-cached, settled window's embed payload, or None if never cached."""
+    conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT payload_json FROM strategy_backtest_windows
+            WHERE strategy_id = ? AND window_start = ?
+        """, (strategy_id, window_start)).fetchone()
+        return _json.loads(row["payload_json"]) if row else None
+    finally:
+        conn.close()
+
+
+def write_cached_strategy_window(strategy_id: str, window_start: str, payload: dict) -> None:
+    """Cache one settled window's embed — never called for the still-open window."""
+    conn = get_connection()
+    try:
+        conn.execute("""
+            INSERT INTO strategy_backtest_windows (strategy_id, window_start, payload_json, computed_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (strategy_id, window_start)
+            DO UPDATE SET payload_json = excluded.payload_json, computed_at = excluded.computed_at
+        """, (strategy_id, window_start, _json.dumps(payload), _now_utc()))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_strategy_config(strategy_id: str) -> dict | None:
+    conn = get_connection()
+    try:
+        row = conn.execute("""
+            SELECT strategy_id, start_date, params_json, confirmed_by, confirmed_at
+            FROM strategy_configs WHERE strategy_id = ?
+        """, (strategy_id,)).fetchone()
+        if not row:
+            return None
+        return {
+            "strategy_id": row["strategy_id"], "start_date": row["start_date"],
+            "params": _json.loads(row["params_json"]),
+            "confirmed_by": row["confirmed_by"], "confirmed_at": row["confirmed_at"],
+        }
+    finally:
+        conn.close()
+
+
+def upsert_strategy_config(strategy_id: str, start_date: str, params: dict, confirmed_by: str) -> None:
+    conn = get_connection()
+    try:
+        conn.execute("""
+            INSERT INTO strategy_configs (strategy_id, start_date, params_json, confirmed_by, confirmed_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (strategy_id)
+            DO UPDATE SET start_date = excluded.start_date, params_json = excluded.params_json,
+                          confirmed_by = excluded.confirmed_by, confirmed_at = excluded.confirmed_at
+        """, (strategy_id, start_date, _json.dumps(params), confirmed_by, _now_utc()))
+        conn.commit()
     finally:
         conn.close()

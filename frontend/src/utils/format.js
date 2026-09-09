@@ -26,6 +26,14 @@ export function fmtIstShort(ts) {
   return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
+// Signed points formatter (no currency symbol) — for strategy backtest P&L
+// figures (option-price points, not rupees). See fmtPnl for the rupee twin.
+export function fmtPts(v, dec = 2) {
+  if (v == null) return '—'
+  const n = Number(v)
+  return (n >= 0 ? '+' : '−') + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: dec, maximumFractionDigits: dec })
+}
+
 export function fmtContract(l) {
   return [l.strike ? Number(l.strike).toLocaleString('en-IN') : null, l.instrument_type, l.expiry_str]
     .filter(Boolean).join(' ')

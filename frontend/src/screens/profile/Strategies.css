@@ -1,0 +1,148 @@
+/* Admin "Strategies" dashboard — docs/prd/admin-strategies-dashboard.md.
+   Deliberately mirrors backend/analysis/nifty_pe_ratio_diagonal_merged_windows_template.html's
+   own visual system (same fonts, same PE/CE/Combined entity colors, same
+   stat-tile/set-card/panel/table shapes) rather than this app's generic
+   admin-screen look — the whole point of this screen is in-dashboard parity
+   with that artifact, so it should actually look like it. */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+/* This screen is data-dense (charts, set cards, tables) — the shared
+   .profile-page 640px cap (sized for simple settings forms) is too narrow
+   here. Widened to match the artifact's own .wrap max-width exactly. */
+.profile-page.strat-page { max-width:1080px; }
+
+.strat-page {
+  --pe-color:       #2a78d6;
+  --ce-color:       #d9822b;
+  --combined-color: #8b8a84;
+  --good:           var(--green);
+  --bad:            var(--red);
+  font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.strat-page .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+.strat-picker { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+.strat-picker-btn { padding:6px 14px; border-radius:20px; font-size:12px; font-weight:700; border:1px solid var(--border); background:var(--card); color:var(--text); }
+.strat-picker-btn-active { background:var(--text); color:#fff; border-color:var(--text); }
+
+.strat-configured-dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-left:6px; background:var(--ce-color); }
+
+/* ── Config-confirm / reconfigure form ── */
+.strat-config-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
+.strat-config-title { font-size:14px; font-weight:700; margin-bottom:4px; }
+.strat-config-caption { font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.5; }
+.strat-config-caption strong { color:var(--text); }
+.strat-config-section-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:14px 0 8px; }
+.strat-config-section-label:first-of-type { margin-top:2px; }
+.strat-config-caption-tight { margin-bottom:10px; }
+.strat-config-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:14px; }
+.strat-config-actions { display:flex; gap:8px; }
+.strat-config-meta { font-size:11px; color:var(--muted); margin-top:10px; }
+
+/* ── Freshness banner — persistent, never a pulsing/live indicator ── */
+.strat-freshness-banner { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:var(--muted); background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 12px; margin-bottom:12px; font-family:"IBM Plex Mono", monospace; }
+
+.strat-detail-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; flex-wrap:wrap; }
+.strat-reconfigure-btn { flex-shrink:0; margin-left:auto; }
+.strat-scope-caption { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-weight:600; margin-bottom:14px; }
+
+/* ── Per-window tab strip — matches the artifact's underline tab bar,
+   including the PE/CE sub-line under each date ── */
+.strat-window-tabs { display:flex; gap:4px; overflow-x:auto; border-bottom:1px solid var(--border); margin-bottom:18px; -webkit-overflow-scrolling:touch; }
+.strat-window-tab {
+  flex-shrink:0; background:none; border:none; border-bottom:2px solid transparent;
+  padding:10px 16px 9px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:2px;
+  font-family:inherit; font-size:13.5px; font-weight:600; color:var(--muted); white-space:nowrap;
+}
+.strat-window-tab-active { color:var(--text); border-bottom-color:var(--pe-color); }
+.strat-window-tab-sub { font-size:11px; font-weight:400; color:var(--muted); font-family:"IBM Plex Mono", monospace; }
+.strat-window-tab-open-chip { font-size:9px; font-weight:800; padding:1px 6px; border-radius:10px; background:#dcfce7; color:#166534; letter-spacing:.3px; margin-left:4px; }
+
+/* ── Stat tiles — hero row, matches artifact's .hero-row/.stat-tile ── */
+.strat-tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:2px; background:var(--border); border:1px solid var(--border); border-radius:14px; overflow:hidden; margin-bottom:18px; }
+.strat-tile { background:var(--card); padding:14px 16px; display:flex; flex-direction:column; gap:4px; }
+.strat-tile-label { font-size:11.5px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+.strat-tile-dot { width:8px; height:8px; border-radius:50%; flex:none; }
+.strat-tile-value { font-size:21px; font-weight:600; font-family:"IBM Plex Mono", monospace; }
+.strat-tile-sub { font-size:12px; color:var(--muted); font-family:"IBM Plex Mono", monospace; }
+.strat-tile-value.pos { color:var(--good); }
+.strat-tile-value.neg { color:var(--bad); }
+.strat-tile-secondary { opacity:.72; }
+.strat-tile-secondary .strat-tile-value { font-size:17px; }
+
+/* ── Chart panel — matches artifact's .panel ── */
+.strat-panel { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px 16px 8px; margin-bottom:16px; }
+.strat-panel-head { margin-bottom:8px; }
+.strat-panel-title { font-size:14px; font-weight:600; }
+.strat-panel-sub { font-size:12px; color:var(--muted); }
+
+/* ── SVG chart — direct port of the artifact's own hand-rolled chart
+   (index-positioned lines, day boundaries, crosshair+tooltip), not a
+   charting-library approximation ── */
+.strat-chart-wrap { width:100%; }
+.strat-chart-svg { width:100%; height:auto; display:block; overflow:visible; }
+.strat-chart-grid { stroke:var(--border); stroke-width:1; }
+.strat-chart-axis { fill:var(--muted); font-size:10.5px; font-family:"IBM Plex Mono", monospace; }
+.strat-chart-daybound { stroke:var(--muted); stroke-width:1; stroke-dasharray:3 3; opacity:.5; }
+.strat-chart-daylabel { fill:var(--muted); font-size:10px; font-family:"IBM Plex Mono", monospace; }
+.strat-chart-line { fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+.strat-chart-enddot { stroke:var(--card); stroke-width:2; }
+.strat-chart-trigger { stroke:var(--card); stroke-width:2; }
+.strat-chart-triggerlabel { font-size:9.5px; font-family:"IBM Plex Mono", monospace; font-weight:600; }
+.strat-chart-zero { stroke:var(--muted); stroke-width:1; opacity:.6; }
+.strat-chart-crosshair { stroke:var(--muted); stroke-width:1; pointer-events:none; transition:opacity .08s; }
+
+.strat-chart-legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--text); margin-bottom:8px; }
+.strat-chart-legend-item { display:flex; align-items:center; gap:6px; }
+.strat-chart-legend-key { width:14px; height:2px; border-radius:1px; }
+.strat-chart-legend-key.dashed { background:none; border-top:2px dashed var(--combined-color); height:0; }
+
+.strat-chart-tooltip {
+  position:absolute; top:10px; pointer-events:none;
+  background:var(--card); border:1px solid var(--border); border-radius:8px;
+  padding:8px 10px; font-size:12px; box-shadow:0 4px 16px rgba(0,0,0,.16);
+  min-width:150px; z-index:5;
+}
+.strat-chart-tooltip-date { font-family:"IBM Plex Mono", monospace; color:var(--muted); font-size:11px; margin-bottom:5px; }
+.strat-chart-tooltip-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:1.5px 0; }
+.strat-chart-tooltip-key { width:10px; height:2px; border-radius:1px; flex:none; }
+.strat-chart-tooltip-label { color:var(--text); font-size:11.5px; }
+.strat-chart-tooltip-value { font-family:"IBM Plex Mono", monospace; font-weight:600; font-size:12px; margin-left:auto; }
+
+/* ── Triggered sets — set-card grid, matches artifact's .set-grid/.set-card
+   exactly (colored left stripe + side pill BY ENTITY, never by sign — CE is
+   orange, not the app's generic "positive" green, on purpose) ── */
+.strat-set-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:12px; margin-bottom:16px; }
+.strat-set-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; display:flex; flex-direction:column; gap:5px; position:relative; }
+.strat-set-card::before { content:""; position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:2px; background:var(--set-color); }
+.strat-set-label { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--set-color); display:flex; align-items:center; gap:6px; font-family:"IBM Plex Mono", monospace; }
+.strat-side-pill { font-size:9.5px; font-weight:700; letter-spacing:.04em; padding:1px 6px; border-radius:8px; background:var(--set-color); color:#fff; }
+.strat-set-strikes { font-size:18px; font-weight:600; font-family:"IBM Plex Mono", monospace; }
+.strat-set-meta { font-size:12px; color:var(--muted); display:flex; flex-direction:column; gap:2px; font-family:"IBM Plex Mono", monospace; }
+.strat-set-entry { display:flex; align-items:baseline; gap:6px; margin-top:2px; }
+.strat-set-entry .v { font-size:16px; font-weight:600; font-family:"IBM Plex Mono", monospace; }
+.strat-set-entry .u { font-size:11.5px; color:var(--muted); }
+.strat-set-delta { margin-left:auto; font-size:11.5px; font-weight:700; font-family:"IBM Plex Mono", monospace; }
+.strat-set-delta.pos { color:var(--good); }
+.strat-set-delta.neg { color:var(--bad); }
+.strat-set-card.dropped { opacity:.55; }
+.strat-set-card.dropped::before { background:var(--muted); }
+.strat-set-note { font-size:11px; font-weight:600; color:var(--muted); }
+
+/* ── Daily tables — matches artifact's table.daily (right-aligned, mono) ── */
+.strat-section-title { font-size:13px; font-weight:600; color:var(--text); text-transform:uppercase; letter-spacing:.05em; margin:0 0 8px; }
+.strat-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.strat-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.strat-table th { text-align:right; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--border); }
+.strat-table th:first-child, .strat-table td:first-child { text-align:left; }
+.strat-table td { text-align:right; padding:7px 8px; border-bottom:1px solid var(--border); font-family:"IBM Plex Mono", monospace; font-variant-numeric:tabular-nums; }
+.strat-table tr:last-child td { border-bottom:none; }
+.strat-table td.combined-col, .strat-table th.combined-col { color:var(--muted); }
+
+.strat-daily-block { margin-bottom:16px; }
+.strat-daily-muted { opacity:.75; }
+
+@media (max-width:768px) {
+  .strat-tiles { grid-template-columns:1fr 1fr; }
+  .strat-set-grid { grid-template-columns:1fr; }
+}

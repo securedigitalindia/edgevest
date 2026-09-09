@@ -1,0 +1,550 @@
+<title>PE+CE Rolling Windows</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    color-scheme: light;
+    --bg-page:      #f9f9f7;
+    --bg-surface:   #fcfcfb;
+    --ink-primary:  #0b0b0b;
+    --ink-secondary:#52514e;
+    --ink-muted:    #898781;
+    --grid:         #e1e0d9;
+    --axis:         #c3c2b7;
+    --border:       rgba(11,11,11,0.10);
+    --accent:       #2a78d6;
+    --pe-color:     #2a78d6;
+    --ce-color:     #d9822b;
+    --combined-color: #8b8a84;
+    --good:         #006300;
+    --bad:          #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg-page:#0d0d0d; --bg-surface:#1a1a19; --ink-primary:#ffffff; --ink-secondary:#c3c2b7;
+      --ink-muted:#898781; --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+      --accent:#3987e5; --pe-color:#3987e5; --ce-color:#e0973f; --combined-color:#9a988f;
+      --good:#0ca30c; --bad:#e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-page:#0d0d0d; --bg-surface:#1a1a19; --ink-primary:#ffffff; --ink-secondary:#c3c2b7;
+    --ink-muted:#898781; --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+    --accent:#3987e5; --pe-color:#3987e5; --ce-color:#e0973f; --combined-color:#9a988f;
+    --good:#0ca30c; --bad:#e66767;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg-page); color: var(--ink-primary);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 28px 20px 64px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  header { display: flex; flex-direction: column; gap: 6px; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-size: 30px; font-weight: 700; line-height: 1.15; margin: 0; text-wrap: balance; }
+  .subtitle { color: var(--ink-secondary); font-size: 14.5px; }
+
+  .tab-bar { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+  .tab-btn {
+    font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink-secondary);
+    background: none; border: none; border-bottom: 2px solid transparent;
+    padding: 10px 16px 9px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  }
+  .tab-btn .tab-sub { font-size: 11px; font-weight: 400; color: var(--ink-muted); }
+  .tab-btn[aria-selected="true"] { color: var(--ink-primary); border-bottom-color: var(--accent); }
+  .tab-btn:hover { color: var(--ink-primary); }
+
+  .window-pane { display: flex; flex-direction: column; gap: 22px; }
+  .window-pane[hidden] { display: none; }
+
+  .hero-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 2px; background: var(--border); border-radius: 14px; overflow: hidden; border: 1px solid var(--border); }
+  .stat-tile { background: var(--bg-surface); padding: 16px 18px; display: flex; flex-direction: column; gap: 5px; }
+  .stat-label { font-size: 12px; color: var(--ink-muted); display: flex; align-items: center; gap: 6px; }
+  .stat-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .stat-value { font-size: 24px; font-weight: 600; }
+  .stat-sub { font-size: 12.5px; color: var(--ink-secondary); }
+  .stat-sub-2 { font-size: 11.5px; color: var(--ink-muted); }
+  .stat-value.pos { color: var(--good); }
+  .stat-value.neg { color: var(--bad); }
+  .stat-tile.muted { opacity: 0.7; }
+
+  .legs-title { font-size: 13px; font-weight: 600; color: var(--ink-secondary); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 -6px; }
+  .set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .set-card {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; position: relative;
+  }
+  .set-card::before {
+    content: ""; position: absolute; left: 0; top: 16px; bottom: 16px; width: 3px; border-radius: 2px;
+    background: var(--set-color);
+  }
+  .set-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--set-color); display: flex; align-items: center; gap: 6px; }
+  .side-pill {
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 8px;
+    background: var(--set-color); color: var(--bg-surface);
+  }
+  .set-strikes { font-size: 19px; font-weight: 600; }
+  .set-meta { font-size: 12.5px; color: var(--ink-muted); display: flex; flex-direction: column; gap: 2px; }
+  .set-entry { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
+  .set-entry .v { font-size: 17px; font-weight: 600; }
+  .set-entry .u { font-size: 12px; color: var(--ink-muted); }
+  .set-card.dropped { opacity: 0.55; }
+  .set-card.dropped::before { background: var(--ink-muted); }
+  .set-dropped-note { font-size: 11.5px; font-weight: 600; color: var(--ink-muted); }
+  .set-override-note { font-size: 11px; color: var(--ink-muted); }
+
+  .panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 20px 12px; }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .panel-title { font-size: 15px; font-weight: 600; }
+  .panel-sub { font-size: 12.5px; color: var(--ink-muted); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-secondary); margin-bottom: 4px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-key { width: 14px; height: 2px; border-radius: 1px; }
+  .legend-key.dashed { background: none; border-top: 2px dashed var(--combined-color); height: 0; }
+
+  .chart-svg-wrap { position: relative; width: 100%; }
+  svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .axis-text { fill: var(--ink-muted); font-size: 10.5px; font-family: "IBM Plex Mono", monospace; }
+  .day-boundary { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 3 3; }
+  .day-label { fill: var(--ink-muted); font-size: 10px; font-family: "IBM Plex Mono", monospace; }
+  .series-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .end-dot { stroke: var(--bg-surface); stroke-width: 2; }
+  .trigger-marker { stroke: var(--bg-surface); stroke-width: 2; }
+  .trigger-label { font-size: 9.5px; font-family: "IBM Plex Mono", monospace; font-weight: 600; }
+  .zero-line { stroke: var(--axis); stroke-width: 1; }
+
+  .crosshair-line { stroke: var(--ink-muted); stroke-width: 1; opacity: 0; pointer-events: none; }
+  .hit-rect { fill: transparent; cursor: crosshair; }
+
+  .tooltip {
+    position: absolute; pointer-events: none; opacity: 0; transition: opacity 0.08s;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.16);
+    min-width: 150px; z-index: 5;
+  }
+  .tooltip-date { font-family: "IBM Plex Mono", monospace; color: var(--ink-muted); font-size: 11px; margin-bottom: 5px; }
+  .tooltip-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 1.5px 0; }
+  .tooltip-key { width: 10px; height: 2px; border-radius: 1px; flex: none; }
+  .tooltip-label { color: var(--ink-secondary); font-size: 11.5px; }
+  .tooltip-value { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 12px; margin-left: auto; }
+
+  table.daily { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.daily th { text-align: right; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-muted); font-weight: 600; padding: 6px 7px; border-bottom: 1px solid var(--grid); }
+  table.daily th:first-child, table.daily td:first-child { text-align: left; }
+  table.daily td { text-align: right; padding: 7px 7px; border-bottom: 1px solid var(--grid); font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+  table.daily tr:last-child td { border-bottom: none; font-weight: 600; }
+  table.daily td.combined-col, table.daily th.combined-col { color: var(--ink-muted); }
+  .table-wrap { overflow-x: auto; }
+
+  footer { color: var(--ink-muted); font-size: 12px; padding-top: 4px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">NIFTY50 · PE + CE ratio diagonal · rolling windows</div>
+    <h1 id="page-h1">—</h1>
+    <div class="subtitle" id="page-subtitle">—</div>
+  </header>
+
+  <div class="tab-bar" id="tab-bar" role="tablist"></div>
+  <div id="panes"></div>
+
+  <footer>
+    Each window runs BOTH strategies independently on the same auto-detected expiry-rollover window — a PE ("put") diagonal and a CE ("call") diagonal, each with its own strikes, triggers, and entries. PE's and CE's own realized figures are the primary numbers here and are never summed into one headline result; a muted "Combined (PE+CE)" line/column is shown purely as a what-if reference for running both together. Every chart also plots what happens after a window's own exit, dashed and muted, as a "what if held to actual settlement" reference — it was never realized. Every price is a real 5-min-candle LTP from <code>option_chain_5m</code>, backfilled from live Upstox where local capture had a gap. Simulation/research only — not open trades, and not a large enough sample to draw a conclusion from.
+  </footer>
+</div>
+
+<script>
+const DATA = __DATA_PLACEHOLDER__;
+
+function istParts(ts) {
+  const d = new Date(ts);
+  const i = new Date(d.getTime() + 5.5 * 3600 * 1000);
+  return { h: i.getUTCHours(), m: i.getUTCMinutes(), day: i.getUTCDate(), mon: i.getUTCMonth(), yr: i.getUTCFullYear() };
+}
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function istTime(ts) { const p = istParts(ts); return `${String(p.h).padStart(2,'0')}:${String(p.m).padStart(2,'0')}`; }
+function istDate(ts) { const p = istParts(ts); return `${String(p.day).padStart(2,'0')} ${MONTHS[p.mon]}`; }
+function fmtDateLong(iso) { const [y,m,d] = iso.split('-').map(Number); return `${String(d).padStart(2,'0')} ${MONTHS[m-1]} ${y}`; }
+function fmtDateShort(iso) { const [y,m,d] = iso.split('-').map(Number); return `${String(d).padStart(2,'0')} ${MONTHS[m-1]}`; }
+function fmt(n, dp=2) { return Number(n).toLocaleString('en-IN', { minimumFractionDigits: dp, maximumFractionDigits: dp }); }
+function fmtRs(n) { const sign = n < 0 ? '-' : '+'; return `${sign}₹${fmt(Math.abs(n))}`; }
+function fmtPts(n) { const sign = n < 0 ? '' : '+'; return `${sign}${fmt(n)}`; }
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function niceTicks(min, max, count) {
+  if (min === max) { min -= 1; max += 1; }
+  const range = max - min;
+  const rawStep = range / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  let step;
+  if (norm < 1.5) step = 1 * mag; else if (norm < 3) step = 2 * mag; else if (norm < 7) step = 5 * mag; else step = 10 * mag;
+  const niceMin = Math.floor(min / step) * step;
+  const niceMax = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = niceMin; v <= niceMax + step * 1e-6; v += step) ticks.push(Math.round(v * 100) / 100);
+  return ticks;
+}
+function dayBoundaryIdx(points) {
+  const out = [];
+  for (let i = 1; i < points.length; i++) if (points[i].day !== points[i - 1].day) out.push(i);
+  return out;
+}
+
+const NS = 'http://www.w3.org/2000/svg';
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(NS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+function renderLegend(container, series) {
+  container.innerHTML = series.map(s => `
+    <div class="legend-item">
+      <span class="legend-key${s.dashed ? ' dashed' : ''}" style="${s.dashed ? '' : `background:${s.color}`}"></span>
+      <span>${s.label}</span>
+    </div>
+  `).join('');
+}
+
+// Every series here is entity-colored (fixed color per PE/CE/Combined, never
+// sign-based) — with PE/CE also phase-split solid-pre-exit / dashed-muted-
+// post-exit at the window's own rollover boundary, same convention as the
+// single-side artifact's diverging series, just without switching hue by sign
+// (three fixed-color lines sharing one chart would be unreadable if color
+// ALSO flipped by sign on top of that).
+function buildChart(container, opts) {
+  const { points, series, yDomain, height, zeroLine, markers, exitMarker } = opts;
+  const W = 1000, H = height, padL = 54, padR = 14, padT = 26, padB = 8;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const n = points.length;
+  const [yMin, yMax] = yDomain;
+
+  const x = i => padL + (n === 1 ? 0 : (i / (n - 1)) * plotW);
+  const y = v => padT + (1 - (v - yMin) / (yMax - yMin)) * plotH;
+
+  const svg = svgEl('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none' });
+
+  const ticks = niceTicks(yMin, yMax, 5);
+  ticks.forEach(t => {
+    if (t < yMin || t > yMax) return;
+    svg.appendChild(svgEl('line', { class: 'gridline', x1: padL, x2: W - padR, y1: y(t), y2: y(t) }));
+    const lbl = svgEl('text', { class: 'axis-text', x: padL - 8, y: y(t) + 3, 'text-anchor': 'end' });
+    lbl.textContent = t.toLocaleString('en-IN');
+    svg.appendChild(lbl);
+  });
+  if (zeroLine && yMin < 0 && yMax > 0) svg.appendChild(svgEl('line', { class: 'zero-line', x1: padL, x2: W - padR, y1: y(0), y2: y(0) }));
+
+  dayBoundaryIdx(points).forEach(i => {
+    const xi = x(i);
+    svg.appendChild(svgEl('line', { class: 'day-boundary', x1: xi, x2: xi, y1: padT, y2: H - padB }));
+    const lbl = svgEl('text', { class: 'day-label', x: xi + 4, y: padT - 10 });
+    lbl.textContent = istDate(points[i].ts);
+    svg.appendChild(lbl);
+  });
+
+  series.forEach(s => {
+    const vals = points.map(p => p[s.key]);
+    if (s.phase) {
+      const phaseOf = i => (points[i].post_exit ? 'post' : 'pre');
+      let phaseSegs = [[0]];
+      for (let i = 1; i < n; i++) {
+        if (phaseOf(i) === phaseOf(i - 1)) phaseSegs[phaseSegs.length - 1].push(i);
+        else phaseSegs.push([i - 1, i]);
+      }
+      phaseSegs.forEach(idxs => {
+        const isPost = phaseOf(idxs[idxs.length - 1]) === 'post';
+        let d = `M ${x(idxs[0])} ${y(vals[idxs[0]])}`;
+        idxs.slice(1).forEach(i => { d += ` L ${x(i)} ${y(vals[i])}`; });
+        svg.appendChild(svgEl('path', {
+          class: 'series-line', d, stroke: s.color,
+          'stroke-dasharray': isPost ? '5 4' : 'none',
+          opacity: isPost ? 0.5 : 1,
+        }));
+      });
+    } else {
+      let d = `M ${x(0)} ${y(vals[0])}`;
+      for (let i = 1; i < n; i++) d += ` L ${x(i)} ${y(vals[i])}`;
+      svg.appendChild(svgEl('path', { class: 'series-line', d, stroke: s.color }));
+    }
+    svg.appendChild(svgEl('circle', { class: 'end-dot', cx: x(n - 1), cy: y(vals[n - 1]), r: 4, fill: s.color }));
+  });
+
+  if (markers) {
+    markers.forEach((m) => {
+      const i = points.findIndex(p => p.ts === m.ts);
+      if (i < 0) return;
+      const xi = x(i), yi = y(points[i][m.key || 'fut']);
+      svg.appendChild(svgEl('line', { x1: xi, x2: xi, y1: padT, y2: H - padB, stroke: m.color, 'stroke-width': 1, 'stroke-dasharray': '2 3', opacity: 0.6 }));
+      svg.appendChild(svgEl('circle', { class: 'trigger-marker', cx: xi, cy: yi, r: 5, fill: m.color }));
+      const lbl = svgEl('text', { class: 'trigger-label', x: xi + 6, y: padT + 10, fill: m.color });
+      lbl.textContent = m.label;
+      svg.appendChild(lbl);
+    });
+  }
+
+  if (exitMarker) {
+    const i = points.findIndex(p => p.ts === exitMarker.ts);
+    if (i >= 0) {
+      const xi = x(i);
+      const exitColor = cssVar('--bad');
+      svg.appendChild(svgEl('line', { x1: xi, x2: xi, y1: padT, y2: H - padB, stroke: exitColor, 'stroke-width': 1.5, opacity: 0.75 }));
+      const lbl = svgEl('text', { class: 'trigger-label', x: xi + 6, y: H - padB - 6, fill: exitColor });
+      lbl.textContent = 'Exit';
+      svg.appendChild(lbl);
+    }
+  }
+
+  const crosshair = svgEl('line', { class: 'crosshair-line', x1: padL, x2: padL, y1: padT, y2: H - padB });
+  svg.appendChild(crosshair);
+  const hit = svgEl('rect', { class: 'hit-rect', x: padL, y: 0, width: plotW, height: H });
+  svg.appendChild(hit);
+
+  container.innerHTML = '';
+  container.style.position = 'relative';
+  container.appendChild(svg);
+  const tooltip = document.createElement('div');
+  tooltip.className = 'tooltip';
+  container.appendChild(tooltip);
+
+  function showAt(i) {
+    const xi = x(i);
+    crosshair.setAttribute('x1', xi); crosshair.setAttribute('x2', xi);
+    crosshair.style.opacity = 1;
+    const p = points[i];
+    let rows = `<div class="tooltip-date">${istDate(p.ts)} · ${istTime(p.ts)} IST</div>`;
+    series.forEach(s => {
+      rows += `<div class="tooltip-row"><span class="tooltip-key" style="background:${s.color}"></span><span class="tooltip-label">${s.label}</span><span class="tooltip-value">${fmt(p[s.key], s.dp !== undefined ? s.dp : 1)}</span></div>`;
+    });
+    tooltip.innerHTML = rows;
+    tooltip.style.opacity = 1;
+    const wrapW = container.getBoundingClientRect().width;
+    const frac = xi / W;
+    let left = frac * wrapW + 14;
+    if (left + 170 > wrapW) left = frac * wrapW - 170 - 14;
+    tooltip.style.left = `${Math.max(4, left)}px`;
+    tooltip.style.top = `10px`;
+  }
+  function hide() { crosshair.style.opacity = 0; tooltip.style.opacity = 0; }
+
+  hit.addEventListener('pointermove', e => {
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const t = Math.max(0, Math.min(1, (loc.x - padL) / plotW));
+    showAt(Math.round(t * (n - 1)));
+  });
+  hit.addEventListener('pointerleave', hide);
+}
+
+function buildWindowPane(win, idx) {
+  const sets = win.sets;
+  const combined = win.combined;
+  const last = combined[combined.length - 1];
+  const first = combined[0];
+  const peColor = cssVar('--pe-color'), ceColor = cssVar('--ce-color'), combColor = cssVar('--combined-color');
+  const colorOf = side => side === 'PE' ? peColor : ceColor;
+
+  const pane = document.createElement('div');
+  pane.className = 'window-pane';
+  pane.id = `pane-${idx}`;
+  pane.setAttribute('role', 'tabpanel');
+  pane.hidden = idx !== 0;
+
+  const peSets = sets.filter(s => s.side === 'PE');
+  const ceSets = sets.filter(s => s.side === 'CE');
+  const pePos = win.pe_realized_pnl_pts >= 0, cePos = win.ce_realized_pnl_pts >= 0;
+  const combinedNow = win.pe_realized_pnl_pts + win.ce_realized_pnl_pts;
+  const combinedPos = combinedNow >= 0;
+
+  const heroRow = document.createElement('div');
+  heroRow.className = 'hero-row';
+  heroRow.innerHTML = `
+    <div class="stat-tile">
+      <div class="stat-label">Sets triggered</div>
+      <div class="stat-value">${sets.length}</div>
+      <div class="stat-sub">${peSets.length} PE · ${ceSets.length} CE</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label"><span class="stat-dot" style="background:${peColor}"></span>PE ${win.is_bounded ? 'realized' : ''}</div>
+      <div class="stat-value ${pePos ? 'pos' : 'neg'}">${fmtPts(win.pe_realized_pnl_pts)} pts</div>
+      <div class="stat-sub" style="color:var(${pePos ? '--good' : '--bad'})">${fmtRs(win.pe_realized_pnl_rs)}</div>
+      ${win.is_bounded ? `<div class="stat-sub-2">if held: ${fmtPts(win.pe_ref_pnl_pts)} pts</div>` : ''}
+      ${!win.pe_ok ? `<div class="stat-sub-2">no valid PE entry this window</div>` : ''}
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label"><span class="stat-dot" style="background:${ceColor}"></span>CE ${win.is_bounded ? 'realized' : ''}</div>
+      <div class="stat-value ${cePos ? 'pos' : 'neg'}">${fmtPts(win.ce_realized_pnl_pts)} pts</div>
+      <div class="stat-sub" style="color:var(${cePos ? '--good' : '--bad'})">${fmtRs(win.ce_realized_pnl_rs)}</div>
+      ${win.is_bounded ? `<div class="stat-sub-2">if held: ${fmtPts(win.ce_ref_pnl_pts)} pts</div>` : ''}
+      ${!win.ce_ok ? `<div class="stat-sub-2">no valid CE entry this window</div>` : ''}
+    </div>
+    <div class="stat-tile muted">
+      <div class="stat-label"><span class="stat-dot" style="background:${combColor}"></span>Combined (PE+CE)</div>
+      <div class="stat-value ${combinedPos ? 'pos' : 'neg'}" style="font-size:20px">${fmtPts(combinedNow)} pts</div>
+      <div class="stat-sub-2">reference only — PE and CE run as two separate positions, never actually summed</div>
+    </div>
+  `;
+  pane.appendChild(heroRow);
+
+  const setsSection = document.createElement('section');
+  setsSection.innerHTML = `<p class="legs-title">Triggered sets</p>`;
+  const setGrid = document.createElement('div');
+  setGrid.className = 'set-grid';
+  setGrid.innerHTML = sets.map((s) => {
+    const c = colorOf(s.side);
+    return `
+    <div class="set-card${s.never_filled_before_rollover ? ' dropped' : ''}" style="--set-color:${c}">
+      <div class="set-label"><span class="side-pill">${s.side}</span> triggered ${istTime(s.trigger_ts)} IST, ${istDate(s.trigger_ts)}</div>
+      <div class="set-strikes">${s.k_strike.toFixed(0)} / ${s.k2_strike.toFixed(0)}</div>
+      <div class="set-meta">
+        <span>fut @ trigger: ${fmt(s.trigger_fut, 1)}</span>
+        <span>expiries ${s.expiry1.slice(5)} / ${s.expiry2.slice(5)} / ${s.expiry3.slice(5)}</span>
+      </div>
+      <div class="set-entry"><span class="v mono">${fmt(s.entry_value, 2)}</span><span class="u">pts entry debit</span></div>
+      ${s.strike_overrides ? `<div class="set-override-note">strike fallback used: ${Object.entries(s.strike_overrides).map(([leg, st]) => `${leg}→${st}`).join(', ')}</div>` : ''}
+      ${s.never_filled_before_rollover ? '<div class="set-dropped-note">Dropped — never filled before this window\'s rollover</div>' : ''}
+    </div>
+  `;
+  }).join('');
+  setsSection.appendChild(setGrid);
+  pane.appendChild(setsSection);
+
+  const futPanel = document.createElement('div');
+  futPanel.className = 'panel';
+  futPanel.innerHTML = `
+    <div class="panel-head">
+      <div>
+        <div class="panel-title">NIFTY futures — reference price</div>
+        <div class="panel-sub">${combined.length} ticks · ${istDate(first.ts)} → ${istDate(last.ts)} · dots mark each set's trigger${win.is_bounded ? ' · red line marks exit' : ''}</div>
+      </div>
+    </div>
+    <div class="chart-svg-wrap" id="fut-chart-${idx}"></div>
+  `;
+  pane.appendChild(futPanel);
+
+  const pnlPanel = document.createElement('div');
+  pnlPanel.className = 'panel';
+  pnlPanel.innerHTML = `
+    <div class="panel-head">
+      <div>
+        <div class="panel-title">Position P&amp;L — PE, CE, and Combined</div>
+        <div class="panel-sub">Solid = realized so far, dashed/muted = if held past exit (reference only)${win.is_bounded ? '' : ' · window still open'}</div>
+      </div>
+    </div>
+    <div class="legend" id="pnl-legend-${idx}"></div>
+    <div class="chart-svg-wrap" id="pnl-chart-${idx}"></div>
+  `;
+  pane.appendChild(pnlPanel);
+
+  const tablePanel = document.createElement('div');
+  tablePanel.className = 'panel';
+  tablePanel.innerHTML = `
+    <div class="panel-head">
+      <div class="panel-title">Daily close — realized</div>
+      <div class="panel-sub">Each trading day's last available tick, up to exit</div>
+    </div>
+    <div class="table-wrap">
+      <table class="daily">
+        <thead><tr><th>Day</th><th>PE pts</th><th>CE pts</th><th class="combined-col">Combined pts</th></tr></thead>
+        <tbody>${win.daily_realized.map(d => `<tr>
+          <td>${fmtDateLong(d.day)}</td>
+          <td style="color:var(${d.pe_pnl_pts >= 0 ? '--good' : '--bad'})">${fmtPts(d.pe_pnl_pts)}</td>
+          <td style="color:var(${d.ce_pnl_pts >= 0 ? '--good' : '--bad'})">${fmtPts(d.ce_pnl_pts)}</td>
+          <td class="combined-col">${fmtPts(d.total_pnl_pts)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+  `;
+  pane.appendChild(tablePanel);
+
+  if (win.is_bounded && win.daily_reference.length) {
+    const refPanel = document.createElement('div');
+    refPanel.className = 'panel';
+    refPanel.style.opacity = '0.75';
+    refPanel.innerHTML = `
+      <div class="panel-head">
+        <div class="panel-title">Daily close — if held to actual settlement</div>
+        <div class="panel-sub">Reference only, not realized</div>
+      </div>
+      <div class="table-wrap">
+        <table class="daily">
+          <thead><tr><th>Day</th><th>PE pts</th><th>CE pts</th><th class="combined-col">Combined pts</th></tr></thead>
+          <tbody>${win.daily_reference.map(d => `<tr>
+            <td>${fmtDateLong(d.day)}</td>
+            <td style="color:var(${d.pe_pnl_pts >= 0 ? '--good' : '--bad'})">${fmtPts(d.pe_pnl_pts)}</td>
+            <td style="color:var(${d.ce_pnl_pts >= 0 ? '--good' : '--bad'})">${fmtPts(d.ce_pnl_pts)}</td>
+            <td class="combined-col">${fmtPts(d.total_pnl_pts)}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    `;
+    pane.appendChild(refPanel);
+  }
+
+  document.getElementById('panes').appendChild(pane);
+
+  const exitMarker = win.is_bounded ? { ts: win.exit_ts } : null;
+
+  const futVals = combined.map(p => p.fut);
+  buildChart(document.getElementById(`fut-chart-${idx}`), {
+    points: combined, height: 200,
+    yDomain: (() => { const lo = Math.min(...futVals), hi = Math.max(...futVals); const pad = (hi - lo) * 0.12 || 10; return [lo - pad, hi + pad]; })(),
+    series: [{ key: 'fut', color: cssVar('--ink-secondary'), label: 'NIFTY FUT' }],
+    markers: sets.map((s) => ({ ts: s.trigger_ts, color: colorOf(s.side), key: 'fut', label: s.side })),
+    exitMarker,
+  });
+
+  renderLegend(document.getElementById(`pnl-legend-${idx}`), [
+    { color: peColor, label: 'PE' }, { color: ceColor, label: 'CE' }, { dashed: true, label: 'Combined (reference)' },
+  ]);
+  const allPnlVals = combined.flatMap(p => [p.pe_pnl_pts, p.ce_pnl_pts, p.total_pnl_pts]);
+  buildChart(document.getElementById(`pnl-chart-${idx}`), {
+    points: combined, height: 220, zeroLine: true,
+    yDomain: (() => { const lo = Math.min(...allPnlVals, 0), hi = Math.max(...allPnlVals, 0); const pad = (hi - lo) * 0.12 || 10; return [lo - pad, hi + pad]; })(),
+    series: [
+      { key: 'pe_pnl_pts', phase: true, color: peColor, label: 'PE P&L' },
+      { key: 'ce_pnl_pts', phase: true, color: ceColor, label: 'CE P&L' },
+      { key: 'total_pnl_pts', phase: true, color: combColor, label: 'Combined (PE+CE)', dp: 2 },
+    ],
+    exitMarker,
+  });
+}
+
+function switchTab(idx) {
+  DATA.windows.forEach((_, i) => {
+    document.getElementById(`pane-${i}`).hidden = i !== idx;
+    document.getElementById(`tab-${i}`).setAttribute('aria-selected', i === idx ? 'true' : 'false');
+  });
+}
+
+function init() {
+  const windows = DATA.windows;
+  const totalPe = windows.reduce((sum, w) => sum + w.pe_realized_pnl_pts, 0);
+  const totalCe = windows.reduce((sum, w) => sum + w.ce_realized_pnl_pts, 0);
+
+  document.getElementById('page-h1').textContent =
+    `Rolling Windows — ${fmtDateLong(windows[0].entry_date)} → ${fmtDateLong(windows[windows.length - 1].entry_date)}`;
+  document.getElementById('page-subtitle').textContent =
+    `${windows.length} independent window(s), each running PE (up-move averaging) and CE (down-move averaging) independently · ${DATA.fut_trading_symbol} · sum of every window's own REALIZED P&L — PE: ${fmtPts(totalPe)} pts, CE: ${fmtPts(totalCe)} pts (never summed together)`;
+
+  const tabBar = document.getElementById('tab-bar');
+  tabBar.innerHTML = windows.map((w, i) => {
+    return `<button class="tab-btn" id="tab-${i}" role="tab" aria-selected="${i === 0}">
+      ${fmtDateShort(w.entry_date)}
+      <span class="tab-sub">PE ${fmtPts(w.pe_realized_pnl_pts)} · CE ${fmtPts(w.ce_realized_pnl_pts)}</span>
+    </button>`;
+  }).join('');
+  windows.forEach((_, i) => document.getElementById(`tab-${i}`).addEventListener('click', () => switchTab(i)));
+
+  windows.forEach((w, i) => buildWindowPane(w, i));
+}
+init();
+</script>

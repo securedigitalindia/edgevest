@@ -1471,6 +1471,12 @@ def api_subscribe_with_credits():
 from payments.routes import create_payments_blueprint
 app.register_blueprint(create_payments_blueprint(require_login, require_role, current_user))
 
+# Strategies admin dashboard (docs/prd/admin-strategies-dashboard.md) — same
+# factory-blueprint pattern as payments above, same reason (require_role/
+# current_user are defined in this file).
+from strategies.routes import create_strategies_blueprint
+app.register_blueprint(create_strategies_blueprint(require_role, current_user))
+
 
 @app.route("/api/profile", methods=["GET", "POST"])
 @require_login

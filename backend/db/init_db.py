@@ -325,6 +325,37 @@ def init_db():
     print("  ✓  Table ready: option_chain_5m")
 
     # -------------------------------------------------------
+    # strategy_backtest_windows / strategy_configs —
+    # backend/strategies/ admin-dashboard framework, see
+    # docs/prd/admin-strategies-dashboard.md. Purely additive, no FK to
+    # anything else. strategy_backtest_windows caches one settled window's
+    # already-computed embed per (strategy, window_start) so repeated
+    # requests for old windows never recompute; the newest/still-open
+    # window is never written here (always recomputed live).
+    # -------------------------------------------------------
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS strategy_backtest_windows (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id   TEXT    NOT NULL,
+            window_start  TEXT    NOT NULL,
+            payload_json  TEXT    NOT NULL,
+            computed_at   TEXT    NOT NULL,
+            UNIQUE (strategy_id, window_start)
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS strategy_configs (
+            strategy_id   TEXT PRIMARY KEY,
+            start_date    TEXT NOT NULL,
+            params_json   TEXT NOT NULL DEFAULT '{}',
+            confirmed_by  TEXT,
+            confirmed_at  TEXT NOT NULL
+        )
+    """)
+    print("  ✓  Table ready: strategy_backtest_windows")
+    print("  ✓  Table ready: strategy_configs")
+
+    # -------------------------------------------------------
     # recommended_trades — one row per trade (header only)
     # All leg details live in trade_legs.
     # -------------------------------------------------------

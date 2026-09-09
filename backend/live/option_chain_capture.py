@@ -6,13 +6,14 @@
 #  poll loop — feeds the option_chain_5m table only. Does not touch
 #  ticks / price_cache / candles_* or the trigger/alert pipeline.
 #
-#  Captures the full chain (all strikes, both CE/PE) for both the
-#  "weekly" and "monthly" expiry triads (ranks 0/1/2 — nearest three
-#  unexpired expiries of each type, recomputed every snapshot) via
-#  Upstox's put-call option-chain endpoint. This is the dataset behind
-#  the calendar-spread analysis tool: premium diff between two expiries
-#  at the same strike, tracked over time as spot moves and near expiry
-#  approaches.
+#  Captures the full chain (all strikes, both CE/PE) for the "weekly",
+#  "monthly", and "quarterly" expiry buckets — a different rank depth per
+#  type (weekly 0-3, monthly 0-2, quarterly 0-1; recomputed every snapshot;
+#  see the dated comments above SYMBOLS/EXPIRY_RANKS below for why) via
+#  Upstox's put-call option-chain endpoint. This is the dataset
+#  behind the calendar-spread analysis tool (premium diff between two
+#  expiries at the same strike, tracked over time as spot moves and near
+#  expiry approaches) and the PE ratio diagonal strategy's backtest data.
 #
 #  SDK response shape (confirmed against the installed upstox_client
 #  package and a live API call before writing this parser):
@@ -49,9 +50,48 @@ from db.queries import write_option_chain_snapshot
 
 # Only NIFTY50 has an active options strategy today — don't over-generalise
 # to other symbols until there's a reason to.
+#
+# 2026-09-09: widened from weekly+monthly ranks 0-2 (6 Upstox calls/snapshot)
+# to all three types at ranks 0-4 (15 calls/snapshot) to fix two real bugs —
+# see git history for the full writeup. Re-tightened the SAME day, once it
+# was clear the uniform 5-deep rank list was applying one type's fix depth
+# to all three: a per-type EXPIRY_RANKS (9 calls/snapshot) keeps both actual
+# fixes intact and only trims the headroom that was never the fix itself.
+#
+# - weekly: 0-3 (was 0-4). The PE ratio diagonal strategy
+#   (docs/prd/pe-ratio-diagonal-strategy.md) skips the imminent weekly expiry
+#   when its DTE<=1 relative to entry day — if that skipped expiry is itself
+#   weekly-classified (not a month-end date, which is bucketed as "monthly"
+#   instead and doesn't consume a weekly rank), the strategy's own 3 needed
+#   expiries land on capture ranks 1/2/3, and rank 3 was never captured.
+#   Confirmed: this silently understated one entry's true debit by >2x before
+#   a live-Upstox-fallback patched the analysis side — capturing rank 3
+#   closes the actual root cause instead of leaning on that fallback. Ranks
+#   0-2 only ever get skipped by at most one (the DTE<=1 rule never skips
+#   more than the single imminent expiry), so rank 3 is the true requirement
+#   — rank 4 was pure headroom, never the fix, and is dropped here.
+# - monthly: 0-2 (unchanged from before the whole 2026-09-09 widening) — the
+#   weekly-rank bug above never implicated monthly at all; it only ever
+#   inherited depth 0-4 as a side effect of one shared rank list applying to
+#   every type. 0-2 was always sufficient for this type.
+# - quarterly: 0-1 (was 0-4). NIFTY's real expiry calendar has a THIRD
+#   Upstox type, "quarterly" — and it isn't quarterly-spaced in practice
+#   near-term; 2026-09-29 (otherwise the natural next expiry after
+#   2026-09-22, ~7 days later) is bucketed as quarterly[0], not monthly.
+#   Merged-cadence logic only ever read weekly+monthly, so 2026-09-29 was
+#   invisible to it entirely — resolving a Sep-7 entry's 3rd expiry jumped
+#   straight to 2026-10-27 (monthly[0], 50 days out) instead of the real
+#   next expiry only ~22 days out, producing an entry priced against a far
+#   longer-dated (and far more expensive) contract than intended. The fix
+#   only ever needed quarterly[0] to exist — rank 1 kept as one unit of
+#   headroom, ranks 2-4 dropped as unused margin. See
+#   db.queries.get_merged_cadence_dates for the matching query-side fix.
 SYMBOLS       = ["NIFTY50"]
-EXPIRY_TYPES  = ["weekly", "monthly"]
-EXPIRY_RANKS  = [0, 1, 2]
+EXPIRY_RANKS  = {
+    "weekly":    [0, 1, 2, 3],
+    "monthly":   [0, 1, 2],
+    "quarterly": [0, 1],
+}
 
 _api = None
 
@@ -124,9 +164,10 @@ def _capture_expiry(symbol: str, ikey: str, expiry_type: str, rank: int, ts: str
 
 def capture_symbol(symbol: str, ts: str | None = None) -> list[dict]:
     """
-    Capture both weekly and monthly triads (ranks 0-2) for one symbol.
-    Each expiry fetch is independently guarded — one bad rank/expiry/API
-    error does not drop the rest of the snapshot.
+    Capture weekly, monthly, and quarterly buckets (per-type rank depth,
+    see EXPIRY_RANKS above) for one symbol. Each expiry fetch is
+    independently guarded — one bad rank/expiry/API error does not drop
+    the rest of the snapshot.
     """
     ikey = UPSTOX_INSTRUMENT_KEYS.get(symbol)
     if not ikey:
@@ -135,8 +176,8 @@ def capture_symbol(symbol: str, ts: str | None = None) -> list[dict]:
 
     ts = ts or _boundary_ts()
     rows: list[dict] = []
-    for expiry_type in EXPIRY_TYPES:
-        for rank in EXPIRY_RANKS:
+    for expiry_type, ranks in EXPIRY_RANKS.items():
+        for rank in ranks:
             try:
                 rows.extend(_capture_expiry(symbol, ikey, expiry_type, rank, ts))
             except Exception as e:
@@ -146,9 +187,10 @@ def capture_symbol(symbol: str, ts: str | None = None) -> list[dict]:
 
 def run_capture() -> int:
     """
-    Full sweep: all SYMBOLS x both expiry types x ranks 0-2, written in one
-    batch. Intended to be called once every 5 min from the poller's main
-    loop, wrapped in try/except by the caller so a failure here never
+    Full sweep: all SYMBOLS x every (expiry_type, rank) pair in EXPIRY_RANKS
+    (9 calls/snapshot: weekly 0-3, monthly 0-2, quarterly 0-1), written
+    in one batch. Intended to be called once every 5 min from the poller's
+    main loop, wrapped in try/except by the caller so a failure here never
     crashes the poll loop.
 
     Returns number of rows written (0 if nothing captured).

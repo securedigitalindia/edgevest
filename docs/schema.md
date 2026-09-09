@@ -63,7 +63,9 @@ Latest known LTP per Upstox instrument key, upserted every poll cycle by `update
 
 ### `option_chain_5m`
 
-Standalone analysis dataset (calendar-spread research) — a 5-minute-resolution snapshot of the full NIFTY option chain (both weekly/monthly expiry triads, all strikes, CE+PE), captured by `live/option_chain_capture.py` inside the poller's main loop. **Not** a candle-building buffer like `ticks` — no retention/cleanup job exists for it.
+Standalone analysis dataset (calendar-spread research; also the PE ratio diagonal strategy's backtest source, `docs/prd/pe-ratio-diagonal-strategy.md`) — a 5-minute-resolution snapshot of the full NIFTY option chain (weekly/monthly/quarterly ranks 0-4 each, all strikes, CE+PE), captured by `live/option_chain_capture.py` inside the poller's main loop. **Not** a candle-building buffer like `ticks` — no retention/cleanup job exists for it.
+
+Weekly/monthly depth widened from ranks 0-2 to 0-4 on 2026-09-09: the PE diagonal strategy skips the imminent weekly expiry when its DTE<=1, which can push its own needed 3rd expiry to rank 3 (if the skipped one is itself weekly-classified, not month-end) — rank 2 alone silently missed that leg (confirmed: understated one entry's true debit by >2x before a live-Upstox-fallback caught it on the analysis side). Ranks 0-2 only ever get skipped by at most one, so rank 3 is the true requirement; rank 4 is headroom. Same day, `"quarterly"` was added as a third captured type: NIFTY's near-term expiry calendar buckets some non-quarterly-spaced dates as `"quarterly"` (e.g. 2026-09-29, ~7 days after 2026-09-22, is `quarterly[0]` not `monthly`), which was previously invisible to any weekly+monthly-only cadence read and caused one entry's 3rd expiry to resolve 17x too far out.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -413,3 +415,35 @@ Refer & Earn (`docs/prd/refer-and-earn.md`) — one row per successful referral 
 - **Index**: `idx_referrals_referrer` on `(referrer_user_id, status)` — backs the referrer's own stats/history query.
 - **Payout trigger**: `upsert_user_trading_profile()` runs `UPDATE referrals SET status='rewarded', rewarded_at=? WHERE referee_user_id=? AND status='pending'` inside the same transaction as the profile upsert, every time `setup_done` is truthy (which happens on every save, not just the first — see `docs/apis.md`'s Profile section). Credits are only awarded to the referrer if that `UPDATE` actually affects a row (`rowcount == 1`) — the `UNIQUE` constraint plus the `status='pending'` guard together make this safe to call arbitrarily many times per referee.
 - `GET /api/my-referrals` (`docs/apis.md`) is the only read path — lazily generates the caller's `users.referral_code` on first call, then returns their own stats (`get_referral_stats()`) and history (`get_referral_history()`, joined to `users` for the referee's name only — no email, a deliberate choice given this is a peer-facing view rather than an admin one).
+
+## Strategies admin dashboard (`docs/prd/admin-strategies-dashboard.md`)
+
+### `strategy_backtest_windows`
+
+Cache of one settled window's already-computed embed per `(strategy_id, window_start)`, written once, read thereafter — the newest/still-open window for any strategy is never written here (always recomputed live on every request instead).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | |
+| `strategy_id` | TEXT NOT NULL | e.g. `"pe_ce_ratio_diagonal"` — `backend/strategies/registry.py`'s provider id |
+| `window_start` | TEXT NOT NULL | the window's `entry_date`, `"YYYY-MM-DD"` |
+| `payload_json` | TEXT NOT NULL | full per-window embed dict (`build_merged_embed()`'s shape for the PE+CE provider), json-dumped |
+| `computed_at` | TEXT NOT NULL | ISO-8601 UTC |
+
+- **Unique**: `(strategy_id, window_start)` — one cached row per window, `INSERT ... ON CONFLICT DO UPDATE` on write.
+- No retention job — small, slow-growing (roughly one new row per strategy per expiry-triplet rollover, ~1-2 weeks for PE+CE).
+- **Known gap, not auto-handled**: if a past window's underlying local data (`option_chain_5m`) gets backfilled *after* that window was already cached, the cached row goes stale with nothing detecting it — only escape hatch is a manual delete of that row.
+
+### `strategy_configs`
+
+One row per strategy that's ever had its start date/params confirmed by an admin — read every time `GET .../run` is called (400 if no row exists for that strategy yet).
+
+| Column | Type | Notes |
+|---|---|---|
+| `strategy_id` | TEXT PRIMARY KEY | |
+| `start_date` | TEXT NOT NULL | |
+| `params_json` | TEXT NOT NULL DEFAULT `'{}'` | merged over the provider's `default_params` at confirm time |
+| `confirmed_by` | TEXT | admin's email |
+| `confirmed_at` | TEXT NOT NULL | ISO-8601 UTC |
+
+- Re-confirming (`POST .../config` again) overwrites this row (`ON CONFLICT DO UPDATE`) but does **not** clean up `strategy_backtest_windows` rows cached under the previous config — same "no retention job" posture as everything else in this data family.
