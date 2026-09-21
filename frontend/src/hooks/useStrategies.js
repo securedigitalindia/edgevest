@@ -17,9 +17,20 @@ export function useSetStrategyConfig(id) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: payload => setStrategyConfig(id, payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['strategy-config', id] })
-      qc.invalidateQueries({ queryKey: ['strategy-run', id] })
+    // Returned promise is awaited by react-query before the caller's own
+    // mutate({ onSuccess }) runs — so the form only closes once the NEW config
+    // is in the cache. Without the await, the detail view re-rendered
+    // immediately with the previous config (old input chips + the old
+    // config's cached results) and only swapped to the new ones when the
+    // refetch landed. Old run results are dropped outright (not refetched):
+    // their query key embeds the old config's confirmed_at, so nothing will
+    // ever read them again.
+    onSuccess: async () => {
+      qc.removeQueries({ queryKey: ['strategy-run', id] })
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['strategy-config', id] }),
+        qc.invalidateQueries({ queryKey: ['strategies'] }),
+      ])
     },
   })
 }

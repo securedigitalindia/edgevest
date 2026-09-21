@@ -89,6 +89,7 @@ function AppShell() {
           <Route path="/profile/subscriptions" element={<Subscriptions />} />
           <Route path="/profile/payments"      element={<Payments />} />
           <Route path="/profile/strategies"    element={<Strategies />} />
+          <Route path="/profile/strategies/:strategyId" element={<Strategies />} />
           <Route path="/profile/referrals-admin" element={<ReferralsAdmin />} />
           <Route path="/profile/reports"       element={<Reports />} />
           <Route path="/profile/learn"         element={<Learn />} />

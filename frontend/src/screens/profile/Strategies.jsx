@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import useAuthStore from '../../store/authStore'
 import { useStrategies, useStrategyConfig, useSetStrategyConfig, useStrategyRun } from '../../hooks/useStrategies'
 import { useToast } from '../../components/common/Toast'
@@ -9,71 +9,122 @@ import { fmtPnl, fmtPts, fmtIstShort } from '../../utils/format'
 import './Profile.css'
 import './Strategies.css'
 
-// Admin-only "Strategies" dashboard — research/monitoring view of already-
-// backtested strategies (starts with PE+CE Ratio Diagonal). Not a trading
-// signal — see docs/prd/admin-strategies-dashboard.md's Non-goals.
+// Admin-only "Strategies" section — research/monitoring view of already-
+// backtested strategies. Not a trading signal — see
+// docs/prd/admin-strategies-dashboard.md's Non-goals. Two screens on one
+// component: /profile/strategies is a plain list (no data pulled), and
+// /profile/strategies/:strategyId is the detail (inputs + results) — data
+// is only pulled once a strategy has been opened.
 export default function Strategies() {
   const user    = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
-
-  const { data: stratResp, isLoading: loadingStrategies } = useStrategies()
-  const strategies = stratResp?.strategies || []
-
-  const [selectedId, setSelectedId] = useState(null)
-  const [reconfiguring, setReconfiguring] = useState(false)
-
-  // Default to the first registered strategy once the list loads (today
-  // there's exactly one — PE+CE Ratio Diagonal).
-  useEffect(() => {
-    if (!selectedId && strategies.length) setSelectedId(strategies[0].id)
-  }, [strategies, selectedId])
-
-  const selected = strategies.find(s => s.id === selectedId) || null
-
-  const { data: configResp, isLoading: loadingConfig } = useStrategyConfig(selectedId)
-  // Gate off the confirmed-config row itself (not strategies[].configured) so
-  // a freshly-confirmed config flips this view over as soon as its own query
-  // refetches — useSetStrategyConfig already invalidates ['strategy-config', id].
-  const config    = configResp?.config ?? null
-  const configured = !!config
+  const { strategyId } = useParams()
 
   if (!isAdmin) return <Navigate to="/profile" replace />
+  return strategyId ? <StrategyPage strategyId={strategyId} /> : <StrategyList />
+}
+
+const WEEKDAY_LABEL = { MON: 'Mon', TUE: 'Tue', WED: 'Wed', THU: 'Thu', FRI: 'Fri' }
+
+// Short chips describing a saved/active input set, per strategy shape.
+function inputChips(strategyId, startDate, params = {}) {
+  const chips = []
+  if (startDate) chips.push(['From', startDate])
+  chips.push(['Side', params.side === 'BOTH' || !params.side ? 'PE + CE' : params.side])
+  if (strategyId === 'pe_ce_ratio_spread_1x2') {
+    chips.push(['Entry day', WEEKDAY_LABEL[params.entry_weekday] || params.entry_weekday || '—'])
+    chips.push(['Far-leg offset', params.leg_gap ?? 0])
+  } else {
+    chips.push(['Leg gap', params.leg_gap ?? '—'])
+    chips.push(['Up move', params.trigger?.up_move ?? '—'])
+  }
+  chips.push(['Strike step', params.strike_multiple ?? '—'])
+  chips.push(['Initial gap', params.initial_gap ?? 0])
+  return chips
+}
+
+function StrategyList() {
+  const navigate = useNavigate()
+  const { data, isLoading } = useStrategies()
+  const strategies = data?.strategies || []
 
   return (
     <div className="profile-page strat-page">
       <PageHeader title="Strategies" fallback="/profile" />
+      <p className="strat-list-caption">
+        Backtested strategies for research and monitoring — not trading signals. Open one to set its inputs and see results.
+      </p>
+
+      {isLoading && <div className="empty">Loading…</div>}
+      {!isLoading && !strategies.length && <div className="empty">No strategies registered yet.</div>}
+
+      <div className="strat-list">
+        {strategies.map(s => (
+          <button key={s.id} type="button" className="strat-list-card" onClick={() => navigate(`/profile/strategies/${s.id}`)}>
+            <div className="strat-list-card-top">
+              <span className="strat-list-card-title">{s.label}</span>
+              <span className={`strat-status-pill ${s.configured ? 'on' : 'off'}`}>{s.configured ? 'Configured' : 'Not configured'}</span>
+            </div>
+            <div className="strat-list-card-desc">{s.description}</div>
+            <div className="strat-chip-row">
+              {(s.summary || []).map(t => <span key={t} className="strat-chip strat-chip-rule">{t}</span>)}
+            </div>
+            <div className="strat-list-card-foot">
+              {s.config
+                ? <span>Tracking from {s.config.start_date} · {inputChips(s.id, null, s.config.params).slice(0, 3).map(([k, v]) => `${k} ${v}`).join(' · ')}</span>
+                : <span>Set a start date and inputs to begin</span>}
+              <span className="strat-list-card-go" aria-hidden="true">›</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function StrategyPage({ strategyId }) {
+  const [editing, setEditing] = useState(false)
+  const { data: stratResp, isLoading: loadingStrategies } = useStrategies()
+  const selected = (stratResp?.strategies || []).find(s => s.id === strategyId) || null
+
+  const { data: configResp, isLoading: loadingConfig } = useStrategyConfig(strategyId)
+  // Gate off the confirmed-config row itself (not strategies[].configured) so
+  // a freshly-confirmed config flips this view over as soon as its own query
+  // refetches — useSetStrategyConfig already invalidates ['strategy-config', id].
+  const config     = configResp?.config ?? null
+  const configured = !!config
+
+  return (
+    <div className="profile-page strat-page">
+      <PageHeader title={selected?.label || 'Strategy'} back="/profile/strategies" fallback="/profile/strategies" />
 
       {loadingStrategies && <div className="empty">Loading…</div>}
-      {!loadingStrategies && !strategies.length && <div className="empty">No strategies registered yet.</div>}
+      {!loadingStrategies && !selected && <div className="empty">Unknown strategy.</div>}
 
-      {strategies.length > 0 && (
-        <div className="strat-picker" role="tablist" aria-label="Strategy">
-          {strategies.map(s => (
-            <button key={s.id} type="button" role="tab" aria-selected={s.id === selectedId}
-              className={`strat-picker-btn ${s.id === selectedId ? 'strat-picker-btn-active' : ''}`}
-              onClick={() => { setSelectedId(s.id); setReconfiguring(false) }}>
-              {s.label}
-              {!s.configured && <span className="strat-configured-dot" title="Not configured yet" />}
-            </button>
-          ))}
-        </div>
+      {selected && (
+        <>
+          <p className="strat-list-caption">{selected.description}</p>
+          <div className="strat-chip-row" style={{ marginBottom: 16 }}>
+            {(selected.summary || []).map(t => <span key={t} className="strat-chip strat-chip-rule">{t}</span>)}
+          </div>
+        </>
       )}
 
-      {selected && !loadingConfig && (!configured || reconfiguring) && (
+      {selected && !loadingConfig && (!configured || editing) && (
         <ConfigForm
           strategy={selected}
           existing={config}
           isReconfigure={configured}
-          onCancel={configured ? () => setReconfiguring(false) : null}
-          onSaved={() => setReconfiguring(false)}
+          onCancel={configured ? () => setEditing(false) : null}
+          onSaved={() => setEditing(false)}
         />
       )}
 
-      {selected && !loadingConfig && configured && !reconfiguring && (
-        <StrategyDetail strategy={selected} onReconfigure={() => setReconfiguring(true)} configVersion={config.confirmed_at} />
+      {selected && !loadingConfig && configured && !editing && (
+        <StrategyDetail strategy={selected} config={config} onEdit={() => setEditing(true)} configVersion={config.confirmed_at} />
       )}
 
-      {selected && loadingConfig && <div className="empty">Loading configuration…</div>}
+      {selected && loadingConfig && <div className="empty">Loading inputs…</div>}
     </div>
   )
 }
@@ -103,12 +154,24 @@ function ConfigForm({ strategy, existing, isReconfigure, onCancel, onSaved }) {
   const [initialGap, setInitialGap] = useState(seeded.initial_gap ?? defaults.initial_gap ?? 0)
   const [side, setSide] = useState(seeded.side ?? defaults.side ?? 'BOTH')
   const [upMove, setUpMove] = useState(seededTrigger.up_move ?? defaultTrigger.up_move ?? '')
+  // The 1:2 ratio spread has no trigger (one position per weekly window) — it has a weekday instead.
+  const isSpread = strategy.id === 'pe_ce_ratio_spread_1x2'
+  const [entryWeekday, setEntryWeekday] = useState(seeded.entry_weekday ?? defaults.entry_weekday ?? 'WED')
+
+  function resetToDefaults() {
+    setLegGap(defaults.leg_gap ?? '')
+    setStrikeMultiple(defaults.strike_multiple ?? '')
+    setInitialGap(defaults.initial_gap ?? 0)
+    setSide(defaults.side ?? 'BOTH')
+    setUpMove(defaultTrigger.up_move ?? '')
+    setEntryWeekday(defaults.entry_weekday ?? 'WED')
+  }
 
   function handleSubmit(e) {
     e.preventDefault()
     if (!startDate) { toast('Start date is required', 'err'); return }
-    if (legGap === '' || strikeMultiple === '' || upMove === '') {
-      toast('Leg gap, strike rounding, and up move are required', 'err')
+    if (legGap === '' || strikeMultiple === '' || (!isSpread && upMove === '')) {
+      toast(isSpread ? 'Leg gap and strike rounding are required' : 'Leg gap, strike rounding, and up move are required', 'err')
       return
     }
     const params = {
@@ -116,16 +179,18 @@ function ConfigForm({ strategy, existing, isReconfigure, onCancel, onSaved }) {
       strike_multiple: Number(strikeMultiple),
       initial_gap: initialGap === '' ? 0 : Number(initialGap),
       side,
-      // Spread the currently-confirmed trigger (falling back to provider
-      // defaults only when nothing's confirmed yet), not defaultTrigger —
-      // otherwise any future trigger field beyond up_move would silently
-      // revert to the provider's stock default on every reconfigure.
-      trigger: { ...seededTrigger, up_move: Number(upMove) },
+      ...(isSpread
+        ? { entry_weekday: entryWeekday }
+        // Spread the currently-confirmed trigger (falling back to provider
+        // defaults only when nothing's confirmed yet), not defaultTrigger —
+        // otherwise any future trigger field beyond up_move would silently
+        // revert to the provider's stock default on every reconfigure.
+        : { trigger: { ...seededTrigger, up_move: Number(upMove) } }),
     }
     setConfig.mutate({ start_date: startDate, params }, {
       onSuccess: res => {
-        if (!res.ok) { toast(res.error || 'Failed to save configuration', 'err'); return }
-        toast(isReconfigure ? 'Configuration updated' : `${strategy.label} configured`, 'ok')
+        if (!res.ok) { toast(res.error || 'Failed to save inputs', 'err'); return }
+        toast(isReconfigure ? 'Inputs applied' : `${strategy.label} configured`, 'ok')
         onSaved?.()
       },
     })
@@ -133,13 +198,11 @@ function ConfigForm({ strategy, existing, isReconfigure, onCancel, onSaved }) {
 
   return (
     <form className="strat-config-card" onSubmit={handleSubmit}>
-      <div className="strat-config-title">{isReconfigure ? `Reconfigure ${strategy.label}` : `Confirm ${strategy.label} config`}</div>
+      <div className="strat-config-title">{isReconfigure ? 'Edit inputs' : 'Set inputs to begin'}</div>
       <p className="strat-config-caption">
         {isReconfigure
-          ? <>Re-saving overwrites the current start date/params. This does <strong>not</strong> retroactively invalidate
-              already-cached backend windows from the previous configuration — a changed start date just produces new
-              window boundaries; old cached windows are simply never read again.</>
-          : <>Pick the date this strategy&rsquo;s tracking should start from, and confirm its parameters below.</>}
+          ? <>Applying saves these inputs and reloads the results below. Nothing is pulled until you apply.</>
+          : <>Pick the date tracking should start from and the inputs below, then apply — results are pulled only after that.</>}
       </p>
 
       <div className="strat-config-section-label">Strategy</div>
@@ -148,8 +211,18 @@ function ConfigForm({ strategy, existing, isReconfigure, onCancel, onSaved }) {
           <label htmlFor="strat-start-date">Start date</label>
           <input id="strat-start-date" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} required />
         </div>
+        {isSpread && (
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <label htmlFor="strat-entry-weekday">entry day</label>
+            <select id="strat-entry-weekday" value={entryWeekday} onChange={e => setEntryWeekday(e.target.value)}
+                    title="One window per week enters at 09:30 IST on this weekday and exits 15:00 IST on the next Monday.">
+              {[['MON', 'Monday'], ['TUE', 'Tuesday'], ['WED', 'Wednesday'], ['THU', 'Thursday'], ['FRI', 'Friday']]
+                .map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+        )}
         <div className="form-row" style={{ marginBottom: 0 }}>
-          <label htmlFor="strat-leg-gap">leg gap (K → K2, pts)</label>
+          <label htmlFor="strat-leg-gap">{isSpread ? 'far-leg strike offset (pts, 0 = same strike)' : 'leg gap (K → K2, pts)'}</label>
           <input id="strat-leg-gap" type="number" step="any" value={legGap} onChange={e => setLegGap(e.target.value)} required />
         </div>
         <div className="form-row" style={{ marginBottom: 0 }}>
@@ -179,6 +252,18 @@ function ConfigForm({ strategy, existing, isReconfigure, onCancel, onSaved }) {
         pushes K further OTM, negative pulls it toward/into ITM (sign auto-flips for PE vs CE, same convention as leg gap).
       </p>
 
+      {isSpread ? (
+        <>
+          <div className="strat-config-section-label">Schedule</div>
+          <p className="strat-config-caption strat-config-caption-tight">
+            Each week buys 1x on the <strong>upcoming expiry</strong> (nearest with more than 2 days to go — a Monday entry skips
+            Tuesday&rsquo;s) and sells 2x on the <strong>next expiry after it</strong>. It enters at <strong>09:30 IST</strong> on the
+            entry day above and exits at <strong>15:00 IST on the next Monday</strong> (the previous trading day if that Monday is
+            a holiday) — fixed by the strategy&rsquo;s definition, not editable. One independent window per week.
+          </p>
+        </>
+      ) : (
+        <>
       <div className="strat-config-section-label">Trigger</div>
       <p className="strat-config-caption strat-config-caption-tight">
         Decides when a new 4-leg set gets added. Today: <strong>{seededTrigger.type || 'up_move'}</strong> — fire a fresh
@@ -196,11 +281,14 @@ function ConfigForm({ strategy, existing, isReconfigure, onCancel, onSaved }) {
                  title="Part of the strategy's locked live-execution rule, not an editable trigger param — changing it would change the strategy's definition." />
         </div>
       </div>
+        </>
+      )}
 
       <div className="strat-config-actions">
         <button type="submit" className="btn btn-primary" disabled={setConfig.isPending}>
-          {setConfig.isPending ? 'Saving…' : 'Confirm'}
+          {setConfig.isPending ? 'Applying…' : 'Apply & run'}
         </button>
+        <button type="button" className="btn btn-ghost" onClick={resetToDefaults}>Reset to defaults</button>
         {onCancel && <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancel</button>}
       </div>
 
@@ -211,7 +299,7 @@ function ConfigForm({ strategy, existing, isReconfigure, onCancel, onSaved }) {
   )
 }
 
-function StrategyDetail({ strategy, onReconfigure, configVersion }) {
+function StrategyDetail({ strategy, config, onEdit, configVersion }) {
   const { data, isLoading, isFetching } = useStrategyRun(strategy.id, { enabled: true, configVersion })
   const windows = data?.windows || []
   const [selectedWindow, setSelectedWindow] = useState(null)
@@ -235,13 +323,17 @@ function StrategyDetail({ strategy, onReconfigure, configVersion }) {
 
   return (
     <>
-      <div className="strat-detail-header">
-        <div className="strat-scope-caption">
-          {strategy.label} · side {side === 'BOTH' ? 'PE + CE' : side} · leg_gap {data?.leg_gap ?? '—'} ·
-          strike {data?.strike_multiple ?? '—'} · initial gap {data?.initial_gap ?? 0} ·
-          up_move {data?.up_move ?? '—'} · {data?.fut_trading_symbol || ''}
+      <div className="strat-inputs-summary">
+        <div className="strat-inputs-summary-head">
+          <span className="strat-inputs-summary-title">Inputs</span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onEdit}>Edit inputs</button>
         </div>
-        <button type="button" className="btn btn-ghost btn-sm strat-reconfigure-btn" onClick={onReconfigure}>Reconfigure to change side/params</button>
+        <div className="strat-chip-row">
+          {inputChips(strategy.id, config.start_date, config.params).map(([k, v]) => (
+            <span key={k} className="strat-chip"><span className="strat-chip-k">{k}</span> {v}</span>
+          ))}
+          {data?.fut_trading_symbol && <span className="strat-chip"><span className="strat-chip-k">Price</span> {data.fut_trading_symbol}</span>}
+        </div>
       </div>
 
       {data?.data_as_of && (
@@ -259,18 +351,21 @@ function StrategyDetail({ strategy, onReconfigure, configVersion }) {
               className={`strat-window-tab ${w.entry_date === selectedWindow ? 'strat-window-tab-active' : ''}`}
               onClick={() => setSelectedWindow(w.entry_date)}>
               <span>{w.entry_date}{!w.is_bounded && <span className="strat-window-tab-open-chip">OPEN</span>}</span>
-              <span className="strat-window-tab-sub">PE {fmtPts(w.pe_realized_pnl_pts)} · CE {fmtPts(w.ce_realized_pnl_pts)}</span>
+              <span className="strat-window-tab-sub">
+                {[side !== 'CE' && `PE ${fmtPts(w.pe_realized_pnl_pts)}`, side !== 'PE' && `CE ${fmtPts(w.ce_realized_pnl_pts)}`].filter(Boolean).join(' · ')}
+              </span>
             </button>
           ))}
         </div>
       )}
 
-      {win && <WindowPanel win={win} side={side} />}
+      {win && <WindowPanel win={win} side={side} strategyId={strategy.id} />}
     </>
   )
 }
 
-function WindowPanel({ win, side }) {
+function WindowPanel({ win, side, strategyId }) {
+  const isSpread = strategyId === 'pe_ce_ratio_spread_1x2'
   const combinedPts = (win.pe_realized_pnl_pts || 0) + (win.ce_realized_pnl_pts || 0)
   const sets = (win.sets || []).filter(s => side === 'BOTH' || s.side === side)
   const peSets = sets.filter(s => s.side === 'PE')
@@ -282,7 +377,7 @@ function WindowPanel({ win, side }) {
     <div>
       <div className="strat-tiles">
         <div className="strat-tile">
-          <div className="strat-tile-label">Sets triggered</div>
+          <div className="strat-tile-label">{isSpread ? 'Positions entered' : 'Sets triggered'}</div>
           <div className="strat-tile-value">{sets.length}</div>
           <div className="strat-tile-sub">{peSets.length} PE · {ceSets.length} CE</div>
         </div>
@@ -307,8 +402,8 @@ function WindowPanel({ win, side }) {
         )}
       </div>
 
-      <div className="strat-section-title">Triggered Sets</div>
-      <SetCards sets={sets} isBounded={win.is_bounded}
+      <div className="strat-section-title">{isSpread ? 'Positions' : 'Triggered Sets'}</div>
+      <SetCards sets={sets} isBounded={win.is_bounded} isSpread={isSpread}
                 windowLatestTs={win.combined?.length ? win.combined[win.combined.length - 1].ts : null} />
 
       <FuturesPanel win={win} sets={sets} />
@@ -379,9 +474,9 @@ function PnlPanel({ win, side }) {
   )
 }
 
-function SetCards({ sets, isBounded, windowLatestTs }) {
+function SetCards({ sets, isBounded, isSpread, windowLatestTs }) {
   const priced = sets.filter(s => s.entry_value != null)
-  if (!priced.length) return <div className="empty" style={{ marginBottom: 16 }}>No triggered sets in this window.</div>
+  if (!priced.length) return <div className="empty" style={{ marginBottom: 16 }}>{isSpread ? 'No position could be priced in this window.' : 'No triggered sets in this window.'}</div>
   return (
     <div className="strat-set-grid">
       {priced.map((s, i) => {
@@ -398,7 +493,7 @@ function SetCards({ sets, isBounded, windowLatestTs }) {
                style={{ '--set-color': color }}>
             <div className="strat-set-label">
               <span className="strat-side-pill" style={{ background: color }}>{s.side}</span>
-              triggered {fmtIstShort(s.trigger_ts)}
+              {isSpread ? 'entered' : 'triggered'} {fmtIstShort(s.trigger_ts)}
             </div>
             <div className="strat-set-strikes">{s.k_strike?.toFixed(0)} / {s.k2_strike?.toFixed(0)}</div>
             <div className="strat-set-meta">
@@ -428,7 +523,7 @@ function SetCards({ sets, isBounded, windowLatestTs }) {
             {s.never_filled_before_rollover && (
               <div className="strat-set-note">Dropped — never filled before this window&rsquo;s rollover</div>
             )}
-            <LegBreakdown s={s} setClosed={setClosed} />
+            <LegBreakdown s={s} setClosed={setClosed} isSpread={isSpread} />
           </div>
         )
       })}
@@ -447,7 +542,13 @@ const LEG_META = {
   l4: { action: 'BUY 2x', strikeKey: 'k2_strike', expiryKey: 'expiry3' },
 }
 
-function LegBreakdown({ s, setClosed }) {
+// 1:2 calendar ratio: l1=BUY 1x K on the upcoming expiry, l2=SELL 2x K2 on the next expiry after it.
+const SPREAD_LEG_META = {
+  l1: { action: 'BUY 1x', strikeKey: 'k_strike', expiryKey: 'expiry1' },
+  l2: { action: 'SELL 2x', strikeKey: 'k2_strike', expiryKey: 'expiry2' },
+}
+
+function LegBreakdown({ s, setClosed, isSpread }) {
   if (!s.entry_legs) return null
   const laterLegs = setClosed ? s.exit_legs : s.current_legs
   const laterLabel = setClosed ? 'exit' : 'now'
@@ -458,7 +559,7 @@ function LegBreakdown({ s, setClosed }) {
           <tr><th>Leg</th><th>Strike</th><th>Expiry</th><th>Entry</th><th>{laterLabel}</th></tr>
         </thead>
         <tbody>
-          {Object.entries(LEG_META).map(([leg, m]) => (
+          {Object.entries(isSpread ? SPREAD_LEG_META : LEG_META).map(([leg, m]) => (
             <tr key={leg}>
               <td>{m.action}</td>
               <td>{s[m.strikeKey]?.toFixed(0)}</td>

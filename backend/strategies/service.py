@@ -21,7 +21,9 @@ def list_strategies() -> list[dict]:
         cfg = queries.get_strategy_config(p.id)
         out.append({
             "id": p.id, "label": p.label, "default_params": p.default_params,
+            "description": p.description, "summary": p.summary,
             "configured": cfg is not None,
+            "config": {"start_date": cfg["start_date"], "params": cfg["params"], "confirmed_at": cfg["confirmed_at"]} if cfg else None,
         })
     return out
 
@@ -142,6 +144,54 @@ def _run_pe_ce_ratio_diagonal_cached(strategy_id: str, start_date: str, end_date
         conn.close()
 
 
+def _run_pe_ce_ratio_spread_1x2_cached(strategy_id: str, start_date: str, end_date: str | None,
+                                        params: dict) -> dict | None:
+    """
+    Same settle-once idea as the diagonal's cached path, but each weekly window is independent with its
+    own fixed exit, so "settled" is per window: once local data has moved past the window's expiry date
+    nothing about it can change, and it's cached; an unsettled window (still open, or between its
+    Monday exit and Tuesday expiry — its hold-to-settlement reference is still growing) is recomputed
+    every request. The cache key folds in every param that changes what a window computes to.
+    """
+    weekday = params.get("entry_weekday", "WED")
+    leg_gap = params.get("leg_gap", 0)
+    strike_multiple = params.get("strike_multiple", 100)
+    initial_gap = params.get("initial_gap", 0)
+    side = params.get("side", "BOTH")
+    symbol = params.get("symbol", DEFAULT_SYMBOL)
+    # v2 = calendar shape (upcoming/next expiry). Bump when the window computation changes so older cached rows are never read.
+    cache_key = f"{strategy_id}#v2_wd{weekday}_lg{leg_gap}_sm{strike_multiple}_ig{initial_gap}_sd{side}"
+
+    expiry_cache.refresh([symbol])
+    conn = get_connection()
+    try:
+        inputs = registry.prepare_ratio_spread_inputs(conn, start_date, end_date, symbol, weekday)
+        if inputs is None:
+            return None
+        windows_out = []
+        for entry_date in inputs["entry_dates"]:
+            cached = queries.get_cached_strategy_window(cache_key, entry_date)
+            if cached is not None:
+                windows_out.append(cached)
+                continue
+            embed, settled = registry.compute_window_embed_1x2(conn, entry_date, inputs, params, symbol)
+            if embed is None:
+                continue
+            windows_out.append(embed)
+            if settled:
+                queries.write_cached_strategy_window(cache_key, entry_date, embed)
+        if not windows_out:
+            return None
+        return {
+            "windows": windows_out, "entry_weekday": weekday, "leg_gap": leg_gap,
+            "strike_multiple": strike_multiple, "initial_gap": initial_gap, "side": side,
+            "fut_trading_symbol": inputs["price_label"], "lot_size": inputs["lot_size"],
+            "start_date": start_date, "end_date": inputs["end_date"], "data_as_of": _data_as_of(),
+        }
+    finally:
+        conn.close()
+
+
 def run_strategy(strategy_id: str, start_date: str, end_date: str | None, params: dict) -> dict:
     """
     Callers (routes.py) are responsible for confirming a config exists
@@ -159,11 +209,12 @@ def run_strategy(strategy_id: str, start_date: str, end_date: str | None, params
 
     if strategy_id == "pe_ce_ratio_diagonal":
         result = _run_pe_ce_ratio_diagonal_cached(strategy_id, start_date, end_date, params)
+    elif strategy_id == "pe_ce_ratio_spread_1x2":
+        result = _run_pe_ce_ratio_spread_1x2_cached(strategy_id, start_date, end_date, params)
     else:
-        # No bespoke per-window cache wired up for this provider yet — full
-        # recompute every call. Only pe_ce_ratio_diagonal is registered
-        # today; a future provider that needs the settle-once cache should
-        # get the same treatment as the block above.
+        # No bespoke per-window cache wired up for this provider — full
+        # recompute every call; a provider that needs the settle-once cache
+        # should get the same treatment as the blocks above.
         result = provider.run(start_date, end_date, params)
 
     if result is None:
