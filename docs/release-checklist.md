@@ -2,7 +2,7 @@
 
 How to cut and ship an EdgeVest release — versioning convention, backend
 steps, frontend steps, and the current outstanding items as of the last time
-this doc was updated (2026-09-07, `v7.5.0`).
+this doc was updated (see the newest "Status as of" section below — currently 2026-09-22, `v7.7.0`, unreleased).
 
 ## Branching model
 
@@ -118,6 +118,65 @@ frontend/deploy/deploy.sh current  <prod|staging|dev>
 Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
+
+## Status as of 2026-09-22 (`v7.7.0` — committed on local `main`, NOT yet tagged, pushed or deployed)
+
+Nothing below has been shipped. `main` is 10 commits past `v7.6.3` (`0912c0c`), all local. Bumped to
+`7.7.0` in `frontend/package.json` + lockfile and `backend/server.py`'s `APP_VERSION` (which had been
+left at `7.5.0` through the 7.6.x bumps — now back in sync). Not tagged: tag only when about to ship.
+
+**What is in this release**
+
+- **Fixes**: exited-trade realized P&L now sums every leg row, so a leg closed by an adjustment is no
+  longer dropped (#SEP26-2: +11,245 → −3,282.5; Sept monthly total 30,584 → 16,056.5; no other trade or
+  month changes); trade display codes use MAX+1 so a deleted trade no longer causes duplicates; the
+  exited card shows the entry margin and computes ROI on it (was the gross `margin_required`).
+- **Strategies**: second provider `pe_ce_ratio_spread_1x2` (weekly 1:2 calendar ratio on PE/CE — see
+  `docs/prd/pe-ce-ratio-spread-1x2.md`) and a list → detail Strategies UI (`/profile/strategies`,
+  `/profile/strategies/:id`); settle-once cache keys are versioned; config mutation awaits its refetch.
+- **Triggers & alerts**: every per-tick alert trigger removed (`TRIGGERS = []`; the poller still polls
+  every `SYMBOLS` entry). New option-chain triggers (`CHAIN_TRIGGERS`: `NIFTY_CE_CAL_1X2`,
+  `NIFTY_CE_ITM300_DIAG_1X2`, `NIFTY_CE_ITM400_DIAG_1X2`) create DRAFT trades and send a Telegram
+  "Trigger Fired" alert stating whether a draft is linked (`docs/prd/option-chain-calendar-ratio-trigger.md`).
+  Removed Telegram messages: morning brief, 08:30 pre-market analysis, EOD brief, account-level
+  entry/exit/auto-exit. Still sent: New Trade, New Adjustment, Trade Exited, Trigger Fired.
+
+**Deploy steps specific to this release (in order)**
+
+1. Backend on EC2: `git pull` / checkout the tag; no new Python dependencies.
+2. **`python poller.py init`** — creates the new `chain_trigger_fires` table. Required: without it the
+   triggers can never record a fire, so they never create a draft.
+3. One-off SQL against the prod DB (back it up first) to fix the existing duplicate display code —
+   verify trade ids 54/55 still match before running:
+   ```sql
+   UPDATE recommended_trades SET display_code = 'SEP26-9'
+   WHERE id = 55 AND display_code = 'SEP26-10'
+     AND NOT EXISTS (SELECT 1 FROM recommended_trades WHERE display_code = 'SEP26-9');
+   -- expect 1 row changed
+   ```
+4. Restart **both** `edgevest-web` (new routes/provider, P&L, margin field) **and the poller**
+   (empty `TRIGGERS`, chain triggers, removed briefs). Restart the poller before 09:15 IST on a trading day.
+5. `frontend/deploy/deploy.sh deploy prod v7.7.0` (after tagging).
+
+**Post-deploy checks**
+
+- `/api/strategies` returns both providers (401 unauthenticated is healthy, 404 means the blueprint did
+  not register); open `#SEP26-2` on Trades — exit prices on every leg, realized −₹3,283 (−3.0%).
+- The poller log shows `[no triggers — data collection only]` for NIFTY50/BANKNIFTY/RELIANCE and
+  `option_chain_capture` lines every 5 min.
+- Expect the first `NIFTY_CE_CAL_1X2` draft + Telegram alert at about **09:20 IST** on the next trading
+  day. Its credit condition (`> 5`) is almost always true (real credit ~195–226 pts), so it will fire
+  once every morning — raise `min_credit_pts` in `config.CHAIN_TRIGGERS` if that is not wanted.
+  Drafts are silent until published.
+
+**Known / not part of this release**
+
+- `wip/zerodha-broker-execution` (Zerodha broker execution, unmerged) will conflict with `main` in
+  `backend/db/queries.py` when merged; other files auto-merge.
+- The Telegram bot token and chat id are hardcoded in `backend/config.py` — move to an env file and
+  rotate the token.
+- The near-leg exit/roll of any published trigger draft is manual; no risk/margin is computed for a
+  draft until publish.
 
 ## Status as of 2026-09-09 (`v7.6.0` — frontend and backend both released to prod)
 
