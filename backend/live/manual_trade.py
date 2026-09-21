@@ -622,16 +622,9 @@ def push_to_account(
 
     # Fetch account info for alert
     from db.queries import get_accounts
-    from db.init_db import get_connection as _gc2
     account_info = next((a for a in get_accounts() if a["id"] == account_id), None)
     account_label = (account_info or {}).get("label") or \
                     (account_info or {}).get("trader") or f"Account {account_id}"
-
-    # Check if this is a game (virtual) account — skip Telegram for virtual trades
-    _conn2 = _gc2()
-    _game_row = _conn2.execute("SELECT game_id FROM accounts WHERE id = ?", (account_id,)).fetchone()
-    _conn2.close()
-    is_game_account = bool(_game_row and _game_row[0])
 
     at_id = create_account_trade(
         account_id           = account_id,
@@ -642,31 +635,7 @@ def push_to_account(
         margin               = margin,
     )
 
-    # Telegram alert (skip for game/virtual accounts)
-    if not is_game_account:
-        try:
-            n_pos    = reduce(gcd, [l["lots"] for l in resolved if l["lots"] > 0]) or 1
-            now_ist  = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b %Y  %H:%M IST")
-            rec_tag  = f"  ·  rec#{recommended_trade_id}" if recommended_trade_id else ""
-            lines    = [
-                f'📥 <b>{_h(symbol)}</b>  ·  {_h(account_label)}{rec_tag}',
-                _DIV,
-            ]
-            for l in resolved:
-                strike_str = f"{int(l['strike']):,} " if l.get("strike") else ""
-                base_lots  = l["lots"] // n_pos
-                icon       = "🔴" if l["side"] == "SELL" else "🟢"
-                lines.append(
-                    f"  {icon}  {l['side']:<4}  {strike_str}{l['instrument_type']}"
-                    f"  {base_lots}L  @₹{l['price']:,.2f}"
-                )
-            pos_tag = f"  ×{n_pos} pos" if n_pos > 1 else ""
-            lines += ["", _DIV, f"{pos_tag}  {note}" if note else pos_tag,
-                      f"Added at  {now_ist}"]
-            send_telegram("\n".join(l for l in lines))
-        except Exception as e:
-            print(f"  [push_to_account]  Telegram alert failed (trade saved ok): {e}", flush=True)
-
+    now_ist = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b %Y  %H:%M IST")
     print(f"  [push_to_account]  account_trade id={at_id}  {symbol}  "
           f"account={account_label}  at {now_ist}", flush=True)
     return at_id
@@ -677,7 +646,7 @@ def close_account_trade(
     prices: list[float],
     note: str = "",
 ) -> None:
-    """Exit an account_trade: record exit legs, mark exited, send Telegram."""
+    """Exit an account_trade: record exit legs and mark exited (no Telegram — account-level alerts removed 2026-09-22)."""
     from db.queries import get_open_account_trades, get_accounts
 
     # Load trade
@@ -717,35 +686,9 @@ def close_account_trade(
 
     mark_account_trade_closed(account_trade_id, exit_legs, now_utc, note)
 
-    # Telegram alert
     symbol        = conn_data.get("symbol") or "—"
     account_label = conn_data.get("account_label") or f"Account {conn_data['account_id']}"
-    n_pos         = reduce(gcd, [l["lots"] for l in entry_legs if l["lots"] > 0]) or 1
     now_ist       = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
-
-    total_pnl = 0.0
-    lines = [
-        f'✅ <b>{_h(symbol)}</b>  ·  {_h(account_label)}  ·  Exit',
-        _DIV,
-    ]
-    for e, x in zip(entry_legs, exit_legs):
-        strike_str = f"{int(e['strike']):,} " if e.get("strike") else ""
-        base_lots  = e["lots"] // n_pos
-        qty        = (e["lots"] // n_pos) * (e["lot_size"] or 1)
-        ep, xp     = e["price"] or 0, x["price"] or 0
-        leg_pnl    = (ep - xp) * qty if e["side"] == "SELL" else (xp - ep) * qty
-        total_pnl += leg_pnl * n_pos
-        icon       = "🔴" if e["side"] == "SELL" else "🟢"
-        lines.append(
-            f"  {icon}  {e['side']:<4}  {strike_str}{e['instrument_type']}"
-            f"  {base_lots}L   ₹{ep:,.0f} → ₹{xp:,.0f}"
-            f"   <i>(₹{leg_pnl:+,.0f})</i>"
-        )
-    lines += ["", _DIV, f"<b>Net P&amp;L  ₹{total_pnl:+,.0f}</b>"]
-    if note:
-        lines.append(f"<i>{_h(note)}</i>")
-    lines.append(f"Exit at  {now_ist}")
-    send_telegram("\n".join(lines))
 
     print(f"  [close_account_trade]  id={account_trade_id}  {symbol}  "
           f"account={account_label}  closed at {now_ist}", flush=True)
@@ -812,46 +755,6 @@ def auto_exit_linked_account_trades(
                 recalculate_account_trade_margin(t["id"])
             except Exception as e:
                 print(f"  [auto_exit_linked_account_trades]  margin recalc skipped: {e}", flush=True)
-
-        # Telegram alert (skip for game/virtual accounts)
-        try:
-            from db.init_db import get_connection as _gc
-            _conn   = _gc()
-            _row    = _conn.execute("SELECT game_id FROM accounts WHERE id = ?", (t["account_id"],)).fetchone()
-            _conn.close()
-            is_game = bool(_row and _row[0])
-
-            if not is_game:
-                symbol        = t.get("symbol") or "—"
-                account_label = t.get("account_label") or f"Account {t['account_id']}"
-                n_pos         = reduce(gcd, [l["lots"] for l in matched if l["lots"] > 0]) or 1
-                now_ist       = datetime.now(timezone.utc).astimezone(IST).strftime("%d %b  %H:%M IST")
-
-                total_pnl = 0.0
-                lines = [
-                    f'🔔 <b>{_h(symbol)}</b>  ·  {_h(account_label)}  ·  Auto-exit (recommendation closed)',
-                    _DIV,
-                ]
-                for e, x in zip(matched, exit_legs):
-                    strike_str = f"{int(e['strike']):,} " if e.get("strike") else ""
-                    base_lots  = e["lots"] // n_pos
-                    qty        = (e["lots"] // n_pos) * (e["lot_size"] or 1)
-                    ep, xp     = e["price"] or 0, x["price"] or 0
-                    leg_pnl    = (ep - xp) * qty if e["side"] == "SELL" else (xp - ep) * qty
-                    total_pnl += leg_pnl * n_pos
-                    icon       = "🔴" if e["side"] == "SELL" else "🟢"
-                    lines.append(
-                        f"  {icon}  {e['side']:<4}  {strike_str}{e['instrument_type']}"
-                        f"  {base_lots}L   ₹{ep:,.0f} → ₹{xp:,.0f}"
-                        f"   <i>(₹{leg_pnl:+,.0f})</i>"
-                    )
-                lines += ["", _DIV, f"<b>Net P&amp;L  ₹{total_pnl:+,.0f}</b>"]
-                if not full_exit:
-                    lines.append("<i>Other leg(s) on this trade stay open — exit them manually.</i>")
-                lines.append(f"Exit at  {now_ist}")
-                send_telegram("\n".join(lines))
-        except Exception as e:
-            print(f"  [auto_exit_linked_account_trades]  Telegram alert failed (trade updated ok): {e}", flush=True)
 
         print(f"  [auto_exit_linked_account_trades]  account_trade id={t['id']}  "
               f"{'fully' if full_exit else 'partially'} exited via rec id={recommended_trade_id}", flush=True)

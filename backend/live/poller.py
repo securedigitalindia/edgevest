@@ -36,7 +36,6 @@ from live.expiry import expiry_cache
 from live.intraday_sync import CandleWatcher
 from live import tick_store, candle_builder, option_chain_capture
 from live.holidays import check_or_exit
-from live.briefing import send_morning_brief, send_eod_brief
 from live.fo_instruments import SPOT_IKEYS
 from db.queries import update_price_cache, get_open_trade_ikeys
 
@@ -114,7 +113,7 @@ def _run_eod_tasks(daily_alerts: list):
     """
     Run at 16:00 IST after market close.
     Upstox has complete EOD data by then.
-    Full sync + tick cleanup + expiry cache refresh + EOD brief.
+    Full sync + tick cleanup + expiry cache refresh.
     """
     from sync.daily_sync import run_daily_sync
     from db.queries import cleanup_ticks
@@ -146,12 +145,6 @@ def _run_eod_tasks(daily_alerts: list):
         print()
     except Exception as e:
         print(f"  [F&O instruments refresh failed]  {e}", flush=True)
-
-    print("Sending EOD brief to Telegram...")
-    try:
-        send_eod_brief(daily_alerts)
-    except Exception as e:
-        print(f"  [EOD brief failed]  {e}", flush=True)
 
     print(f"[{_ist_now().strftime('%H:%M IST')}]  ── EOD tasks complete ──────────────────────\n")
 
@@ -248,21 +241,9 @@ def run_live(force: bool = False):
     print(f"\n{total} trigger(s) active across {len(ikeys)} symbol(s)"
           f" — polling every {POLL_INTERVAL_SECONDS}s\n")
 
-    # Morning brief — sent after startup tasks so Telegram confirms we're live
+    # Morning brief, pre-market analysis and EOD brief were removed 2026-09-22 — the poller now
+    # only waits for the market to open (no scheduled Telegram messages).
     if not force:
-        try:
-            send_morning_brief()
-        except Exception as e:
-            print(f"  [morning brief failed]  {e}", flush=True)
-
-        # Daily pre-market analysis at 08:30 IST
-        _wait_until(8, 30)
-        try:
-            from live.daily_analysis import run_daily_analysis
-            run_daily_analysis()
-        except Exception as e:
-            print(f"  [daily analysis failed]  {e}", flush=True)
-
         wait_for_market_open()
 
     error_streak = 0

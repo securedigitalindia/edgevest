@@ -568,7 +568,7 @@ def get_all_open_recommended_trades(symbol: str) -> list:
 
 
 def get_all_open_trades() -> list[dict]:
-    """Return all open recommended_trades (used by briefing)."""
+    """Return all open recommended_trades."""
     conn = get_connection()
     cur = conn.execute(f"""
         SELECT {_TRADE_SELECT} FROM recommended_trades
