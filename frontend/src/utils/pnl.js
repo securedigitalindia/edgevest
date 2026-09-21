@@ -1,9 +1,9 @@
-// Shared per-recommendation P&L math — instrument-key-matched, never the
-// positional zip() used by GET /api/recommendations (docs/apis.md explains
-// why: get_current_legs()/adjustments can leave fewer exit rows than the
-// flattened entry+adjustment legs, so matching by array position silently
-// mis-pairs or drops a leg). Used by Trades.jsx's RecItem (per-trade) and
-// Dashboard.jsx's monthly summary (aggregated across every open trade).
+// Shared per-recommendation P&L math. Realized P&L is the cash flow (SELL +,
+// BUY -) over EVERY leg row — never entry-vs-exit pairing, which drops a leg
+// closed mid-trade by an adjustment (no exit row exists for it). Mirrors
+// net_realized_pnl() in backend/db/queries.py. Used by Trades.jsx's RecItem
+// (per-trade) and Dashboard.jsx's monthly summary (aggregated across every
+// open trade).
 
 export function unrealizedPnl(rec, prices) {
   // 'draft' included so Trades.jsx's Draft Strategies card can show a live

@@ -96,6 +96,8 @@ WHERE entry_time < :effective_end_utc
 
 Only trades that **exited** during the month count: `status = 'exited' AND exit_time >= :month_start_utc AND exit_time < :effective_end_utc`.
 
+> **Superseded 2026-09-22:** realized P&L is now `net_realized_pnl()` in `db/queries.py` — the sum of SELL minus BUY premium × qty over **every** leg row (entry, adjustments, exit). The instrument-key matching described next dropped any leg closed mid-trade by an adjustment (trade #SEP26-2: +11,245 reported vs the true −3,282.5; September's total moved 30,584 → 16,056.5). It is kept below as history only. `GET /api/recommendations` uses the same function.
+
 For each such trade, compute realized P&L using the **instrument-key-matching** method already used by `RecItem` on Dashboard.jsx (`frontend/src/screens/Dashboard.jsx:292-311`), **not** the positional `zip()` version currently used by `GET /api/recommendations` (`backend/server.py:540-553`, `zip(entry_legs, exit_legs)`). The frontend's own code comment (`Dashboard.jsx:292-296`) flags exactly why the backend's positional version can silently mis-pair legs: `get_current_legs()`/leg ordering can leave fewer exit rows than the flattened original+adjustment entry rows when an adjustment shares an instrument with the original entry, and pairing by array position rather than `instrument_key` then skips or misattributes P&L for that leg. Do not copy `server.py`'s `zip()` approach into the new monthly query — use the matching-by-`instrument_key` method instead:
 
 - `entry_legs` = every `trade_legs` row for the trade with `action = 'entry'` (original entry, `adjustment_id IS NULL`, plus any adjustment-added entry legs) — i.e. `get_trade_legs(trade_id)` filtered to `action='entry'`.

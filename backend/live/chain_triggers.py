@@ -109,7 +109,11 @@ def _evaluate_calendar_ratio_credit(cfg: dict) -> None:
             queries.set_chain_trigger_fire_trade(fire_id, trade_id)
             print(f"  [chain_triggers] {cfg['name']} FIRED {side} K={int(strike)}/{int(far_strike)} fut={fut_ltp:.1f} "
                   f"near={near}@{near_ltp} far={far}@{far_ltp} credit={credit} -> draft trade {trade_id}", flush=True)
-            _send_alert(draft_code=(queries.get_recommendation(trade_id) or {}).get("display_code"), **alert_args)
+            try:
+                draft_code = (queries.get_recommendation(trade_id) or {}).get("display_code")
+            except Exception:
+                draft_code = None   # the draft exists either way — never let a lookup failure report it as missing
+            _send_alert(draft_code=draft_code, **alert_args)
         except Exception as e:
             queries.release_chain_trigger_fire(fire_id)   # let the next snapshot retry
             print(f"  [chain_triggers] {cfg['name']} {side}: draft creation failed — {e}", flush=True)

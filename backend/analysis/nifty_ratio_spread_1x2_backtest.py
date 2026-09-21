@@ -140,6 +140,8 @@ def run_window_1x2(conn, entry_date: str, merged: list[str], leg_gap: float, fut
     settle_ts = ist_ts_for(expiry, SETTLE_TIME)
     exit_target = ist_ts_for(exit_d.isoformat(), EXIT_TIME)
     vals = {t: v for t, v in s["values"].items() if t <= settle_ts}
+    if not vals:
+        return {"window_start": entry_date, "sets": [s], "error": "no ticks on or before the expiry settlement"}
     points, is_bounded = [], any(t > exit_target for t in vals) or max(vals) >= exit_target
     for ts in sorted(vals):
         points.append({"ts": ts, "pnl_pts": round(vals[ts] - s["entry_value"], 2),
