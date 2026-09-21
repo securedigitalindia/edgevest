@@ -3567,3 +3567,53 @@ def upsert_strategy_config(strategy_id: str, start_date: str, params: dict, conf
         conn.commit()
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Option-chain triggers (live/chain_triggers.py)
+# ---------------------------------------------------------------------------
+
+def get_chain_ltp(ts: str, symbol: str, expiry_date: str, strike: float, opt_type: str) -> float | None:
+    """One option's LTP from a specific option_chain_5m snapshot; None if absent or no trade yet (ltp 0/NULL)."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT ltp FROM option_chain_5m WHERE ts = ? AND symbol = ? AND expiry_date = ? AND strike = ? AND opt_type = ?",
+            (ts, symbol, expiry_date, strike, opt_type),
+        ).fetchone()
+        return row[0] if row and row[0] else None
+    finally:
+        conn.close()
+
+
+def claim_chain_trigger_fire(trigger_name: str, side: str, ist_date: str, credit_pts: float) -> int | None:
+    """Reserve today's single fire for (trigger, side). Returns the row id, or None if already claimed today."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO chain_trigger_fires (trigger_name, side, ist_date, credit_pts, fired_at) VALUES (?, ?, ?, ?, ?)",
+            (trigger_name, side, ist_date, credit_pts, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")),
+        )
+        conn.commit()
+        return cur.lastrowid if cur.rowcount else None
+    finally:
+        conn.close()
+
+
+def set_chain_trigger_fire_trade(fire_id: int, trade_id: int) -> None:
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE chain_trigger_fires SET trade_id = ? WHERE id = ?", (trade_id, fire_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def release_chain_trigger_fire(fire_id: int) -> None:
+    """Undo a claim whose draft creation failed, so the next snapshot can retry."""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM chain_trigger_fires WHERE id = ? AND trade_id IS NULL", (fire_id,))
+        conn.commit()
+    finally:
+        conn.close()

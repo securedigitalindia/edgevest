@@ -191,6 +191,13 @@ def nifty_fut_ikey(expiry: date) -> str | None:
     return key
 
 
+def nifty_front_fut(today: date) -> tuple[str, date] | None:
+    """(instrument_key, expiry) of the nearest NIFTY future expiring on/after `today`, or None."""
+    _ensure_loaded()
+    expiries = sorted(k[1] for k in _index if k[0] == "FUT" and k[1] >= today)
+    return (_index[("FUT", expiries[0])], expiries[0]) if expiries else None
+
+
 def nifty_pe_ikey(expiry: date, strike: int, weekly: bool = False) -> str | None:
     _ensure_loaded()
     key = _index.get(("PE", expiry, strike, weekly))

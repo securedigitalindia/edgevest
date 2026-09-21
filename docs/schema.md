@@ -434,6 +434,22 @@ Cache of one settled window's already-computed embed per `(strategy_id, window_s
 - No retention job — small, slow-growing (roughly one new row per strategy per expiry-triplet rollover, ~1-2 weeks for PE+CE).
 - **Known gap, not auto-handled**: if a past window's underlying local data (`option_chain_5m`) gets backfilled *after* that window was already cached, the cached row goes stale with nothing detecting it — only escape hatch is a manual delete of that row.
 
+### `chain_trigger_fires`
+
+One row per (option-chain trigger, side, IST day) that has fired — the `UNIQUE` key is what enforces "one draft per side per day" (`live/chain_triggers.py` claims the row *before* creating the draft, and releases it if draft creation fails so the next 5-min snapshot retries). Created by `init_db()` (`python poller.py init` on deploy).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | |
+| `trigger_name` | TEXT NOT NULL | `config.CHAIN_TRIGGERS[].name` |
+| `side` | TEXT NOT NULL | `CE` / `PE` |
+| `ist_date` | TEXT NOT NULL | `YYYY-MM-DD` (IST) — the day's single allowed fire |
+| `trade_id` | INTEGER | the draft `recommended_trades.id`; NULL between claim and draft creation |
+| `credit_pts` | REAL | net credit (premium points) at fire time |
+| `fired_at` | TEXT NOT NULL | ISO-8601 UTC |
+
+`UNIQUE (trigger_name, side, ist_date)`. A discarded/published draft does **not** free the day's slot — that is deliberate (one draft per side per day, whatever happens to it).
+
 ### `strategy_configs`
 
 One row per strategy that's ever had its start date/params confirmed by an admin — read every time `GET .../run` is called (400 if no row exists for that strategy yet).

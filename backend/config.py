@@ -147,6 +147,58 @@ MARKET_CLOSE_IST = (15, 30)
 # _build_all_triggers() in live/poller.py.
 TRIGGERS = []
 
+# -----------------------------------------------------------
+# Option-chain triggers (live/chain_triggers.py)
+# -----------------------------------------------------------
+# Evaluated once per 5-min option_chain_5m snapshot; on fire they create a DRAFT
+# trade (never an open one — publish it from the Dashboard's Draft Strategies panel).
+CHAIN_TRIGGERS = [
+    {
+        "name":           "NIFTY_CE_CAL_1X2",
+        "type":           "calendar_ratio_credit",
+        "symbol":         "NIFTY50",
+        "sides":          ["CE"],   # "CE" and/or "PE"; at most one draft per side per IST day
+        "strike_step":    100,      # K = next multiple above (CE) / below (PE) the front-month NIFTY future
+        "min_dte":        1,        # near expiry = nearest with DTE > this; far = the next expiry after it
+        "near_lots":      1,        # BUY  near_lots @ K on the near expiry
+        "far_lots":       2,        # SELL far_lots  @ K on the far expiry
+        "min_credit_pts": 5,        # fire when far_lots*far_ltp - near_lots*near_ltp > this (premium points)
+        "risk_level":     "high",   # net short far leg — stamped on the draft
+    },
+    # ITM diagonal 1:2 (2026-09-22): BUY near_lots @ K1 = base moved itm_points into the money
+    # (base = next strike_step above the future), SELL far_lots @ K2 = K1 + far_strike_offset
+    # (further OTM) on the next expiry. Fires when the net DEBIT is under 25 pts, i.e.
+    # (near_lots * near_ltp) - (far_lots * far_ltp) < 25 — a net credit also qualifies.
+    {
+        "name":              "NIFTY_CE_ITM300_DIAG_1X2",
+        "type":              "calendar_ratio_credit",
+        "symbol":            "NIFTY50",
+        "sides":             ["CE"],
+        "strike_step":       100,
+        "min_dte":           1,
+        "near_lots":         1,
+        "far_lots":          2,
+        "itm_points":        300,   # K1 = base - 300
+        "far_strike_offset": 400,   # K2 = K1 + 400
+        "max_debit_pts":     25,    # fire when near premium - 2x far premium < 25 pts
+        "risk_level":        "high",
+    },
+    {
+        "name":              "NIFTY_CE_ITM400_DIAG_1X2",
+        "type":              "calendar_ratio_credit",
+        "symbol":            "NIFTY50",
+        "sides":             ["CE"],
+        "strike_step":       100,
+        "min_dte":           1,
+        "near_lots":         1,
+        "far_lots":          2,
+        "itm_points":        400,   # K1 = base - 400
+        "far_strike_offset": 400,   # K2 = K1 + 400
+        "max_debit_pts":     25,
+        "risk_level":        "high",
+    },
+]
+
 # Upstox instrument key per symbol name.
 # Indices use display name; equities use ISIN (not trading symbol).
 # To find any instrument key: download NSE instrument list from

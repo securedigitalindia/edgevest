@@ -355,6 +355,23 @@ def init_db():
     print("  ✓  Table ready: strategy_backtest_windows")
     print("  ✓  Table ready: strategy_configs")
 
+    # chain_trigger_fires — one row per (option-chain trigger, side, IST day) that has
+    # fired; the UNIQUE key is what enforces "one draft per side per day"
+    # (live/chain_triggers.py claims the row BEFORE creating the draft).
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS chain_trigger_fires (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            trigger_name  TEXT    NOT NULL,
+            side          TEXT    NOT NULL,
+            ist_date      TEXT    NOT NULL,   -- "YYYY-MM-DD" (IST)
+            trade_id      INTEGER,            -- the draft recommended_trades.id, NULL until created
+            credit_pts    REAL,
+            fired_at      TEXT    NOT NULL,   -- ISO-8601 UTC
+            UNIQUE (trigger_name, side, ist_date)
+        )
+    """)
+    print("  ✓  Table ready: chain_trigger_fires")
+
     # -------------------------------------------------------
     # recommended_trades — one row per trade (header only)
     # All leg details live in trade_legs.

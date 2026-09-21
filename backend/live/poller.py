@@ -34,7 +34,7 @@ from live.triggers import build_trigger, BaseTrigger
 from live.alert import send_alert
 from live.expiry import expiry_cache
 from live.intraday_sync import CandleWatcher
-from live import tick_store, candle_builder, option_chain_capture
+from live import tick_store, candle_builder, option_chain_capture, chain_triggers
 from live.holidays import check_or_exit
 from live.fo_instruments import SPOT_IKEYS
 from db.queries import update_price_cache, get_open_trade_ikeys
@@ -288,6 +288,10 @@ def run_live(force: bool = False):
                 option_chain_capture.run_capture()
             except Exception as e:
                 print(f"  [option chain capture failed]  {e}", flush=True)
+            try:
+                chain_triggers.run_chain_triggers()
+            except Exception as e:
+                print(f"  [chain triggers failed]  {e}", flush=True)
 
         # Build full key list: trigger instruments + spot indices + open trade legs
         try:
