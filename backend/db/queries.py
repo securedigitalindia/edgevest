@@ -384,11 +384,12 @@ def _compute_display_code(conn, expiry_strs) -> str:
     of each leg's expiry_str (some may be None/missing).
     """
     prefix = display_code_prefix(expiry_strs)
-    count = conn.execute(
-        "SELECT COUNT(*) FROM recommended_trades WHERE display_code LIKE ?",
-        (f"{prefix}-%",),
-    ).fetchone()[0]
-    return f"{prefix}-{count + 1}"
+    highest = conn.execute(
+        "SELECT MAX(CAST(SUBSTR(display_code, ?) AS INTEGER)) FROM recommended_trades"
+        " WHERE display_code LIKE ?",
+        (len(prefix) + 2, f"{prefix}-%"),
+    ).fetchone()[0] or 0
+    return f"{prefix}-{highest + 1}"
 
 
 def open_recommended_trade(
