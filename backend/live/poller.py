@@ -192,6 +192,17 @@ def _build_all_triggers() -> tuple[dict[str, list[BaseTrigger]], list[str], dict
             ikey_triggers.setdefault(ikey, []).append(trig)
             ikey_to_name[ikey] = sym_name
 
+    # Poll every configured symbol even when no trigger references it (e.g.
+    # TRIGGERS is empty) — tick storage, candle building, the price cache and
+    # the EOD sync all key off this set, not just alerting. Without this an
+    # empty TRIGGERS made ikeys empty and run_live() returned right after startup.
+    for sym in SYMBOLS:
+        ikey = UPSTOX_INSTRUMENT_KEYS.get(sym["name"])
+        if ikey and ikey not in ikey_to_name:
+            ikey_to_name[ikey] = sym["name"]
+            ikey_triggers.setdefault(ikey, [])
+            print(f"  ok    {sym['name']:<14}  [no triggers — data collection only]")
+
     return ikey_triggers, list(ikey_triggers.keys()), ikey_to_name
 
 
