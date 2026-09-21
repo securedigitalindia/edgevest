@@ -369,6 +369,9 @@ function RecItem({ rec, prices, onPushed, highlight }) {
   // publish — see docs/prd/manual-strategy-cli.md's 2026-09-06 addendum).
   const totalPnl      = realizedPnl(rec)
   const unrealisedPnl = unrealizedPnl(rec, prices)
+  // Same margin kind the open card shows (margin_final, not the gross margin_required),
+  // frozen at entry so the ROI base doesn't move if later adjustments recompute it.
+  const exitedMargin  = rec.margin_at_entry ?? rec.margin_final
 
   async function handleDelete() {
     if (!confirm('Delete this recommendation?')) return
@@ -477,13 +480,19 @@ function RecItem({ rec, prices, onPushed, highlight }) {
       )}
       {rec.status === 'exited' && totalPnl != null && (
         <div className="rec-stats-strip">
+          {exitedMargin > 0 && (
+            <div className="rec-stat">
+              <div className="rec-stat-lbl">Margin</div>
+              <div className="rec-stat-val">₹{Math.round(exitedMargin).toLocaleString('en-IN')}</div>
+            </div>
+          )}
           <div className="rec-stat">
             <div className="rec-stat-lbl">Realized P&amp;L</div>
             <div className="rec-stat-val" style={{color: totalPnl >= 0 ? 'var(--green)' : 'var(--red)'}}>
               {fmtPnl(totalPnl)}
-              {rec.margin_required > 0 && (
+              {exitedMargin > 0 && (
                 <span style={{fontSize:11,marginLeft:5,fontWeight:600}}>
-                  ({totalPnl>=0?'+':''}{((totalPnl/rec.margin_required)*100).toFixed(1)}%)
+                  ({totalPnl>=0?'+':''}{((totalPnl/exitedMargin)*100).toFixed(1)}%)
                 </span>
               )}
             </div>

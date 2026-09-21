@@ -578,6 +578,7 @@ def _shape_recommendation_row(r, margin_required, margin_final):
         "adjustments":     adjustments,
         "margin_required": margin_required,
         "margin_final":    margin_final,
+        "margin_at_entry": r.get("margin_at_entry"),
     }
 
 

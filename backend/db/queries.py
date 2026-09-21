@@ -323,6 +323,7 @@ _TRADE_COLS = [
     "entry_level", "entry_ltp", "entry_time",
     "exit_level", "status", "exit_ltp", "exit_time",
     "margin_required", "margin_final", "display_code", "note", "risk_level",
+    "margin_at_entry",
 ]
 _TRADE_SELECT = ", ".join(_TRADE_COLS)
 
