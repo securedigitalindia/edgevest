@@ -29,8 +29,8 @@ export function OpenLeg({ leg: l, symbol, prices }) {
   )
 }
 
-export function ExitedLeg({ entry: e, exitLeg: x, symbol }) {
-  const qty    = (e.lots || 0) * (e.lot_size || 1)
+export function ExitedLeg({ entry: e, exitLeg: x, closes, symbol }) {
+  const qty    = (x?.closedLots ?? e.lots ?? 0) * (e.lot_size || 1)
   const legPnl = e.price != null && x?.price != null
     ? (e.side === 'SELL' ? (e.price - x.price) * qty : (x.price - e.price) * qty)
     : null
@@ -42,7 +42,7 @@ export function ExitedLeg({ entry: e, exitLeg: x, symbol }) {
         {fmtContract(e) && <div className="rec-leg-contract">{fmtContract(e)}</div>}
       </div>
       <div style={{textAlign:'right',flexShrink:0}}>
-        <div className="rec-leg-meta">{fmtQty(e.lots,e.lot_size,e.instrument_type)} · {fmtRs(e.price,2)} → {x ? fmtRs(x.price,2) : '—'}</div>
+        <div className="rec-leg-meta">{fmtQty(e.lots,e.lot_size,e.instrument_type)} · {fmtRs(e.price,2)}{x ? ` → ${fmtRs(x.price,2)}` : closes ? ' · closes earlier leg' : ' → —'}</div>
         {legPnl != null && <div style={{fontSize:12,fontWeight:700,color:legPnl>=0?'var(--green)':'var(--red)'}}>{fmtPnl(legPnl)}</div>}
       </div>
     </div>
@@ -67,7 +67,7 @@ export default function LegGroup({ title, note, legs, symbol, type = 'entry', ex
         </div>
       )}
       {pairs
-        ? pairs.map((p, i) => <ExitedLeg key={i} entry={p.entry} exitLeg={p.exitLeg} symbol={symbol} />)
+        ? pairs.map((p, i) => <ExitedLeg key={i} entry={p.entry} exitLeg={p.exitLeg} closes={p.closes} symbol={symbol} />)
         : legs.map((l, i) =>
             exitLegs
               ? <ExitedLeg key={i} entry={l} exitLeg={exitLegs.find(x => x.instrument_key && x.instrument_key === l.instrument_key)} symbol={symbol} />

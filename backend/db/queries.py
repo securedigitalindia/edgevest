@@ -4,7 +4,6 @@
 #  No raw SQL anywhere else in the codebase.
 # ============================================================
 
-import itertools
 import sqlite3
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional
@@ -509,6 +508,25 @@ def get_trade_legs(trade_id: int) -> list[dict]:
     return [dict(zip(_LEG_COLS, r)) for r in rows]
 
 
+def net_realized_pnl(legs: list[dict]) -> float | None:
+    """
+    Realized P&L of a fully closed trade: cash flow (SELL +, BUY -) summed over
+    EVERY leg row — original entry, adjustments and exit. Legs closed mid-trade
+    by an adjustment have no 'exit' row, so pairing entries with exit rows
+    (by position or instrument_key) silently drops them. Returns None if there
+    is no exit row or any leg lacks a price.
+    """
+    if not any(l["action"] == "exit" for l in legs):
+        return None
+    total = 0.0
+    for l in legs:
+        if l["price"] is None:
+            return None
+        qty = l["lots"] * (l["lot_size"] or 1)
+        total += l["price"] * qty if l["side"] == "SELL" else -l["price"] * qty
+    return total
+
+
 def get_original_entry_legs(trade_id: int) -> list[dict]:
     """Original entry legs only — excludes adjustment legs (adjustment_id IS NULL)."""
     conn = get_connection()
@@ -800,8 +818,8 @@ def get_monthly_report(year: int, month: int) -> dict:
     avg_margin = margin_sum / len(margin_series) if margin_series else 0.0
 
     # --- 3. Realized P&L — per-exit + month total ---------------------------
-    # Match legs by instrument_key (not positional zip()) — see PRD for why
-    # the positional method used by GET /api/recommendations can mis-pair legs.
+    # Cash flow over every leg row (net_realized_pnl) — pairing entries with
+    # exit rows misses legs closed mid-trade by an adjustment.
     exited_rows = conn.execute(f"""
         SELECT {_TRADE_SELECT} FROM recommended_trades
         WHERE status = 'exited' AND exit_time >= ? AND exit_time < ?
@@ -814,21 +832,8 @@ def get_monthly_report(year: int, month: int) -> dict:
     pnl_events = []
     realized_pnl_total = 0.0
     for t in exited_trades:
-        legs       = get_trade_legs(t["id"])
-        entry_legs = [l for l in legs if l["action"] == "entry"]
-        exit_legs  = [l for l in legs if l["action"] == "exit"]
-
-        total, has_pnl = 0.0, False
-        for e in entry_legs:
-            x = next((xl for xl in exit_legs
-                      if xl["instrument_key"] and xl["instrument_key"] == e["instrument_key"]),
-                     None)
-            if x is None or e["price"] is None or x["price"] is None:
-                continue
-            qty = e["lots"] * (e["lot_size"] or 1)
-            total += (e["price"] - x["price"]) * qty if e["side"] == "SELL" \
-                     else (x["price"] - e["price"]) * qty
-            has_pnl = True
+        total = net_realized_pnl(get_trade_legs(t["id"]))
+        has_pnl = total is not None
 
         if has_pnl:
             pnl_events.append({
@@ -2110,14 +2115,8 @@ def get_closed_account_trades(account_id: int | None = None, user_id: int | None
         d["entry_legs"] = [l for l in legs if l["action"] == "entry"]
         d["exit_legs"]  = [l for l in legs if l["action"] == "exit"]
 
-        # Compute realized P&L
-        pnl = 0.0
-        for e, x in itertools.zip_longest(d["entry_legs"], d["exit_legs"], fillvalue={}):
-            if e.get("price") is not None and x.get("price") is not None:
-                qty  = e["lots"] * (e["lot_size"] or 1)
-                pnl += (e["price"] - x["price"]) * qty if e["side"] == "SELL" \
-                       else (x["price"] - e["price"]) * qty
-        d["realized_pnl"] = pnl
+        pnl = net_realized_pnl(legs)
+        d["realized_pnl"] = pnl if pnl is not None else 0.0
         trades.append(d)
 
     conn.close()

@@ -13,7 +13,7 @@ import Dropdown from '../components/common/Dropdown'
 import { newLeg, collectLegs } from '../components/trades/legHelpers'
 import LegGroup from '../components/trades/LegDisplay'
 import { fmtRs, fmtPnl, fmtQty, fmtContract } from '../utils/format'
-import { unrealizedPnl, realizedPnl } from '../utils/pnl'
+import { unrealizedPnl, realizedPnl, pairClosings } from '../utils/pnl'
 import { copyToClipboard } from '../utils/clipboard'
 import { BankIcon, GameIcon, GemIcon, LockIcon, RefreshIcon, CardIcon, ShareIcon } from '../components/common/Icons'
 import MonthSummaryCard from './profile/MonthSummaryCard'
@@ -139,19 +139,20 @@ function PnlBar({ label, value, base }) {
 // kind of data (a position's legs).
 
 function RecLegs({ rec, prices }) {
-  const exitLegs = rec.status === 'exited' ? rec.exit_legs : null
-  const adjs     = rec.adjustments || []
+  const exited = rec.status === 'exited'
+  const adjs   = rec.adjustments || []
+  const pairsFor = legs => exited ? pairClosings(rec, legs) : undefined
 
   return (
     <div className="rec-legs">
       <LegGroup type="entry" title="Entry"
-        legs={rec.legs} symbol={rec.symbol} exitLegs={exitLegs} prices={prices} />
+        legs={rec.legs} pairs={pairsFor(rec.legs)} symbol={rec.symbol} prices={prices} />
 
       {adjs.map((a, ai) => (
         <div key={a.id || ai}>
           <div className="adj-connector">↓ Adjustment {ai + 1}{a.ts_ist ? ` · ${a.ts_ist}` : ''}</div>
           <LegGroup type="adj" note={a.note}
-            legs={a.legs || []} symbol={rec.symbol} exitLegs={exitLegs} prices={prices} />
+            legs={a.legs || []} pairs={pairsFor(a.legs || [])} symbol={rec.symbol} prices={prices} />
         </div>
       ))}
 

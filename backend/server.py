@@ -543,7 +543,7 @@ def _shape_recommendation_row(r, margin_required, margin_final):
     come from: the persisted DB columns for open/exited, a live (never
     persisted) preview for draft — see api_recommendations_drafts().
     """
-    from db.queries import get_original_entry_legs, get_current_legs, get_trade_adjustments, get_trade_legs
+    from db.queries import get_original_entry_legs, get_current_legs, get_trade_adjustments, get_trade_legs, net_realized_pnl
     original_legs = get_original_entry_legs(r["id"])
     current_legs  = get_current_legs(r["id"])
     adjustments   = get_trade_adjustments(r["id"])
@@ -552,18 +552,9 @@ def _shape_recommendation_row(r, margin_required, margin_final):
 
     exit_legs, realized_pnl = [], None
     if r["status"] == "exited":
-        all_legs   = get_trade_legs(r["id"])
-        entry_legs = [l for l in all_legs if l["action"] == "entry" and l["adjustment_id"] is None]
-        exit_legs  = [l for l in all_legs if l["action"] == "exit"]
-        if entry_legs and exit_legs:
-            total, has_pnl = 0.0, False
-            for e, x in zip(entry_legs, exit_legs):
-                if e["price"] is not None and x["price"] is not None:
-                    qty = e["lots"] * e["lot_size"] if e["lot_size"] else e["lots"]
-                    total += (e["price"] - x["price"]) * qty if e["side"] == "SELL" \
-                             else (x["price"] - e["price"]) * qty
-                    has_pnl = True
-            realized_pnl = total if has_pnl else None
+        all_legs     = get_trade_legs(r["id"])
+        exit_legs    = [l for l in all_legs if l["action"] == "exit"]
+        realized_pnl = net_realized_pnl(all_legs)
 
     segment = _compute_segment(original_legs + current_legs)
 

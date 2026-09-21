@@ -11,6 +11,7 @@ import { newLeg, collectLegs } from '../components/trades/legHelpers'
 import LegGroup from '../components/trades/LegDisplay'
 import { BankIcon, GameIcon, ChevronIcon, PlusIcon, TrendIcon, BellIcon, RefreshIcon, CloseIcon } from '../components/common/Icons'
 import { fmtRs, fmtPnl, fmtQty } from '../utils/format'
+import { pairClosings } from '../utils/pnl'
 import './Positions.css'
 
 // ─── Pending adj section (inside trade card, client applies) ─────────────────
@@ -233,15 +234,10 @@ function HistoryCard({ trade: t }) {
     g.legs.push(l)
   })
 
-  // Pre-compute exit leg pairings — positional against t.exit_legs, not by
-  // instrument_key (account-trade exit legs aren't guaranteed to carry one,
-  // unlike recommended-trade exit_legs), so this stays separate from
-  // LegGroup's own instrument_key matching and feeds it pre-paired instead.
-  const origLen = origLegs.length
-  const adjOffsets = adjGroups.map((_, ai) =>
-    origLen + adjGroups.slice(0, ai).reduce((s, g2) => s + g2.legs.length, 0)
-  )
-  const entryPairs = origLegs.map((e, i) => ({ entry: e, exitLeg: t.exit_legs?.[i] }))
+  // Pair each leg with its closing price by instrument (utils/pnl.js) — a leg
+  // closed by a later adjustment has no exit_legs row of its own.
+  const rec = { legs: origLegs, adjustments: adjGroups, exit_legs: t.exit_legs || [] }
+  const entryPairs = pairClosings(rec, origLegs)
 
   return (
     <div className="trade-card trade-card-closed">
@@ -263,9 +259,7 @@ function HistoryCard({ trade: t }) {
       <div className="rec-legs">
         <LegGroup type="entry" title="Entry" pairs={entryPairs} symbol={t.symbol} />
         {adjGroups.map((g, ai) => {
-          const offset = adjOffsets[ai]
-          const pairs  = g.legs.map((e, j) => ({ entry: e, exitLeg: t.exit_legs?.[offset + j] }))
-          return <LegGroup key={g.adj_id || ai} type="adj" title={`Adjustment ${ai+1}`} pairs={pairs} symbol={t.symbol} />
+          return <LegGroup key={g.adj_id || ai} type="adj" title={`Adjustment ${ai+1}`} pairs={pairClosings(rec, g.legs)} symbol={t.symbol} />
         })}
       </div>
 

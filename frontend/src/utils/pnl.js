@@ -23,17 +23,52 @@ export function unrealizedPnl(rec, prices) {
   return net
 }
 
+// Every leg row of a trade in chronological order: original entry, each
+// adjustment's legs, then the final exit rows.
+function allLegRows(rec) {
+  return [...(rec.legs || []), ...(rec.adjustments || []).flatMap(a => a.legs || []), ...(rec.exit_legs || [])]
+}
+
+// Cash-flow P&L (SELL +, BUY -) over every leg row. A leg closed mid-trade by
+// an adjustment has no exit_legs row, so pairing entries to exit rows drops it.
 export function realizedPnl(rec) {
   if (rec.status !== 'exited' || !rec.exit_legs?.length) return null
-  const entryLegs = [...(rec.legs || []), ...(rec.adjustments || []).flatMap(a => a.legs || [])]
-  let total = 0, has = false
-  entryLegs.forEach(e => {
-    const x = rec.exit_legs.find(xl => xl.instrument_key && xl.instrument_key === e.instrument_key)
-    if (e.price != null && x?.price != null) {
-      const qty = (e.lots || 0) * (e.lot_size || 1)
-      total += e.side === 'SELL' ? (e.price - x.price) * qty : (x.price - e.price) * qty
-      has = true
+  let total = 0
+  for (const l of allLegRows(rec)) {
+    if (l.price == null) return null
+    const qty = (l.lots || 0) * (l.lot_size || 1)
+    total += l.side === 'SELL' ? l.price * qty : -l.price * qty
+  }
+  return total
+}
+
+// Pairs each entry/adjustment leg with the price it was closed at, FIFO per
+// instrument across all rows — the closing row may be an adjustment leg (a
+// mid-trade roll) rather than an exit row. Returns [{ entry, exitLeg }] for
+// `legs`, where exitLeg is { price, closedLots } (lot-weighted) or undefined, and `closes`
+// is true when the leg is itself the closing row for earlier legs.
+export function pairClosings(rec, legs) {
+  const queues = {}
+  const closed = new Map()
+  const closers = new Set()
+  for (const row of allLegRows(rec)) {
+    const key = row.instrument_key || `id:${row.id}`
+    const q = (queues[key] ||= [])
+    let left = row.lots || 0
+    while (left > 0 && q.length && q[0].row.side !== row.side) {
+      const head = q[0]
+      const take = Math.min(left, head.left)
+      const c = closed.get(head.row) || { lots: 0, value: 0 }
+      c.lots += take; c.value += take * row.price
+      closed.set(head.row, c)
+      head.left -= take; left -= take
+      closers.add(row)
+      if (head.left === 0) q.shift()
     }
+    if (left > 0) q.push({ row, left })
+  }
+  return legs.map(l => {
+    const c = closed.get(l)
+    return { entry: l, exitLeg: c && c.lots ? { price: c.value / c.lots, closedLots: c.lots } : undefined, closes: closers.has(l) }
   })
-  return has ? total : null
 }
