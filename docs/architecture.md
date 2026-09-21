@@ -21,7 +21,7 @@ Browser
                           ┌─────────────┴─────────────┐
                           ▼                             ▼
                     Upstox API                    Telegram Bot API
-              (LTP, candles, option chain)         (alerts, briefs)
+              (LTP, candles, option chain)         (alerts)
 ```
 
 The Flask API and the poller are **never the same process** and are deployed as two separate systemd units in prod. The API only reads/writes SQLite in response to HTTP requests; it never talks to Upstox or Telegram directly. The poller only talks to Upstox/Telegram and SQLite; it never serves HTTP. Neither knows the other exists beyond the shared DB file.
@@ -35,7 +35,7 @@ The Flask API and the poller are **never the same process** and are deployed as 
 
 ### Config
 
-`backend/config.py` is the single source of truth: `SYMBOLS` (currently `NIFTY50`, `BANKNIFTY`, `RELIANCE`), `TIMEFRAMES` (`1m`/`5m`/`15m`/`1h`/`1d`/`1wk`/`1mo`, each with its own bootstrap lookback), `TRIGGERS` (the list of active signal conditions — Supertrend crosses on 1d/1wk/1h, RSI14 1h oversold, EMA20 15m confluence alerts, a "Nifty 500-multiple" short-entry/exit strategy, an EMA20 1d down-cross → PE-calendar-spread trade suggestion), `UPSTOX_INSTRUMENT_KEYS`, `SPOT_IKEYS`/`SPOT_DISPLAY` (header-bar indices), Telegram credentials, poll intervals. Adding a trigger is purely a `TRIGGERS` list edit — no code change.
+`backend/config.py` is the single source of truth: `SYMBOLS` (currently `NIFTY50`, `BANKNIFTY`, `RELIANCE`), `TIMEFRAMES` (`1m`/`5m`/`15m`/`1h`/`1d`/`1wk`/`1mo`, each with its own bootstrap lookback), `TRIGGERS` (per-tick alert triggers — **emptied 2026-09-22**; the old Supertrend/RSI/EMA/500-multiple definitions are in git history at `0912c0c` and the trigger machinery in `live/triggers.py` still works if an entry is re-added), `CHAIN_TRIGGERS` (option-chain triggers that create **draft** trades — see below), `UPSTOX_INSTRUMENT_KEYS`, `SPOT_IKEYS`/`SPOT_DISPLAY` (header-bar indices), Telegram credentials, poll intervals. Adding a per-tick trigger is a `TRIGGERS` list edit and an option-chain trigger a `CHAIN_TRIGGERS` edit — no code change for the existing types.
 
 ### Data pipeline
 
@@ -48,10 +48,20 @@ The Flask API and the poller are **never the same process** and are deployed as 
 - **`triggers.py`** — trigger classes (`SupertrendCrossTrigger`, `EmaCrossTrigger`, `RsiThresholdTrigger`, `ConfluenceCrossTrigger`, `Nifty500MultipleTrigger`), all built from `config.TRIGGERS` via `build_trigger()`. `BaseTrigger` handles cooldown + trade-suggestion dispatch.
 - **`signal_engine.py`** — pure indicator compute functions (`compute_supertrend`, `compute_ema`, `compute_rsi`).
 - **`candle_builder.py`** — builds 1h candles from ticks at each `:15` IST boundary.
+- **`chain_triggers.py`** — option-chain triggers (`config.CHAIN_TRIGGERS`), evaluated once per 5-min `option_chain_5m` snapshot right after `option_chain_capture.run_capture()` in the poller loop; on fire they create a **draft** trade via `add_manual_trade(status="draft")` (no margin until published) and send a Telegram "Trigger Fired" alert saying whether a draft is linked. One type today, `calendar_ratio_credit` (1:2 calendar/diagonal on the near vs next expiry; front-month NIFTY future price is read live from Upstox, not from the DB). One draft per trigger per side per IST day, enforced by the `chain_trigger_fires` table. Three triggers configured: `NIFTY_CE_CAL_1X2`, `NIFTY_CE_ITM300_DIAG_1X2`, `NIFTY_CE_ITM400_DIAG_1X2` — design in `docs/prd/option-chain-calendar-ratio-trigger.md`. The poller polls every `SYMBOLS` entry even with no per-tick triggers (`_build_all_triggers()`), so an empty `TRIGGERS` does not stop ticks/candles/price cache/option-chain capture/EOD sync.
 - **`trade_suggestions.py`** — trade-suggestion template functions (PE calendar spreads, the 500-multiple short entry/exit) attached to triggers via config.
 - **`expiry.py`** — `ExpiryCache`, NSE option expiry dates from Upstox `OptionsApi`.
-- **`alert.py` / `briefing.py`** — Telegram dispatch (per-signal alerts, morning/EOD briefs).
+- **`alert.py`** — Telegram dispatch: the recommendation-level New Trade / New Adjustment / Trade Exited alerts, the option-chain "Trigger Fired" alert (states whether a draft trade is linked), and per-tick trigger alerts if a `TRIGGERS` entry exists. Morning brief, pre-market analysis, EOD brief and account-level alerts were removed 2026-09-22; `daily_analysis.py` is manual-only (`poller.py analysis`).
 - **`holidays.py`** — BSE/NSE trading-day calendar via `exchange-calendars`.
+
+### Strategies admin dashboard (`backend/strategies/`, `frontend/src/screens/profile/Strategies.jsx`)
+
+Admin-only research/monitoring view of backtested strategies (not trading signals). A provider registry (`registry.py`) plus settle-once window caching (`service.py`, table `strategy_backtest_windows`) and per-strategy confirmed inputs (`strategy_configs`). Frontend: `/profile/strategies` is a list of strategy cards (no data pulled); `/profile/strategies/:id` is the detail page (inputs summary + "Edit inputs" form + per-window results). Two providers registered:
+
+- `pe_ce_ratio_diagonal` — 4-leg PE/CE ratio diagonal with averaging entries (`docs/prd/pe-ratio-diagonal-strategy.md`, `docs/prd/admin-strategies-dashboard.md`).
+- `pe_ce_ratio_spread_1x2` — weekly 1:2 calendar ratio on PE and CE, enter on a chosen weekday 09:30 IST, exit next Monday 15:00 IST (`docs/prd/pe-ce-ratio-spread-1x2.md`). Reuses the diagonal's window shape so the dashboard components render it unchanged.
+
+Adding a strategy = a provider in `registry.py`, a cached path in `service.py` if it needs the settle-once cache, and (if its inputs differ) a branch in the config form. Per-provider design/assumptions live in each strategy's PRD.
 
 ### Payments (`backend/payments/`)
 

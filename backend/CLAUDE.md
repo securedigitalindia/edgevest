@@ -32,10 +32,10 @@ python poller.py init               # (re-)create all tables, idempotent
 ## Daily Lifecycle (live poller)
 
 ```
-Startup      holiday check → expiry cache refresh → load triggers → morning Telegram brief
+Startup      holiday check → expiry cache refresh → load triggers → wait for market open (no morning brief / pre-market analysis — removed 2026-09-22)
 09:15–15:30  poll every 5s: store LTP ticks → run triggers → alert on crossing → build 1h candles at :15 boundary
 15:30        stop polling
-16:00        full Upstox sync + tick cleanup + expiry cache refresh + EOD Telegram brief → exit
+16:00        full Upstox sync + tick cleanup + expiry cache refresh → exit (no EOD brief — removed 2026-09-22)
 ```
 
 ## Architecture
@@ -95,9 +95,15 @@ Startup      holiday check → expiry cache refresh → load triggers → mornin
 - `nifty_500_short_entry` — entry trade for 500-multiple strategy: SELL fut + SELL PE. Returns private keys `_pe_strike`, `_expiry_str`, `_exit_level` that `Nifty500MultipleTrigger` extracts for DB storage before sending the signal.
 - `nifty_500_short_exit` — exit trade: BUY fut + BUY PE back. Params come from the `recommended_trades` DB row merged with config params (so fut_lots/pe_lots are still config-driven).
 
+**`live/chain_triggers.py`** — option-chain triggers (`config.CHAIN_TRIGGERS`). `run_chain_triggers()` is called by the poller right after each 5-min `option_chain_capture.run_capture()`; on fire it creates a DRAFT trade (`add_manual_trade(status="draft")`, no margin until published) and sends a "🎯 Trigger Fired" Telegram alert (`alert.send_chain_trigger_alert`) stating whether a draft is linked (with its code) or not (with the error) — once per trigger/side/day. Type `calendar_ratio_credit`: BUY `near_lots` @ K1 on the nearest expiry with DTE > `min_dte` and SELL `far_lots` @ K2 on the next expiry, fires when `far_lots*far_ltp − near_lots*near_ltp > min_credit_pts` (or `max_debit_pts = N` for a "near − far×lots under N" debit rule — same as credit > −N). `itm_points` / `far_strike_offset` shape K1/K2. Futures price is read live from Upstox (`fo_instruments.nifty_front_fut()` + `get_ltp`), not from the DB. One draft per trigger per side per IST day via table `chain_trigger_fires`. Config: `NIFTY_CE_CAL_1X2`, `NIFTY_CE_ITM300_DIAG_1X2`, `NIFTY_CE_ITM400_DIAG_1X2`. Full design: `docs/prd/option-chain-calendar-ratio-trigger.md`. NOTE: `config.TRIGGERS` (per-tick alert triggers) is intentionally empty since 2026-09-22; `_build_all_triggers()` still polls every `SYMBOLS` entry so the poller keeps running.
+
 **`live/holidays.py`** — `is_trading_day(date)` and `check_or_exit()` using BSE (XBOM) calendar from `exchange-calendars`. BSE and NSE share the same holiday schedule.
 
-**`live/briefing.py`** — `send_morning_brief(trigger_count)` and `send_eod_brief(alerts)` Telegram messages. Morning brief includes a rotating market quote and tomorrow's trading status. EOD brief summarises alerts fired that day.
+**Telegram messages sent today (2026-09-22):** only the recommendation-level alerts in `live/alert.py` — New Trade (on publish), New Adjustment, Trade Exited — plus the option-chain "Trigger Fired" alerts (`CHAIN_TRIGGERS`) and per-tick trigger alerts if any `TRIGGERS` entry is added back (currently none). The morning brief, 08:30 pre-market analysis, EOD brief (`live/briefing.py`, deleted) and the account-level entry/exit/auto-exit alerts were removed 2026-09-22. `live/daily_analysis.py` remains only for manual use (`python poller.py analysis [--print]`); the poller no longer runs it.
+
+## Strategies (`backend/strategies/`)
+
+Admin Strategies dashboard backend (Flask Blueprint via factory, same pattern as `payments/`): `registry.py` (provider registry — `pe_ce_ratio_diagonal`, `pe_ce_ratio_spread_1x2`), `service.py` (settle-once window cache in `strategy_backtest_windows`, per-strategy inputs in `strategy_configs`; bump the cache-key version when a provider's window computation changes so stale rows are never read), `routes.py` (`/api/strategies*`, admin-only). Compute lives in flat scripts in `backend/analysis/` (`nifty_pe_ratio_diagonal_*`, `nifty_ratio_spread_1x2_backtest.py`) that `registry.py` imports via a `sys.path` insert. Docs: `docs/prd/admin-strategies-dashboard.md`, `docs/prd/pe-ratio-diagonal-strategy.md`, `docs/prd/pe-ce-ratio-spread-1x2.md`; routes in `docs/apis.md`.
 
 ## Payments (`backend/payments/`)
 
