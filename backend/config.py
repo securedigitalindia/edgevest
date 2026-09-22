@@ -153,7 +153,8 @@ TRIGGERS = []
 # Evaluated once per 5-min option_chain_5m snapshot; on fire they create a DRAFT
 # trade (never an open one — publish it from the Dashboard's Draft Strategies panel).
 def _calendar_ratio_trigger(name: str, itm_points: float, *, far_strike_offset: float = 400,
-                             max_debit_pts: float = 25, near_lots: int = 1, far_lots: int = 2,
+                             max_debit_pts: float | None = None, min_credit_pts: float | None = None,
+                             near_lots: int = 1, far_lots: int = 2,
                              strike_step: float = 100, min_dte: int = 1, sides=("CE",),
                              symbol: str = "NIFTY50", risk_level: str = "high") -> dict:
     """
@@ -163,19 +164,21 @@ def _calendar_ratio_trigger(name: str, itm_points: float, *, far_strike_offset: 
     that. base = next strike_step above (CE) / below (PE) the futures price — itm_points=0
     is "no shift, nearest OTM strike"; itm_points > 0 pushes K1 that far into the money.
     Every variant tested on real data prices as a net DEBIT (near_lots*near_ltp -
-    far_lots*far_ltp), never a credit, once far_strike_offset is a real gap (2026-09-22 —
-    itm_points=0 was first built with far_strike_offset=0, a same-strike calendar, which
-    priced as a large ~200pt credit almost every day; corrected to the same 400pt gap as
-    the other two, which reprices it as a ~30-45pt debit, same order of magnitude as
-    itm_points=300/400 on the same snapshot). max_debit_pts=25 (fire when
-    near_lots*near_ltp - far_lots*far_ltp < this) is therefore the one threshold shape
-    that fits all three — same rule, just a different itm_points.
+    far_lots*far_ltp), never a credit, once far_strike_offset is a real gap. Caller must pass
+    exactly one of max_debit_pts / min_credit_pts explicitly (no default here) — 2026-09-22:
+    a silent default (previously max_debit_pts=25) meant 5 of 6 CHAIN_TRIGGERS entries never
+    stated their own rule, which became confusing the moment one entry (OTM100) needed a
+    genuinely different threshold shape (credit > 5, not debit < 25) — the rule for every
+    trigger must be readable at its own CHAIN_TRIGGERS call site.
     """
+    if (max_debit_pts is None) == (min_credit_pts is None):
+        raise ValueError(f"{name}: pass exactly one of max_debit_pts or min_credit_pts")
+    threshold = {"min_credit_pts": min_credit_pts} if min_credit_pts is not None else {"max_debit_pts": max_debit_pts}
     return {
         "name": name, "type": "calendar_ratio_credit", "symbol": symbol, "sides": list(sides),
         "strike_step": strike_step, "min_dte": min_dte, "near_lots": near_lots, "far_lots": far_lots,
         "itm_points": itm_points, "far_strike_offset": far_strike_offset,
-        "max_debit_pts": max_debit_pts, "risk_level": risk_level,
+        "risk_level": risk_level, **threshold,
     }
 
 
@@ -184,13 +187,42 @@ def _calendar_ratio_trigger(name: str, itm_points: float, *, far_strike_offset: 
 # below are the same 1:2 calendar/diagonal shape (_calendar_ratio_trigger) at different
 # itm_points — add a fourth by adding one more call, no other config duplication needed.
 CHAIN_TRIGGERS = [
-    _calendar_ratio_trigger("NIFTY_CE_ITM400_DIAG_1X2", itm_points=400),
-    _calendar_ratio_trigger("NIFTY_CE_ITM300_DIAG_1X2", itm_points=300),
-    _calendar_ratio_trigger("NIFTY_CE_ITM200_DIAG_1X2", itm_points=200),
-    _calendar_ratio_trigger("NIFTY_CE_ITM100_DIAG_1X2", itm_points=100),
-    _calendar_ratio_trigger("NIFTY_CE_ITM0_DIAG_1X2", itm_points=0),
-    _calendar_ratio_trigger("NIFTY_CE_OTM100_DIAG_1X2", itm_points=-100),
+    _calendar_ratio_trigger("NIFTY_CE_ITM400_RATIO_DIAG_1X2", itm_points=400, max_debit_pts=25),
+    _calendar_ratio_trigger("NIFTY_CE_ITM300_RATIO_DIAG_1X2", itm_points=300, max_debit_pts=25),
+    _calendar_ratio_trigger("NIFTY_CE_ITM200_RATIO_DIAG_1X2", itm_points=200, max_debit_pts=25),
+    _calendar_ratio_trigger("NIFTY_CE_ITM100_RATIO_DIAG_1X2", itm_points=100, max_debit_pts=25),
+    _calendar_ratio_trigger("NIFTY_CE_ITM0_RATIO_DIAG_1X2", itm_points=0, max_debit_pts=25),
+    # OTM100 uses its own credit > 5 rule (confirmed 2026-09-22), unlike the other five which
+    # fire on debit < 25 — on real data OTM100 has priced as a debit too (14.1 on the reference
+    # snapshot), so this rule is expected to rarely fire, same caveat as the PE ratio diagonal.
+    _calendar_ratio_trigger("NIFTY_CE_OTM100_RATIO_DIAG_1X2", itm_points=-100, min_credit_pts=5),
 ]
+
+
+def _pe_ratio_diagonal_trigger(name: str, *, leg_gap: float = 400, min_credit_pts: float,
+                                l1_lots: int = 1, l2_lots: int = 2, l3_lots: int = 1, l4_lots: int = 2,
+                                strike_step: float = 100, min_dte: int = 1, sides=("PE",),
+                                symbol: str = "NIFTY50", risk_level: str = "high") -> dict:
+    """
+    One entry of the 4-leg 1:2:1:2 ratio diagonal (live/chain_triggers.py, type
+    "pe_ratio_diagonal_credit") — the same shape as the already-backtested strategy
+    (docs/prd/pe-ratio-diagonal-strategy.md): BUY l1_lots @ K expiry1 (nearest, DTE >
+    min_dte) / SELL l2_lots @ K2 expiry2 / SELL l3_lots @ K expiry2 / BUY l4_lots @ K2
+    expiry3. K = base strike next to the futures price (PE floors, CE ceils); K2 = K -
+    leg_gap (PE) / K + leg_gap (CE). Fires when credit (l1_lots*l1 - l2_lots*l2 -
+    l3_lots*l3 + l4_lots*l4, negated) > min_credit_pts — on real data this 1:2:1:2 ratio
+    prices as a DEBIT under normal conditions (verified 2026-09-22: -19.25 on the
+    reference snapshot), so this is expected to fire rarely, not every day.
+    """
+    return {
+        "name": name, "type": "pe_ratio_diagonal_credit", "symbol": symbol, "sides": list(sides),
+        "strike_step": strike_step, "min_dte": min_dte, "leg_gap": leg_gap,
+        "l1_lots": l1_lots, "l2_lots": l2_lots, "l3_lots": l3_lots, "l4_lots": l4_lots,
+        "min_credit_pts": min_credit_pts, "risk_level": risk_level,
+    }
+
+
+CHAIN_TRIGGERS.append(_pe_ratio_diagonal_trigger("NIFTY_PE_RATIO_DIAG_4LEG_400", min_credit_pts=5))
 
 
 # Upstox instrument key per symbol name.

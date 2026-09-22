@@ -21,6 +21,8 @@
 #               far*far_lots < N (same as credit > -N; a net credit also qualifies).
 # ============================================================
 import math
+import os
+import sys
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -29,10 +31,15 @@ from db import queries
 from live import fo_instruments
 from live.upstox_client import get_ltp
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "analysis"))
+from nifty_pe_ratio_diagonal_simulator import resolve_expiry_triplet  # noqa: E402
+from nifty_pe_ratio_diagonal_averaging_backtest import SIDE_CONFIG as _RATIO_SIDE_CONFIG  # noqa: E402
+
 IST = ZoneInfo("Asia/Kolkata")
 _MAX_SNAPSHOT_AGE = timedelta(minutes=10)   # don't evaluate against a stale chain (capture failed)
 _SIDE_ROUND = {"CE": math.ceil, "PE": math.floor}
 _failure_alerted: set = set()   # (trigger, side, ist_date) whose draft-failure alert already went out — retries stay silent
+_fmt_expiry = lambda d: datetime.strptime(d, "%Y-%m-%d").strftime("%d %b %Y")
 
 
 def _send_alert(**kwargs) -> None:
@@ -85,6 +92,13 @@ def _evaluate_calendar_ratio_credit(cfg: dict) -> None:
         # Threshold: either min_credit_pts (fire when credit > N) or max_debit_pts (fire when
         # near_lots*near_ltp - far_lots*far_ltp < N, i.e. credit > -N — a net credit also qualifies).
         threshold = cfg["min_credit_pts"] if "min_credit_pts" in cfg else -cfg["max_debit_pts"]
+        net_label = f"credit {credit:g}" if credit >= 0 else f"debit {-credit:g}"
+        rule_label = f"credit > {cfg['min_credit_pts']:g}" if "min_credit_pts" in cfg else f"debit < {cfg['max_debit_pts']:g}"
+        # Always logged, fire or not — otherwise there's no visibility into how close a
+        # trigger is on a 5-min cycle that doesn't fire (only a fire used to print anything).
+        print(f"  [chain_triggers] {cfg['name']} {side}: K={int(strike)}/{int(far_strike)} fut={fut_ltp:.1f} "
+              f"near={near_ltp} far={far_ltp} -> {net_label}  ({rule_label}: "
+              f"{'MET' if credit > threshold else 'not met'})", flush=True)
         if credit <= threshold:
             continue
 
@@ -98,11 +112,9 @@ def _evaluate_calendar_ratio_credit(cfg: dict) -> None:
         ]
         strikes_txt = f"{int(strike)}" if far_strike == strike else f"{int(strike)}/{int(far_strike)}"
         kind = "CAL" if far_strike == strike else "DIAG"
-        net_txt = f"credit {credit:g}" if credit >= 0 else f"debit {-credit:g}"
-        note = f"{cfg['near_lots']}:{cfg['far_lots']} {kind} {side} {strikes_txt} (auto · {net_txt})"
-        rule = f"credit > {cfg['min_credit_pts']:g}" if "min_credit_pts" in cfg else f"debit < {cfg['max_debit_pts']:g}"
+        note = f"{cfg['near_lots']}:{cfg['far_lots']} {kind} {side} {strikes_txt} (auto · {net_label})"
         snap_ist = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone(IST).strftime("%d %b %H:%M IST")
-        alert_args = dict(trigger_name=cfg["name"], side=side, rule=rule, note=note, legs=legs, credit=credit,
+        alert_args = dict(trigger_name=cfg["name"], side=side, rule=rule_label, note=note, legs=legs, credit=credit,
                           fut_ltp=fut_ltp, snapshot_ts_ist=snap_ist)
         try:
             trade_id = add_manual_trade(symbol, legs, note=note, risk_level=cfg.get("risk_level"), status="draft")
@@ -123,7 +135,108 @@ def _evaluate_calendar_ratio_credit(cfg: dict) -> None:
                 _send_alert(draft_error=str(e), **alert_args)
 
 
-_EVALUATORS = {"calendar_ratio_credit": _evaluate_calendar_ratio_credit}
+def _evaluate_pe_ratio_diagonal_credit(cfg: dict) -> None:
+    """
+    4-leg 1:2:1:2 ratio diagonal — the same shape as the already-backtested strategy
+    (docs/prd/pe-ratio-diagonal-strategy.md, analysis/nifty_pe_ratio_diagonal_*):
+        BUY  l1_lots @ K   expiry1 (nearest, DTE > min_dte)
+        SELL l2_lots @ K2  expiry2 (next after expiry1)
+        SELL l3_lots @ K   expiry2
+        BUY  l4_lots @ K2  expiry3 (next after expiry2)
+    K = base strike next to the futures price (PE floors, CE ceils); K2 = K -/+ leg_gap
+    (same signed convention as the calendar family). value = l1_lots*l1 - l2_lots*l2 -
+    l3_lots*l3 + l4_lots*l4 (points); credit = -value. Fires when credit > min_credit_pts —
+    on real data this combo prices as a DEBIT under normal conditions (verified 2026-09-22:
+    -19.25 on the reference snapshot with default lots/gap), so the condition is expected to
+    rarely fire, not a bug.
+    """
+    from live.manual_trade import add_manual_trade
+
+    symbol = cfg["symbol"]
+    today = datetime.now(IST).date()
+
+    ts = queries.get_option_chain_max_ts()
+    if not ts:
+        return
+    age = datetime.now(timezone.utc) - datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    if age > _MAX_SNAPSHOT_AGE:
+        print(f"  [chain_triggers] {cfg['name']}: latest chain snapshot {ts} is stale — skipped", flush=True)
+        return
+
+    merged = queries.get_merged_cadence_dates(symbol, include_quarterly=True)
+    try:
+        expiry1, expiry2, expiry3 = resolve_expiry_triplet(today.isoformat(), merged)
+    except ValueError as e:
+        print(f"  [chain_triggers] {cfg['name']}: {e} — skipped", flush=True)
+        return
+
+    front = fo_instruments.nifty_front_fut(today)
+    if front is None:
+        print(f"  [chain_triggers] {cfg['name']}: no front-month NIFTY future found — skipped", flush=True)
+        return
+    fut_ltp = get_ltp([front[0]]).get(front[0])
+    if not fut_ltp:
+        return
+
+    for side in cfg["sides"]:
+        side_cfg = _RATIO_SIDE_CONFIG[side]
+        k = side_cfg["strike_fn"](fut_ltp + side_cfg["gap_sign"] * cfg.get("initial_gap", 0), cfg["strike_step"])
+        k2 = k + side_cfg["gap_sign"] * cfg["leg_gap"]
+        l1 = queries.get_chain_ltp(ts, symbol, expiry1, k, side)
+        l2 = queries.get_chain_ltp(ts, symbol, expiry2, k2, side)
+        l3 = queries.get_chain_ltp(ts, symbol, expiry2, k, side)
+        l4 = queries.get_chain_ltp(ts, symbol, expiry3, k2, side)
+        if None in (l1, l2, l3, l4):
+            continue
+
+        l1_lots, l2_lots, l3_lots, l4_lots = cfg["l1_lots"], cfg["l2_lots"], cfg["l3_lots"], cfg["l4_lots"]
+        value = round(l1_lots * l1 - l2_lots * l2 - l3_lots * l3 + l4_lots * l4, 2)
+        credit = -value
+        net_label = f"credit {credit:g}" if credit >= 0 else f"debit {-credit:g}"
+        # Always logged, fire or not — same reasoning as the calendar_ratio_credit evaluator.
+        print(f"  [chain_triggers] {cfg['name']} {side}: K={int(k)}/{int(k2)} fut={fut_ltp:.1f} "
+              f"l1={l1} l2={l2} l3={l3} l4={l4} -> {net_label}  (credit > {cfg['min_credit_pts']:g}: "
+              f"{'MET' if credit > cfg['min_credit_pts'] else 'not met'})", flush=True)
+        if credit <= cfg["min_credit_pts"]:
+            continue
+
+        fire_id = queries.claim_chain_trigger_fire(cfg["name"], side, today.isoformat(), credit)
+        if fire_id is None:
+            continue   # already fired for this side today
+
+        legs = [
+            {"side": "BUY",  "type": side, "strike": int(k),  "expiry": _fmt_expiry(expiry1), "lots": l1_lots, "price": l1},
+            {"side": "SELL", "type": side, "strike": int(k2), "expiry": _fmt_expiry(expiry2), "lots": l2_lots, "price": l2},
+            {"side": "SELL", "type": side, "strike": int(k),  "expiry": _fmt_expiry(expiry2), "lots": l3_lots, "price": l3},
+            {"side": "BUY",  "type": side, "strike": int(k2), "expiry": _fmt_expiry(expiry3), "lots": l4_lots, "price": l4},
+        ]
+        note = f"{l1_lots}:{l2_lots}:{l3_lots}:{l4_lots} RATIO DIAG {side} {int(k)}/{int(k2)} (auto · {net_label})"
+        snap_ist = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone(IST).strftime("%d %b %H:%M IST")
+        alert_args = dict(trigger_name=cfg["name"], side=side, rule=f"credit > {cfg['min_credit_pts']:g}",
+                          note=note, legs=legs, credit=credit, fut_ltp=fut_ltp, snapshot_ts_ist=snap_ist)
+        try:
+            trade_id = add_manual_trade(symbol, legs, note=note, risk_level=cfg.get("risk_level"), status="draft")
+            queries.set_chain_trigger_fire_trade(fire_id, trade_id)
+            print(f"  [chain_triggers] {cfg['name']} FIRED {side} K={int(k)}/{int(k2)} fut={fut_ltp:.1f} "
+                  f"l1={l1} l2={l2} l3={l3} l4={l4} credit={credit} -> draft trade {trade_id}", flush=True)
+            try:
+                draft_code = (queries.get_recommendation(trade_id) or {}).get("display_code")
+            except Exception:
+                draft_code = None
+            _send_alert(draft_code=draft_code, **alert_args)
+        except Exception as e:
+            queries.release_chain_trigger_fire(fire_id)
+            print(f"  [chain_triggers] {cfg['name']} {side}: draft creation failed — {e}", flush=True)
+            key = (cfg["name"], side, today.isoformat())
+            if key not in _failure_alerted:
+                _failure_alerted.add(key)
+                _send_alert(draft_error=str(e), **alert_args)
+
+
+_EVALUATORS = {
+    "calendar_ratio_credit": _evaluate_calendar_ratio_credit,
+    "pe_ratio_diagonal_credit": _evaluate_pe_ratio_diagonal_credit,
+}
 
 
 def run_chain_triggers() -> None:

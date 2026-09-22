@@ -119,6 +119,27 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-22 (`v7.7.2` — patch on top of `v7.7.1`)
+
+`v7.7.1` shipped the corrected 6-trigger CE calendar/diagonal sweep. This patch adds:
+- A 7th trigger, `NIFTY_PE_RATIO_DIAG_4LEG_400` — the 4-leg 1:2:1:2 PE ratio diagonal (same
+  shape as `docs/prd/pe-ratio-diagonal-strategy.md`), wired up as a live auto-draft trigger for
+  the first time. Fires on `credit > 5`; real data prices it as a debit under normal conditions,
+  so — like several of the CE triggers — it's expected to fire rarely.
+- All 7 trigger names made consistent: CE ones renamed `..._DIAG_1X2` → `..._RATIO_DIAG_1X2`;
+  PE renamed `NIFTY_PE_RATIO_DIAG_400` → `NIFTY_PE_RATIO_DIAG_4LEG_400`.
+- Every evaluation now logs its computed credit/debit and whether the rule was met, **whether or
+  not it fires** — previously only a fire printed anything, so there was no way to see how close a
+  trigger was on a normal 5-min cycle.
+- `NIFTY_CE_OTM100_RATIO_DIAG_1X2` given its own `credit > 5` rule (confirmed with the user),
+  diverging from the other five CE triggers which stay on `debit < 25`. On the reference snapshot
+  this means OTM100 no longer fires (14.1pt debit clears the old rule but not this one).
+- Trigger threshold config (`max_debit_pts`/`min_credit_pts`) has no default any more — every
+  `CHAIN_TRIGGERS` entry must state its own rule explicitly, or `config.py` raises at import time.
+
+Needs the same deploy steps as `v7.7.1` (backend/poller pull + restart; no frontend change, no DB
+migration beyond what `v7.7.1` already required).
+
 ## Status as of 2026-09-22 (`v7.7.0` — committed on local `main`, NOT yet tagged, pushed or deployed)
 
 Nothing below has been shipped. `main` is 10 commits past `v7.6.3` (`0912c0c`), all local. Bumped to
@@ -137,8 +158,9 @@ left at `7.5.0` through the 7.6.x bumps — now back in sync). Not tagged: tag o
 - **Triggers & alerts**: every per-tick alert trigger removed (`TRIGGERS = []`; the poller still polls
   every `SYMBOLS` entry). New option-chain triggers (`CHAIN_TRIGGERS`, one shared
   `_calendar_ratio_trigger()` template): 6 entries sweeping `itm_points` 400/300/200/100/0/-100
-  (`NIFTY_CE_ITM400_DIAG_1X2` through `NIFTY_CE_OTM100_DIAG_1X2`, ITM 400 down to OTM 100) — 1:2 CE
-  diagonal, 400pt gap between strikes, fires on `debit < 25`. Each creates a DRAFT trade and sends a
+  (`NIFTY_CE_ITM400_RATIO_DIAG_1X2` through `NIFTY_CE_OTM100_RATIO_DIAG_1X2`, ITM 400 down to OTM 100) — 1:2 CE
+  diagonal, 400pt gap between strikes; ITM400 through ITM0 fire on `debit < 25`, OTM100 fires on its own
+  `credit > 5` rule. Each creates a DRAFT trade and sends a
   Telegram "Trigger Fired" alert stating whether a draft is linked
   (`docs/prd/option-chain-calendar-ratio-trigger.md`). Removed Telegram messages: morning brief,
   08:30 pre-market analysis, EOD brief, account-level entry/exit/auto-exit. Still sent: New Trade,
@@ -167,11 +189,12 @@ left at `7.5.0` through the 7.6.x bumps — now back in sync). Not tagged: tag o
   not register); open `#SEP26-2` on Trades — exit prices on every leg, realized −₹3,283 (−3.0%).
 - The poller log shows `[no triggers — data collection only]` for NIFTY50/BANKNIFTY/RELIANCE and
   `option_chain_capture` lines every 5 min.
-- Do **not** expect a draft every morning — unlike an earlier (fixed) version of this trigger, the
-  debit condition is genuinely data-dependent, not almost-always-true. On the 2026-09-21 close
-  snapshot only `NIFTY_CE_OTM100_DIAG_1X2` (debit 14.1) would have fired; the other five were all
-  above the 25pt threshold. A quiet first morning is expected, not a bug — check the poller log for
-  `[chain_triggers]` lines to confirm it's evaluating each 5-min snapshot even when nothing fires.
+- Do **not** expect a draft every morning — both the debit and credit conditions are genuinely
+  data-dependent, not almost-always-true. On the 2026-09-21 close snapshot none of the seven triggers
+  would have fired (OTM100's 14.1pt debit clears its old `debit < 25` rule but not its current
+  `credit > 5` rule — a debit is never a credit). A quiet first morning is expected, not a bug — every
+  evaluation now logs its own credit/debit and whether the rule was met, fire or not, so check the
+  poller log for `[chain_triggers]` lines to see exactly where each trigger stands.
   Drafts are silent until published.
 
 **Known / not part of this release**
