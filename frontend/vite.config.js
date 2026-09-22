@@ -54,9 +54,17 @@ export default defineConfig(({ command }) => ({
             // is an absolute cross-origin URL in every real build (only the
             // npm run dev proxy path is same-origin), so a path-only regex
             // never matched a real deployed build before this fix.
+            //
+            // NetworkOnly, not NetworkFirst (changed 2026-09-22): NetworkFirst
+            // silently served a stale cached /api/me response (still showing a
+            // logged-in user) after cookies were cleared, because Cache Storage
+            // is a separate browser store from cookies — clearing one doesn't
+            // touch the other. For a live trading app this risk isn't limited
+            // to auth: any cached price/position response could be shown as
+            // current when it's actually stale. Never fall back to a stored
+            // response for any /api/* call — always hit the real backend.
             urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
-            handler: 'NetworkFirst',
-            options: { cacheName: 'api-cache', networkTimeoutSeconds: 5 },
+            handler: 'NetworkOnly',
           },
         ],
       },
