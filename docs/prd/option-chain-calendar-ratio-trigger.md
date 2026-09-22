@@ -146,7 +146,43 @@ A failed Telegram send never affects the draft or the trigger loop. A trigger wh
 
 Only the futures price is live per evaluation; every option premium comes from the local capture. This is why `_MAX_SNAPSHOT_AGE` (10 min) exists — if the capture job lags or fails, the option prices in the DB could be stale even though the futures price is always current.
 
-**Fixed 2026-09-22 (was: 7 separate live Upstox calls per 5-min cycle).** `run_chain_triggers()` previously called each trigger's evaluator independently, and each evaluator fetched its own `fut_ltp`; since every trigger uses `symbol="NIFTY50"`, all 7 fetched the identical front-month future price separately. Now `run_chain_triggers()` fetches `fut_ltp` once per distinct symbol (`_fetch_fut_ltp()`), caches it in a local dict for the duration of that call, and passes it into each evaluator (`_evaluate_calendar_ratio_credit(cfg, fut_ltp)` / `_evaluate_pe_ratio_diagonal_credit(cfg, fut_ltp)` — both now take `fut_ltp` as a parameter instead of fetching it themselves). If the fetch for a symbol fails, every trigger on that symbol is skipped for that cycle (same behavior as before, just centralized). Verified: `get_ltp` call count dropped from 7 to 1 per cycle; every trigger's logged credit/debit is byte-identical to before; draft creation and the Telegram alert still work correctly (tested with a relaxed threshold).
+**Fixed 2026-09-22, in two rounds — the second one was the real cost.**
+
+Round 1: deduped the futures fetch (was 7 separate live Upstox calls per 5-min cycle, one per
+trigger, all fetching the identical NIFTY front-month price since every trigger uses
+`symbol="NIFTY50"`). Now fetched once per distinct symbol and passed into every evaluator. This
+looked like the whole fix, but the Upstox call was never the dominant cost — it's a single fast
+network round trip.
+
+Round 2 (found when the user asked "why is checking all triggers still slow"): each evaluator was
+*also* independently calling `queries.get_option_chain_max_ts()` and
+`queries.get_merged_cadence_dates(symbol, include_quarterly=True)` for itself — 7 times each per
+cycle. Measured directly against the real 1.95M-row `option_chain_5m` table:
+`get_option_chain_max_ts()` ~20ms/call (140ms for 7 — minor); `get_merged_cadence_dates()`
+**~4,118ms/call** — `EXPLAIN QUERY PLAN` showed it scanning every one of the ~1.95M rows for
+`symbol='NIFTY50'` because no index covered `expiry_type`. **7 calls of that one query cost
+~29 seconds every single 5-min cycle** — the real bottleneck, and nothing to do with Upstox at all.
+
+Fixed two ways:
+1. **New index**, `idx_option_chain_5m_sym_type_expiry` on `(symbol, expiry_type, expiry_date)`
+   (`db/init_db.py`) — cut the query to ~2.9s/call (`EXPLAIN QUERY PLAN` now shows a covering-index
+   search instead of a full symbol scan; SQLite still walks every matching leaf entry to compute
+   `DISTINCT`, so this isn't free, but it's real and helps every other caller of this function too,
+   not just the triggers). Applied via `init_db()` — needs `python poller.py init` on prod, same
+   as the `chain_trigger_fires` table.
+2. **Caching**, matching the futures-price pattern: `run_chain_triggers()` now fetches `ts` once
+   (global, not per-symbol — `get_option_chain_max_ts()` has no symbol filter) and `merged` once
+   per distinct symbol, passing both into every evaluator (`_evaluate_calendar_ratio_credit(cfg,
+   fut_ltp, ts, merged)` / `_evaluate_pe_ratio_diagonal_credit(cfg, fut_ltp, ts, merged)` — neither
+   fetches its own any more). The staleness check (`_MAX_SNAPSHOT_AGE`) moved to `run_chain_triggers()`
+   itself, once per cycle, since `ts` no longer varies per trigger.
+
+**Combined result, measured end-to-end:** `run_chain_triggers()` wall time dropped from an
+estimated ~29-30s/cycle to **~4.2s/cycle** (real, unmocked `get_merged_cadence_dates` call — still
+the single largest remaining cost, but now paid once instead of 7 times). `get_ltp`,
+`get_option_chain_max_ts`, and `get_merged_cadence_dates` each confirmed called exactly once per
+cycle (was 7/7/7). Every trigger's logged credit/debit is byte-identical to before both fixes;
+draft creation and the Telegram alert still work (tested with a relaxed threshold).
 
 ## How to watch it run in prod
 
@@ -164,4 +200,8 @@ Every recommendation card (`frontend/src/screens/Trades.jsx`) now shows its `not
 
 ## Deploy notes
 
-Needs `python poller.py init` on prod (creates `chain_trigger_fires`) and a poller restart. A backend (`edgevest-web`) restart is not required for this feature itself.
+Needs `python poller.py init` on prod (creates `chain_trigger_fires`, and now also the
+`idx_option_chain_5m_sym_type_expiry` index — see "Where prices come from" above; `CREATE INDEX
+IF NOT EXISTS`, safe to run any time, but skipping it means every cycle stays at the ~29s/cycle
+pre-fix cost even with the newer code) and a poller restart. A backend (`edgevest-web`) restart is
+not required for this feature itself.

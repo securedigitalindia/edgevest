@@ -322,6 +322,14 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_option_chain_5m_strike_expiry
         ON option_chain_5m (symbol, expiry_date, strike, opt_type)
     """)
+    # get_merged_cadence_dates()'s SELECT DISTINCT expiry_date WHERE symbol=? AND
+    # expiry_type IN (...) had no index covering expiry_type, so SQLite fell back to
+    # scanning every row for that symbol (confirmed 2026-09-22: ~4s/call on 1.95M rows,
+    # ~29s/cycle across chain_triggers.py's 7 triggers before this index existed).
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_option_chain_5m_sym_type_expiry
+        ON option_chain_5m (symbol, expiry_type, expiry_date)
+    """)
     print("  ✓  Table ready: option_chain_5m")
 
     # -------------------------------------------------------

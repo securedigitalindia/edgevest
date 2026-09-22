@@ -119,6 +119,24 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-22 (`v7.7.4` — patch on top of `v7.7.3`, backend-only)
+
+The futures-price dedup in `v7.7.3` wasn't the real bottleneck. Each of the 7 triggers was also
+independently calling `get_merged_cadence_dates()` on every cycle — measured at ~4.1s/call on the
+real 1.95M-row `option_chain_5m` table (no index covered `expiry_type`, so it fell back to a full
+symbol scan). 7 calls/cycle cost ~29s. Fixed:
+- New index `idx_option_chain_5m_sym_type_expiry` (`db/init_db.py`) — cuts the query to ~2.9s/call
+  and speeds up every other caller of `get_merged_cadence_dates()`, not just the triggers.
+- `run_chain_triggers()` now fetches the snapshot timestamp once (global) and the expiry list once
+  per symbol, passing both into every evaluator instead of each fetching its own.
+
+Measured end-to-end: `run_chain_triggers()` ~29-30s/cycle → ~4.2s/cycle. Every trigger's logged
+credit/debit unchanged; draft creation and the Telegram alert re-verified working.
+
+**Needs `python poller.py init` again** — creates the new index this time, not just
+`chain_trigger_fires`. Without it the code still works but the query stays slow. Poller restart
+required; no frontend change (version bumped anyway per this repo's "bump both together" convention).
+
 ## Status as of 2026-09-22 (`v7.7.3` — patch on top of `v7.7.2`)
 
 - **Backend:** `run_chain_triggers()` now fetches the front-month futures price once per distinct

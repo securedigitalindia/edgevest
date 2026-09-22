@@ -51,21 +51,12 @@ def _send_alert(**kwargs) -> None:
         print(f"  [chain_triggers] Telegram alert failed — {e}", flush=True)
 
 
-def _evaluate_calendar_ratio_credit(cfg: dict, fut_ltp: float) -> None:
+def _evaluate_calendar_ratio_credit(cfg: dict, fut_ltp: float, ts: str, merged: list[str]) -> None:
     from live.manual_trade import add_manual_trade  # late import — manual_trade pulls in the whole trade stack
 
     symbol = cfg["symbol"]
     today = datetime.now(IST).date()
 
-    ts = queries.get_option_chain_max_ts()
-    if not ts:
-        return
-    age = datetime.now(timezone.utc) - datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    if age > _MAX_SNAPSHOT_AGE:
-        print(f"  [chain_triggers] {cfg['name']}: latest chain snapshot {ts} is stale — skipped", flush=True)
-        return
-
-    merged = queries.get_merged_cadence_dates(symbol, include_quarterly=True)
     upcoming = [e for e in merged if (datetime.strptime(e, "%Y-%m-%d").date() - today).days > cfg["min_dte"]]
     if len(upcoming) < 2:
         return
@@ -127,7 +118,7 @@ def _evaluate_calendar_ratio_credit(cfg: dict, fut_ltp: float) -> None:
                 _send_alert(draft_error=str(e), **alert_args)
 
 
-def _evaluate_pe_ratio_diagonal_credit(cfg: dict, fut_ltp: float) -> None:
+def _evaluate_pe_ratio_diagonal_credit(cfg: dict, fut_ltp: float, ts: str, merged: list[str]) -> None:
     """
     4-leg 1:2:1:2 ratio diagonal — the same shape as the already-backtested strategy
     (docs/prd/pe-ratio-diagonal-strategy.md, analysis/nifty_pe_ratio_diagonal_*):
@@ -147,15 +138,6 @@ def _evaluate_pe_ratio_diagonal_credit(cfg: dict, fut_ltp: float) -> None:
     symbol = cfg["symbol"]
     today = datetime.now(IST).date()
 
-    ts = queries.get_option_chain_max_ts()
-    if not ts:
-        return
-    age = datetime.now(timezone.utc) - datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    if age > _MAX_SNAPSHOT_AGE:
-        print(f"  [chain_triggers] {cfg['name']}: latest chain snapshot {ts} is stale — skipped", flush=True)
-        return
-
-    merged = queries.get_merged_cadence_dates(symbol, include_quarterly=True)
     try:
         expiry1, expiry2, expiry3 = resolve_expiry_triplet(today.isoformat(), merged)
     except ValueError as e:
@@ -238,8 +220,31 @@ def _fetch_fut_ltp(symbol: str) -> float | None:
 
 
 def run_chain_triggers() -> None:
-    """Evaluate every configured option-chain trigger. Callers wrap this in try/except (never crash the poll loop)."""
+    """
+    Evaluate every configured option-chain trigger. Callers wrap this in try/except (never
+    crash the poll loop).
+
+    2026-09-22: the real per-cycle cost wasn't the futures fetch (already deduped, see
+    _fetch_fut_ltp) — it was get_option_chain_max_ts() and get_merged_cadence_dates(),
+    which every evaluator used to call for itself. get_merged_cadence_dates() alone measured
+    ~2.9-4s/call on the real 1.95M-row option_chain_5m table (an index on expiry_type helped,
+    ~2.9s down from ~4s, but SQLite still walks every matching leaf entry for DISTINCT — see
+    db/init_db.py's idx_option_chain_5m_sym_type_expiry comment), so 7 independent calls cost
+    20-29s every single 5-min cycle. Both are now fetched once (ts globally — it isn't
+    symbol-specific; merged once per distinct symbol) and passed into every evaluator.
+    """
+    if not CHAIN_TRIGGERS:
+        return
+    ts = queries.get_option_chain_max_ts()
+    if not ts:
+        return
+    age = datetime.now(timezone.utc) - datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    if age > _MAX_SNAPSHOT_AGE:
+        print(f"  [chain_triggers] latest chain snapshot {ts} is stale — all triggers skipped this cycle", flush=True)
+        return
+
     fut_ltp_by_symbol: dict[str, float | None] = {}
+    merged_by_symbol: dict[str, list[str]] = {}
     for cfg in CHAIN_TRIGGERS:
         fn = _EVALUATORS.get(cfg["type"])
         if fn is None:
@@ -251,7 +256,9 @@ def run_chain_triggers() -> None:
         fut_ltp = fut_ltp_by_symbol[symbol]
         if not fut_ltp:
             continue
+        if symbol not in merged_by_symbol:
+            merged_by_symbol[symbol] = queries.get_merged_cadence_dates(symbol, include_quarterly=True)
         try:
-            fn(cfg, fut_ltp)
+            fn(cfg, fut_ltp, ts, merged_by_symbol[symbol])
         except Exception as e:
             print(f"  [chain_triggers] {cfg.get('name')} failed — {e}", flush=True)
