@@ -135,11 +135,32 @@ A failed Telegram send never affects the draft or the trigger loop. A trigger wh
 - Draft: note `1:2 DIAG CE <K1>/<K2> (auto · debit <n>)`, `risk_level: high` (net short far leg), leg prices = the snapshot LTPs, `trigger_name` = `MANUAL` (drafts flow through `add_manual_trade`).
 - Adding a side or another `itm_points` value is a config change — a `sides` edit on an existing entry, or one more `config._calendar_ratio_trigger(...)` call.
 
+## Where prices come from — DB vs live Upstox (clarified 2026-09-22)
+
+| Value | Source | Freshness |
+|---|---|---|
+| Futures price (`fut_ltp`) | **Live Upstox** call, `live.upstox_client.get_ltp()` | Fetched fresh on every single evaluation |
+| Which future contract to query (`fo_instruments.nifty_front_fut()`) | Local cached NSE F&O instrument list file, originally downloaded from Upstox | Re-downloaded once a day (or reused if today's cache file already exists) — not a live call per evaluation |
+| Every option premium (near/far, or l1–l4) | **Database**, `option_chain_5m` table via `queries.get_chain_ltp()` | Whatever the poller's separate 5-min `option_chain_capture.run_capture()` job already wrote — never fetched live at evaluation time |
+| Latest snapshot timestamp, expiry list | Database, same table | Read, not fetched |
+
+Only the futures price is live per evaluation; every option premium comes from the local capture. This is why `_MAX_SNAPSHOT_AGE` (10 min) exists — if the capture job lags or fails, the option prices in the DB could be stale even though the futures price is always current.
+
+**Fixed 2026-09-22 (was: 7 separate live Upstox calls per 5-min cycle).** `run_chain_triggers()` previously called each trigger's evaluator independently, and each evaluator fetched its own `fut_ltp`; since every trigger uses `symbol="NIFTY50"`, all 7 fetched the identical front-month future price separately. Now `run_chain_triggers()` fetches `fut_ltp` once per distinct symbol (`_fetch_fut_ltp()`), caches it in a local dict for the duration of that call, and passes it into each evaluator (`_evaluate_calendar_ratio_credit(cfg, fut_ltp)` / `_evaluate_pe_ratio_diagonal_credit(cfg, fut_ltp)` — both now take `fut_ltp` as a parameter instead of fetching it themselves). If the fetch for a symbol fails, every trigger on that symbol is skipped for that cycle (same behavior as before, just centralized). Verified: `get_ltp` call count dropped from 7 to 1 per cycle; every trigger's logged credit/debit is byte-identical to before; draft creation and the Telegram alert still work correctly (tested with a relaxed threshold).
+
+## How to watch it run in prod
+
+The poller is its own systemd unit, separate from the web API: `sudo journalctl -u edgevest-poller -f` (follow live), `-n 200` (last 200 lines, no follow), `--since "10 min ago"`, or pipe through `grep chain_triggers` for just the trigger lines. `sudo systemctl status edgevest-poller` confirms it's running and since when. Trigger lines only appear during market hours (09:15–15:30 IST), right after each 5-min option-chain capture — not on their own separate timer.
+
+## Trades UI — description next to the display code (added 2026-09-22)
+
+Every recommendation card (`frontend/src/screens/Trades.jsx`) now shows its `note` in brackets right next to the `#<display_code>`, e.g. `#SEP26-15 (1:2 DIAG CE 23600/24000 · auto · debit 14.1)` — in addition to the same note already shown as the card's title. Only rendered when `rec.note` is set. New CSS class `.rec-code-desc` (`Trades.css`), styled muted to match the adjacent adjustment-count text.
+
 ## Things to know
 
-- **The threshold is almost always true.** A same-strike calendar with a 2x far leg collects a large credit — ~226 pts for CE and ~194 pts for PE on the 21 Sep close snapshot — so `> 5` fires on the first evaluation of the day (≈09:15–09:20 IST). Effectively "one draft per day at market open". Raise `min_credit_pts` if a real filter is wanted.
-- Uncovered risk: the 1x near long only partly covers the 2x far short, and the two legs are on different expiries — no margin/max-loss is computed for a draft until publish.
+- Uncovered risk: the 1x near long only partly covers the 2x far short (calendar family), and the PE ratio diagonal's legs 1/3 are only partly covered by legs 2/4 — the two legs/pairs are on different expiries in every trigger here, and no margin/max-loss is computed for a draft until publish.
 - The near-leg exit/roll is manual — nothing here manages the position after publish.
+- On real captured data (2026-09-21 15:30 IST close), none of the 7 configured triggers fire — every one is expected to fire only occasionally, not on a predictable schedule, since real premiums rarely cross these thresholds. A quiet poller log is the normal case, not a bug — see "How to watch it run in prod" above for confirming it's actually evaluating.
 
 ## Deploy notes
 

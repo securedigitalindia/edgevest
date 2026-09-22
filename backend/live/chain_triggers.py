@@ -51,7 +51,7 @@ def _send_alert(**kwargs) -> None:
         print(f"  [chain_triggers] Telegram alert failed — {e}", flush=True)
 
 
-def _evaluate_calendar_ratio_credit(cfg: dict) -> None:
+def _evaluate_calendar_ratio_credit(cfg: dict, fut_ltp: float) -> None:
     from live.manual_trade import add_manual_trade  # late import — manual_trade pulls in the whole trade stack
 
     symbol = cfg["symbol"]
@@ -70,14 +70,6 @@ def _evaluate_calendar_ratio_credit(cfg: dict) -> None:
     if len(upcoming) < 2:
         return
     near, far = upcoming[0], upcoming[1]
-
-    front = fo_instruments.nifty_front_fut(today)
-    if front is None:
-        print(f"  [chain_triggers] {cfg['name']}: no front-month NIFTY future found — skipped", flush=True)
-        return
-    fut_ltp = get_ltp([front[0]]).get(front[0])
-    if not fut_ltp:
-        return
 
     for side in cfg["sides"]:
         otm = 1 if side == "CE" else -1   # direction of "further out of the money" on the strike axis
@@ -135,7 +127,7 @@ def _evaluate_calendar_ratio_credit(cfg: dict) -> None:
                 _send_alert(draft_error=str(e), **alert_args)
 
 
-def _evaluate_pe_ratio_diagonal_credit(cfg: dict) -> None:
+def _evaluate_pe_ratio_diagonal_credit(cfg: dict, fut_ltp: float) -> None:
     """
     4-leg 1:2:1:2 ratio diagonal — the same shape as the already-backtested strategy
     (docs/prd/pe-ratio-diagonal-strategy.md, analysis/nifty_pe_ratio_diagonal_*):
@@ -168,14 +160,6 @@ def _evaluate_pe_ratio_diagonal_credit(cfg: dict) -> None:
         expiry1, expiry2, expiry3 = resolve_expiry_triplet(today.isoformat(), merged)
     except ValueError as e:
         print(f"  [chain_triggers] {cfg['name']}: {e} — skipped", flush=True)
-        return
-
-    front = fo_instruments.nifty_front_fut(today)
-    if front is None:
-        print(f"  [chain_triggers] {cfg['name']}: no front-month NIFTY future found — skipped", flush=True)
-        return
-    fut_ltp = get_ltp([front[0]]).get(front[0])
-    if not fut_ltp:
         return
 
     for side in cfg["sides"]:
@@ -239,14 +223,35 @@ _EVALUATORS = {
 }
 
 
+def _fetch_fut_ltp(symbol: str) -> float | None:
+    """Front-month future's live LTP for `symbol` — one Upstox call. Callers cache this per
+    run_chain_triggers() call so every trigger on the same symbol shares one fetch instead of
+    each evaluator hitting Upstox separately (found 2026-09-22: with 7 triggers all on NIFTY50,
+    each fetching its own fut_ltp meant 7 live calls per 5-min cycle for the identical number)."""
+    today = datetime.now(IST).date()
+    front = fo_instruments.nifty_front_fut(today)
+    if front is None:
+        print(f"  [chain_triggers] {symbol}: no front-month future found — skipped", flush=True)
+        return None
+    fut_ltp = get_ltp([front[0]]).get(front[0])
+    return fut_ltp or None
+
+
 def run_chain_triggers() -> None:
     """Evaluate every configured option-chain trigger. Callers wrap this in try/except (never crash the poll loop)."""
+    fut_ltp_by_symbol: dict[str, float | None] = {}
     for cfg in CHAIN_TRIGGERS:
         fn = _EVALUATORS.get(cfg["type"])
         if fn is None:
             print(f"  [chain_triggers] unknown type {cfg['type']!r} for {cfg.get('name')} — skipped", flush=True)
             continue
+        symbol = cfg["symbol"]
+        if symbol not in fut_ltp_by_symbol:
+            fut_ltp_by_symbol[symbol] = _fetch_fut_ltp(symbol)
+        fut_ltp = fut_ltp_by_symbol[symbol]
+        if not fut_ltp:
+            continue
         try:
-            fn(cfg)
+            fn(cfg, fut_ltp)
         except Exception as e:
             print(f"  [chain_triggers] {cfg.get('name')} failed — {e}", flush=True)
