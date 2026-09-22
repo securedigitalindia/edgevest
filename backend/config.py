@@ -200,15 +200,16 @@ def _calendar_ratio_trigger(name: str, itm_points: float, *, far_strike_offset: 
 # below are the same 1:2 calendar/diagonal shape (_calendar_ratio_trigger) at different
 # itm_points — add a fourth by adding one more call, no other config duplication needed.
 CHAIN_TRIGGERS = [
-    _calendar_ratio_trigger("NIFTY_CE_ITM400_RATIO_DIAG_1X2", itm_points=400, max_debit_pts=25),
+    _calendar_ratio_trigger("NIFTY_CE_ITM400_RATIO_DIAG_1X2", itm_points=400, max_debit_pts=10),
     _calendar_ratio_trigger("NIFTY_CE_ITM300_RATIO_DIAG_1X2", itm_points=300, max_debit_pts=25),
-    _calendar_ratio_trigger("NIFTY_CE_ITM200_RATIO_DIAG_1X2", itm_points=200, max_debit_pts=25),
-    _calendar_ratio_trigger("NIFTY_CE_ITM100_RATIO_DIAG_1X2", itm_points=100, max_debit_pts=25),
-    _calendar_ratio_trigger("NIFTY_CE_ITM0_RATIO_DIAG_1X2", itm_points=0, max_debit_pts=25),
+    _calendar_ratio_trigger("NIFTY_CE_ITM200_RATIO_DIAG_1X2", itm_points=200, max_debit_pts=20),
+    _calendar_ratio_trigger("NIFTY_CE_ITM100_RATIO_DIAG_1X2", itm_points=100, max_debit_pts=15),
+    _calendar_ratio_trigger("NIFTY_CE_ITM0_RATIO_DIAG_1X2", itm_points=0, max_debit_pts=10),
     # OTM100 uses its own credit > 5 rule (confirmed 2026-09-22), unlike the other five which
     # fire on debit < 25 — on real data OTM100 has priced as a debit too (14.1 on the reference
     # snapshot), so this rule is expected to rarely fire, same caveat as the PE ratio diagonal.
     _calendar_ratio_trigger("NIFTY_CE_OTM100_RATIO_DIAG_1X2", itm_points=-100, min_credit_pts=5),
+    _calendar_ratio_trigger("NIFTY_CE_OTM200_RATIO_DIAG_1X2", itm_points=-200, min_credit_pts=10),
 ]
 
 

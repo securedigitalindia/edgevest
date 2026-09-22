@@ -119,6 +119,17 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-22 (`v7.7.9` — patch on top of `v7.7.8`, backend-only)
+
+Chain-trigger threshold tuning, applied directly on prod by the user and synced back into this repo:
+`NIFTY_CE_ITM400/200/100/0_RATIO_DIAG_1X2` tightened (`max_debit_pts` 25 → 10/20/15/10 respectively;
+`ITM300` unchanged at 25), and a new `NIFTY_CE_OTM200_RATIO_DIAG_1X2` trigger added (`min_credit_pts=10`,
+same family as the existing `OTM100` credit-rule trigger). No schema/code change — `config.CHAIN_TRIGGERS`
+only. Also folds in the "Manual trigger" doc section for `poller.py games open|close` that was missed
+in the `v7.7.8` commit.
+
+Needs a poller restart only (no `poller.py init`, no frontend deploy) — picks up the new trigger list.
+
 ## Status as of 2026-09-22 (`v7.7.8` — patch on top of `v7.7.7`, backend-only)
 
 New feature, not a bug fix: two daily `price_prediction` games (NIFTY open/close, one winner each,

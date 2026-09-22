@@ -129,3 +129,13 @@ everywhere else). Needs:
   `wait_for_market_open()` fix.
 - No backend-web restart required (`server.py` itself is unchanged) — but bump `APP_VERSION` and deploy
   per the usual release convention anyway, since `db/queries.py`/`config.py` changed.
+
+## Manual trigger (testing, or recovering a missed run)
+
+`python poller.py games open` / `python poller.py games close` — thin CLI wrappers (`backend/poller.py`)
+around the exact same `_run_market_open_game_tasks()` / `_run_eod_game_tasks()` the live poller calls
+automatically, so this is a real trigger, not a simulation: `open` fetches NIFTY50's actual live LTP
+via Upstox before resolving, `close` reads the actual `candles_1d` close. Both are idempotent (the
+existing `get_active_auto_game()` duplicate guard applies identically) — safe to re-run, e.g. after
+confirming a scheduled run didn't fire. Lets the two games be tested end-to-end without waiting for
+real 09:15/16:00 IST.
