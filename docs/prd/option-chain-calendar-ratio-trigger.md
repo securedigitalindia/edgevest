@@ -127,7 +127,33 @@ Every trigger that fires sends one Telegram message (`live/alert.py:send_chain_t
 
 A failed Telegram send never affects the draft or the trigger loop. A trigger whose condition stays true after it has fired today sends nothing further.
 
-## Mechanics
+## Fixed: triggers blocked the entire poller (2026-09-22, prod-reported)
+
+Before this fix, `run_chain_triggers()` ran **inline** inside `live/poller.py`'s main poll loop,
+before the LTP fetch / tick recording that happens every single 5-second cycle. A slow evaluation
+(observed in prod: ~2 minutes, before the get_ltp/get_merged_cadence_dates dedup+index fixes above)
+stalled the *entire* poller for that whole time — no LTP polls, no ticks recorded, no candles built.
+Confirmed from a real prod log: 7 triggers logged one at a time, ~16s apart, over ~2 minutes; the
+1-minute candle built right after found "only 0 tick(s)" for every symbol, because the poller was
+frozen evaluating triggers instead of polling prices.
+
+The earlier fixes (shared futures fetch, shared DB queries, the new index) make a *normal* cycle
+much faster, but nothing guarantees every future cycle stays fast — Upstox rate-limiting, further
+DB growth, or a network hiccup could all reintroduce the same stall. Structural fix: `run_chain_triggers()`
+now runs in a background thread (`live/poller.py`, `_run_chain_triggers_safe()` as the thread target,
+`daemon=True`), started right after `option_chain_capture.run_capture()` instead of run synchronously.
+The main poll loop keeps going immediately regardless of how long the trigger evaluation takes. If a
+previous evaluation is still running when the next 5-min boundary fires, that cycle's run is skipped
+(logged as `previous run still in progress — skipping this cycle`) rather than stacking up concurrent
+evaluations.
+
+Verified: the exact guard-and-skip logic in isolation (starts, returns control in <1ms instead of
+blocking for the mock's full duration, correctly skips an overlapping second start, correctly starts
+again once the first finishes); the real evaluator run from an actual background thread end-to-end
+(same output as running it on the main thread — SQLite's `check_same_thread=False` + a fresh
+connection per call makes this safe).
+
+## Mechanics## Mechanics
 
 - `config.CHAIN_TRIGGERS` holds the definition; `live/chain_triggers.run_chain_triggers()` is called by `live/poller.py` right after each `option_chain_capture.run_capture()` (every 5 min, market hours only, wrapped in try/except so it can never crash the poll loop).
 - Skips when the latest chain snapshot is older than 10 minutes (capture failure), fewer than two expiries qualify, or either leg has no traded price.

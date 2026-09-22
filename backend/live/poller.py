@@ -16,6 +16,7 @@ import sys
 import os
 import time
 import gc
+import threading
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -107,6 +108,16 @@ def _run_startup_tasks():
         print(f"  [F&O instruments refresh failed]  {e}", flush=True)
 
     print("───────────────────────────────────────────────────\n")
+
+
+def _run_chain_triggers_safe():
+    """Thread target for chain_triggers.run_chain_triggers() — an uncaught exception in a
+    background thread doesn't crash the poller, but prints Python's default (noisy) traceback;
+    this keeps the log line consistent with every other best-effort task here."""
+    try:
+        chain_triggers.run_chain_triggers()
+    except Exception as e:
+        print(f"  [chain triggers failed]  {e}", flush=True)
 
 
 def _run_eod_tasks(daily_alerts: list):
@@ -259,6 +270,7 @@ def run_live(force: bool = False):
 
     error_streak = 0
     daily_alerts: list[dict] = []   # accumulates every signal fired today
+    chain_triggers_thread: threading.Thread | None = None   # background run — see below
     _poll_count  = 0                # periodic GC counter
 
     while force or is_market_open():
@@ -288,10 +300,23 @@ def run_live(force: bool = False):
                 option_chain_capture.run_capture()
             except Exception as e:
                 print(f"  [option chain capture failed]  {e}", flush=True)
-            try:
-                chain_triggers.run_chain_triggers()
-            except Exception as e:
-                print(f"  [chain triggers failed]  {e}", flush=True)
+
+            # run_chain_triggers() used to run inline, right here, blocking this loop.
+            # Confirmed 2026-09-22 (prod log): a slow evaluation cycle (~2 min, before the
+            # get_ltp/get_merged_cadence_dates dedup+index fixes) stalled the ENTIRE poller
+            # for that whole time — no LTP polls, no ticks recorded, no candles built,
+            # visible as "only 0 tick(s) — skipped" on the next candle close. Those fixes
+            # make a normal cycle fast, but nothing guarantees every future cycle stays
+            # fast (Upstox rate-limiting, DB growth, a network hiccup) — so this now runs
+            # in a background thread instead, and a still-running previous thread means
+            # this cycle's run is skipped rather than stacking up concurrent evaluations.
+            if chain_triggers_thread is not None and chain_triggers_thread.is_alive():
+                print("  [chain triggers]  previous run still in progress — skipping this cycle", flush=True)
+            else:
+                chain_triggers_thread = threading.Thread(
+                    target=_run_chain_triggers_safe, name="chain-triggers", daemon=True
+                )
+                chain_triggers_thread.start()
 
         # Build full key list: trigger instruments + spot indices + open trade legs
         try:

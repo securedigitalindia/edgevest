@@ -119,6 +119,19 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-22 (`v7.7.5` — patch on top of `v7.7.4`, backend-only)
+
+Real prod bug, found from a `journalctl` excerpt the user shared: `chain_triggers.run_chain_triggers()`
+ran inline in the poller's main loop, before the LTP fetch/tick recording — a slow evaluation cycle
+(~2 min, observed before the v7.7.3/v7.7.4 speed fixes) froze the *entire* poller for that long. No
+price polls, no ticks, no candles, visible as "only 0 tick(s) — skipped" on the next candle close.
+The speed fixes reduce how often this happens but don't eliminate the structural risk. Fixed:
+`run_chain_triggers()` now runs in a background daemon thread (`live/poller.py`), started but never
+waited on; an overlapping cycle is skipped (logged) rather than stacked. Verified: guard-and-skip
+logic in isolation, and the real evaluator run end-to-end from an actual background thread.
+
+No new migration. Needs a poller restart only (no `poller.py init`, no frontend deploy).
+
 ## Status as of 2026-09-22 (`v7.7.4` — patch on top of `v7.7.3`, backend-only)
 
 The futures-price dedup in `v7.7.3` wasn't the real bottleneck. Each of the 7 triggers was also
