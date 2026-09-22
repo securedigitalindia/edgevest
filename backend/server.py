@@ -17,7 +17,7 @@ from flask import (Flask, request, jsonify,
 from authlib.integrations.flask_client import OAuth
 from flask_cors import CORS
 
-APP_VERSION = "7.7.5"
+APP_VERSION = "7.7.6"
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
@@ -190,8 +190,21 @@ def refresh_session():
 # One backend process can be reached by multiple frontend origins (e.g. dev's
 # Vite server AND its CloudFront bundle) — the frontend tells us where it came
 # from via ?next=<origin>, checked against the same trusted list CORS uses.
+def _safe_redirect_path(path: str | None) -> str:
+    """Only ever a same-origin relative path, appended to an already-validated
+    origin by _post_auth_redirect() — never trust this as a full URL on its
+    own. Rejects anything that isn't a plain leading-slash path, so a value
+    like "//evil.com" or "https://evil.com" can never smuggle in a different
+    host once concatenated."""
+    if not path or not path.startswith("/") or path.startswith("//") or "://" in path:
+        return ""
+    return path[:512]  # generous cap — real paths here are short
+
+
 def _post_auth_redirect():
-    return session.pop("post_login_redirect", None) or FRONTEND_URL or "/"
+    origin = session.pop("post_login_redirect", None) or FRONTEND_URL or "/"
+    path = session.pop("post_login_redirect_path", None)
+    return origin + path if path else origin
 
 @app.route("/login")
 def login():
@@ -204,6 +217,9 @@ def auth_google():
     next_origin = request.args.get("next")
     if next_origin in _CORS_ORIGINS:
         session["post_login_redirect"] = next_origin
+        next_path = _safe_redirect_path(request.args.get("next_path"))
+        if next_path:
+            session["post_login_redirect_path"] = next_path
     # Refer & Earn (docs/prd/refer-and-earn.md) — resolve ?ref= to the
     # referrer's user id now (not the raw code) and stash it, same pattern
     # as post_login_redirect above; unknown/garbage codes are silently
@@ -265,6 +281,9 @@ def auth_dev_login():
     next_origin = request.args.get("next")
     if next_origin in _CORS_ORIGINS:
         session["post_login_redirect"] = next_origin
+        next_path = _safe_redirect_path(request.args.get("next_path"))
+        if next_path:
+            session["post_login_redirect_path"] = next_path
     session["user"] = user
     if user["role"] == "client":
         from db.queries import expire_stale_subscriptions

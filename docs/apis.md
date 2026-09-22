@@ -20,9 +20,11 @@ A fourth, unrelated auth mechanism exists for exactly one route: `POST /api/paym
 
 **CORS**: `CORS_ORIGINS` env var (comma-separated exact origins) — must never be `"*"` (see root `CLAUDE.md`). **Cookie security** varies by env (`_PROD` flag) — see root `CLAUDE.md`'s Environments table for the full prod/staging/dev cookie matrix.
 
-## Dynamic post-auth redirect (`?next=`)
+## Dynamic post-auth redirect (`?next=`, `?next_path=`)
 
 Added 2026-08-23. One backend can be reached by multiple frontend origins (e.g. dev's Vite server *and* its CloudFront bundle). Instead of a single static `FRONTEND_URL`, the frontend appends `?next=<its own origin>` to login/logout links (`frontend/src/api/client.js`'s `authUrl()` helper); the backend validates that origin against `_CORS_ORIGINS` and, if trusted, redirects back there after auth completes instead of the static fallback. `/auth/google` stashes the validated `next` in `session["post_login_redirect"]` (survives the external round-trip to Google); `/auth/callback` consumes it via `_post_auth_redirect()`. `/logout` checks `?next=` directly (no round-trip needed). Untrusted or missing `next` falls back to `FRONTEND_URL` env var, or `"/"`.
+
+**`?next_path=` (added 2026-09-22)** — carries the full path+query the visitor was actually on (e.g. `/trades?rec=24`, a shared deep link) through the login round-trip, so a logged-out visitor lands back exactly where they started instead of always on `/dashboard`. Only sent by `Landing.jsx`'s login links (`window.location.pathname + window.location.search` at click time), never by `/logout` — signing out should land on the homepage, not a page you're about to lose access to. `/auth/google` and `/auth/dev-login` validate it through `_safe_redirect_path()` — must start with a single `/` and contain no `://`, so a value like `//evil.com` or `https://evil.com` can never smuggle in a different host once concatenated onto the already-validated origin; rejects anything else (empty string, same as not sending it) and caps length at 512 chars. Stashed in `session["post_login_redirect_path"]`; `_post_auth_redirect()` appends it to the origin if present, otherwise behaves exactly as before this addition (bare origin / `FRONTEND_URL` / `"/"`).
 
 ## Refer & Earn — `?ref=` carried through OAuth
 
