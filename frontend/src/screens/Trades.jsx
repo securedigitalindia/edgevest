@@ -451,6 +451,7 @@ function RecItem({ rec, prices, onPushed, highlight }) {
         </div>
         <div className="rec-adj-strip">
           <span className="rec-code">#{rec.display_code || rec.id}</span>
+          {rec.note && <span className="rec-code-desc"> ({rec.note})</span>}
           {rec.adj_count > 0 && <span className="rec-adj-text"> · {rec.adj_count} adjustment{rec.adj_count > 1 ? 's' : ''}</span>}
         </div>
       </div>
