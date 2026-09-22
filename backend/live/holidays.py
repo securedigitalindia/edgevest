@@ -6,7 +6,7 @@ BSE and NSE share the same holiday schedule.
 """
 
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import exchange_calendars as ec
@@ -43,3 +43,15 @@ def check_or_exit():
         sys.exit(0)
 
     print(f"  Trading day confirmed: {day_name}")
+
+
+def next_trading_day(after: date) -> date:
+    """First NSE trading day strictly after `after` — skips weekends and
+    holidays, so a Friday close can jump straight to Monday (or further,
+    over a long weekend/festival block)."""
+    d = after
+    for _ in range(14):  # generous cap — no real NSE gap is anywhere close to this
+        d = d + timedelta(days=1)
+        if is_trading_day(d):
+            return d
+    raise RuntimeError(f"No trading day found within 14 days after {after}")

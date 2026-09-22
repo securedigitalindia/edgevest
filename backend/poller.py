@@ -9,6 +9,21 @@
 #    python poller.py bootstrap RELIANCE — bootstrap one symbol
 #    python poller.py analysis           — run & send daily NIFTY analysis now
 #    python poller.py analysis --print   — print to terminal without sending
+#    python poller.py games open         — manually run the market-open game
+#                                           step (resolve last evening's NIFTY
+#                                           open-prediction game using the
+#                                           real live LTP, create today's
+#                                           close-prediction game)
+#    python poller.py games close        — manually run the EOD game step
+#                                           (resolve today's NIFTY close-
+#                                           prediction game using the real
+#                                           official candles_1d close, create
+#                                           the next trading day's open-
+#                                           prediction game)
+# Both are idempotent (safe to re-run — see docs/prd/nifty-daily-prediction-
+# games.md) and normally fire automatically inside `live` at 09:15/16:00;
+# this is the manual escape hatch (a missed run, or testing without waiting
+# for real market hours).
 # ============================================================
 
 import sys
@@ -56,9 +71,25 @@ def main():
         else:
             run_daily_analysis()                  # build + send to Telegram
 
+    elif command == "games":
+        from live.poller import _run_market_open_game_tasks, _run_eod_game_tasks
+        action = symbols[0] if symbols else None
+        if action == "open":
+            from config import UPSTOX_INSTRUMENT_KEYS
+            from live.upstox_client import get_ltp
+            ikey = UPSTOX_INSTRUMENT_KEYS["NIFTY50"]
+            ltp = get_ltp([ikey])[ikey]
+            print(f"NIFTY50 live LTP: {ltp}")
+            _run_market_open_game_tasks(ltp)
+        elif action == "close":
+            _run_eod_game_tasks()
+        else:
+            print("Usage: python poller.py games open|close")
+            sys.exit(1)
+
     else:
         print(f"Unknown command: {command}")
-        print("Valid commands: bootstrap, sync, verify, init, live, analysis")
+        print("Valid commands: bootstrap, sync, verify, init, live, analysis, games")
         sys.exit(1)
 
 

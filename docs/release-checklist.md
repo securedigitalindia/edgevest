@@ -119,6 +119,20 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-22 (`v7.7.8` — patch on top of `v7.7.7`, backend-only)
+
+New feature, not a bug fix: two daily `price_prediction` games (NIFTY open/close, one winner each,
+paid only within a points threshold) now run fully automated inside the poller — no admin click, no
+new cron/systemd unit. Also fixed a related latent bug found while building this: `wait_for_market_open()`
+only ever checked time-of-day, never day-of-week (safe so far only because the process happens to
+already be idling there when a weekend rolls past). Full design: `docs/prd/nifty-daily-prediction-games.md`.
+
+**Needs `python poller.py init` again** — adds the new `games.auto_kind` column. Restart the poller
+(picks up the new hook points + the `wait_for_market_open()` fix). No frontend change (the existing
+Games UI already renders/enters/resolves `price_prediction` games generically) and no `edgevest-web`
+restart strictly required, but bump/deploy both per the usual convention since `config.py`/`db/queries.py`
+changed either way.
+
 ## Status as of 2026-09-22 (`v7.7.5` — patch on top of `v7.7.4`, backend-only)
 
 Real prod bug, found from a `journalctl` excerpt the user shared: `chain_triggers.run_chain_triggers()`

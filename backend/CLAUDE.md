@@ -116,6 +116,20 @@ Razorpay Standard Checkout for paid subscription plans — the one modular packa
 
 Unrelated to Drishti/the poller — this is billing for the client-facing product, sharing only the same Flask process and SQLite file. Full mechanics, schema, and decision history (including why `/api/payments/reconcile` uses a shared secret instead of a service account, and the renewal-vs-duplicate-payment dedup logic): `docs/prd/razorpay-subscription-billing.md`. Route/response shapes: `docs/apis.md`. Table schema: `docs/schema.md`.
 
+## Games — daily NIFTY prediction automation (`live/poller.py`)
+
+Two `price_prediction` games (existing `games` table/type, `/api/games*` routes, frontend UI — none of
+that is games-automation-specific) run every trading day with zero admin interaction, chained off each
+other rather than fixed clock times: resolving "Predict NIFTY's Close" at EOD (16:00, after the Upstox
+sync, using the official `candles_1d` close) immediately creates the next trading day's "Predict
+NIFTY's Open" game; resolving that open-game on the first tick after market-open immediately creates
+that day's close-game. One winner per game, paid only if within `GAME_NIFTY_{OPEN,CLOSE}_WIN_THRESHOLD`
+points of the actual value (`config.py`) — `resolve_game()`'s new optional `win_threshold` param, `None`
+everywhere else so manual admin games are unaffected. `games.auto_kind` (`nifty_next_open` /
+`nifty_today_close`) lets the automation find its own pending game without touching an admin-created
+one. Runs inside the poller's already-24/7 process (`Restart=always` + `wait_for_market_open()`
+idling) — no separate cron/systemd unit. Full design: `docs/prd/nifty-daily-prediction-games.md`.
+
 ## Key Conventions
 
 - Symbols stored as `name` field (e.g. `"RELIANCE"`); Upstox instrument key resolved via `UPSTOX_INSTRUMENT_KEYS[name]`.

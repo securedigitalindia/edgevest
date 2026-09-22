@@ -880,6 +880,22 @@ def get_monthly_report(year: int, month: int) -> dict:
 # Users
 # -----------------------------------------------------------
 
+def get_system_user_id() -> int:
+    """The oldest super_admin's user id — used to attribute games (and any
+    future records) created by backend automation rather than a real admin
+    click. `games.created_by` is NOT NULL, and there is no dedicated bot/
+    system account, so this borrows the first-ever signup (always
+    super_admin — see upsert_user()'s first-user-becomes-super_admin rule)."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT id FROM users WHERE role='super_admin' ORDER BY id LIMIT 1"
+    ).fetchone()
+    conn.close()
+    if not row:
+        raise RuntimeError("No super_admin user exists — cannot attribute an automated game")
+    return row["id"]
+
+
 def get_user_by_google_id(google_id: str) -> dict | None:
     conn = get_connection()
     row  = conn.execute(
@@ -2740,19 +2756,32 @@ def _now_utc() -> str:
 
 def create_game(title: str, description: str, game_type: str, symbol: str | None,
                 start_time: str, end_time: str, reward_pool: int, winner_count: int,
-                initial_cash: int, created_by: int) -> int:
+                initial_cash: int, created_by: int, auto_kind: str | None = None) -> int:
     conn = get_connection()
     cur = conn.execute("""
         INSERT INTO games (title, description, game_type, symbol, status,
                            start_time, end_time, reward_pool, winner_count,
-                           initial_cash, created_by, created_at)
-        VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
+                           initial_cash, created_by, created_at, auto_kind)
+        VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)
     """, (title, description, game_type, symbol, start_time, end_time,
-          reward_pool, winner_count, initial_cash, created_by, _now_utc()))
+          reward_pool, winner_count, initial_cash, created_by, _now_utc(), auto_kind))
     gid = cur.lastrowid
     conn.commit()
     conn.close()
     return gid
+
+
+def get_active_auto_game(auto_kind: str) -> dict | None:
+    """The single currently-active (or still-draft) automation-owned game of
+    this kind, if any — used by the daily NIFTY prediction scheduler to find
+    its own game without matching any admin-created game of the same type."""
+    conn = get_connection()
+    row = conn.execute("""
+        SELECT * FROM games WHERE auto_kind = ? AND status IN ('draft', 'active')
+        ORDER BY created_at DESC LIMIT 1
+    """, (auto_kind,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def get_game(game_id: int) -> dict | None:
@@ -3030,7 +3059,15 @@ def _award_credits_tx(conn, user_id: int, amount: int,
     """, (user_id, amount, now))
 
 
-def resolve_game(game_id: int, result_value: str | None = None) -> int:
+def resolve_game(game_id: int, result_value: str | None = None,
+                  win_threshold: float | None = None) -> int:
+    """
+    win_threshold: only meaningful for price_prediction (score = abs prediction
+    error) — if set, an entry only actually gets paid when its score is within
+    this many points, even if it's the closest guess in the game; if nobody
+    qualifies, nobody is paid that day. None (every existing caller) preserves
+    the old always-pay-the-closest-N behavior exactly.
+    """
     conn = get_connection()
     game = dict(conn.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone())
     now = _now_utc()
@@ -3123,7 +3160,8 @@ def resolve_game(game_id: int, result_value: str | None = None) -> int:
 
     for i, s in enumerate(scored):
         rank = i + 1
-        won = credits_per_winner if rank <= winner_count else 0
+        within_threshold = win_threshold is None or s["score"] <= win_threshold
+        won = credits_per_winner if (rank <= winner_count and within_threshold) else 0
         conn.execute(
             "UPDATE game_entries SET score = ?, rank = ?, credits_won = ? WHERE id = ?",
             (s["score"], rank, won, s["id"])

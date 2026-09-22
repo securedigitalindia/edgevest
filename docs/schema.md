@@ -315,9 +315,10 @@ One row per game (price-prediction, MCQ quiz, or leaderboard type).
 | `winner_count` | INTEGER NOT NULL DEFAULT 1 | |
 | `result_value` | TEXT | Nullable until resolved |
 | `initial_cash` | INTEGER NOT NULL DEFAULT 1000000 | Starting virtual cash for `leaderboard`-type games |
-| `created_by` | INTEGER NOT NULL REFERENCES `users(id)` | |
+| `created_by` | INTEGER NOT NULL REFERENCES `users(id)` | For automated games, the oldest `super_admin` user (`get_system_user_id()`) — there's no dedicated bot/system account |
 | `created_at` | TEXT NOT NULL | |
 | `resolved_at` | TEXT | Nullable |
+| `auto_kind` | TEXT | Nullable — `nifty_next_open` \| `nifty_today_close` for the daily automated NIFTY prediction games (`live/poller.py`), `NULL` for every admin-created game. Lets the automation find its own game without touching an admin-created one. See `docs/prd/nifty-daily-prediction-games.md`. |
 
 ### `game_questions`
 

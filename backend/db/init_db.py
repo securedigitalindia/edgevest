@@ -803,6 +803,13 @@ def init_db():
             resolved_at   TEXT
         )
     """)
+    _games_cols = {r[1] for r in cur.execute("SELECT * FROM pragma_table_info('games')")}
+    if "auto_kind" not in _games_cols:
+        # Marks a game as owned by the daily NIFTY prediction automation
+        # ('nifty_next_open' / 'nifty_today_close') so it can find and manage
+        # its own games without touching any admin-created game of the same
+        # game_type. NULL for every manually-created game (all of them, today).
+        cur.execute("ALTER TABLE games ADD COLUMN auto_kind TEXT")
     print("  ✓  Table ready: games")
 
     cur.execute("""

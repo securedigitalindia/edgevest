@@ -27,6 +27,19 @@ REFERRAL_SIGNUP_BONUS_GEMS = 149  # gems awarded to a new user who signs up via 
 REFERRAL_REWARD_GEMS       = 99   # gems awarded to the referrer once the referee's setup_done flips true
 
 # -----------------------------------------------------------
+# Daily NIFTY prediction games (auto-scheduled — live/poller.py)
+# -----------------------------------------------------------
+# Two price_prediction games run back-to-back every trading day, chained off
+# each other rather than fixed clock times: resolving the close-game at EOD
+# immediately creates the next day's open-game, and resolving the open-game
+# at market-open immediately creates today's close-game. See
+# docs/prd/nifty-daily-prediction-games.md.
+GAME_NIFTY_OPEN_REWARD_POOL   = 50   # credits — paid only if someone qualifies (see threshold)
+GAME_NIFTY_OPEN_WIN_THRESHOLD = 10   # points — closest guess only wins if within this of the actual open
+GAME_NIFTY_CLOSE_REWARD_POOL   = 50
+GAME_NIFTY_CLOSE_WIN_THRESHOLD = 10
+
+# -----------------------------------------------------------
 # Database
 # -----------------------------------------------------------
 DB_PATH = os.path.join(os.path.dirname(__file__), "data", "drishti.db")
