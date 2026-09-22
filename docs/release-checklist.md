@@ -119,6 +119,18 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-22 (`v7.7.3` — patch on top of `v7.7.2`)
+
+- **Backend:** `run_chain_triggers()` now fetches the front-month futures price once per distinct
+  symbol per 5-min cycle, shared across every trigger on that symbol, instead of each of the 7
+  triggers fetching it independently (7 live Upstox calls -> 1). No behavior change — verified
+  every trigger's logged credit/debit is unchanged.
+- **Frontend:** every recommendation card on the Trades page now shows `#<display_code> (<note>)`
+  in the adjustment-count strip, not just the bare code — makes a trigger-generated draft's
+  description (strikes/expiries/credit-debit) visible without scrolling to the card title.
+
+Needs backend + poller restart (for the dedup fix) and a frontend deploy (for the UI change).
+
 ## Status as of 2026-09-22 (`v7.7.2` — patch on top of `v7.7.1`)
 
 `v7.7.1` shipped the corrected 6-trigger CE calendar/diagonal sweep. This patch adds:
