@@ -135,11 +135,14 @@ left at `7.5.0` through the 7.6.x bumps — now back in sync). Not tagged: tag o
   `docs/prd/pe-ce-ratio-spread-1x2.md`) and a list → detail Strategies UI (`/profile/strategies`,
   `/profile/strategies/:id`); settle-once cache keys are versioned; config mutation awaits its refetch.
 - **Triggers & alerts**: every per-tick alert trigger removed (`TRIGGERS = []`; the poller still polls
-  every `SYMBOLS` entry). New option-chain triggers (`CHAIN_TRIGGERS`: `NIFTY_CE_CAL_1X2`,
-  `NIFTY_CE_ITM300_DIAG_1X2`, `NIFTY_CE_ITM400_DIAG_1X2`) create DRAFT trades and send a Telegram
-  "Trigger Fired" alert stating whether a draft is linked (`docs/prd/option-chain-calendar-ratio-trigger.md`).
-  Removed Telegram messages: morning brief, 08:30 pre-market analysis, EOD brief, account-level
-  entry/exit/auto-exit. Still sent: New Trade, New Adjustment, Trade Exited, Trigger Fired.
+  every `SYMBOLS` entry). New option-chain triggers (`CHAIN_TRIGGERS`, one shared
+  `_calendar_ratio_trigger()` template): 6 entries sweeping `itm_points` 400/300/200/100/0/-100
+  (`NIFTY_CE_ITM400_DIAG_1X2` through `NIFTY_CE_OTM100_DIAG_1X2`, ITM 400 down to OTM 100) — 1:2 CE
+  diagonal, 400pt gap between strikes, fires on `debit < 25`. Each creates a DRAFT trade and sends a
+  Telegram "Trigger Fired" alert stating whether a draft is linked
+  (`docs/prd/option-chain-calendar-ratio-trigger.md`). Removed Telegram messages: morning brief,
+  08:30 pre-market analysis, EOD brief, account-level entry/exit/auto-exit. Still sent: New Trade,
+  New Adjustment, Trade Exited, Trigger Fired.
 
 **Deploy steps specific to this release (in order)**
 
@@ -164,9 +167,11 @@ left at `7.5.0` through the 7.6.x bumps — now back in sync). Not tagged: tag o
   not register); open `#SEP26-2` on Trades — exit prices on every leg, realized −₹3,283 (−3.0%).
 - The poller log shows `[no triggers — data collection only]` for NIFTY50/BANKNIFTY/RELIANCE and
   `option_chain_capture` lines every 5 min.
-- Expect the first `NIFTY_CE_CAL_1X2` draft + Telegram alert at about **09:20 IST** on the next trading
-  day. Its credit condition (`> 5`) is almost always true (real credit ~195–226 pts), so it will fire
-  once every morning — raise `min_credit_pts` in `config.CHAIN_TRIGGERS` if that is not wanted.
+- Do **not** expect a draft every morning — unlike an earlier (fixed) version of this trigger, the
+  debit condition is genuinely data-dependent, not almost-always-true. On the 2026-09-21 close
+  snapshot only `NIFTY_CE_OTM100_DIAG_1X2` (debit 14.1) would have fired; the other five were all
+  above the 25pt threshold. A quiet first morning is expected, not a bug — check the poller log for
+  `[chain_triggers]` lines to confirm it's evaluating each 5-min snapshot even when nothing fires.
   Drafts are silent until published.
 
 **Known / not part of this release**

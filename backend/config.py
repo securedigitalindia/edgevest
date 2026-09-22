@@ -152,52 +152,46 @@ TRIGGERS = []
 # -----------------------------------------------------------
 # Evaluated once per 5-min option_chain_5m snapshot; on fire they create a DRAFT
 # trade (never an open one — publish it from the Dashboard's Draft Strategies panel).
+def _calendar_ratio_trigger(name: str, itm_points: float, *, far_strike_offset: float = 400,
+                             max_debit_pts: float = 25, near_lots: int = 1, far_lots: int = 2,
+                             strike_step: float = 100, min_dte: int = 1, sides=("CE",),
+                             symbol: str = "NIFTY50", risk_level: str = "high") -> dict:
+    """
+    One entry in the 1:2 calendar/diagonal family (live/chain_triggers.py, type
+    "calendar_ratio_credit"): BUY near_lots @ K1 = base - itm_points on the nearest expiry
+    with DTE > min_dte, SELL far_lots @ K2 = K1 + far_strike_offset on the next expiry after
+    that. base = next strike_step above (CE) / below (PE) the futures price — itm_points=0
+    is "no shift, nearest OTM strike"; itm_points > 0 pushes K1 that far into the money.
+    Every variant tested on real data prices as a net DEBIT (near_lots*near_ltp -
+    far_lots*far_ltp), never a credit, once far_strike_offset is a real gap (2026-09-22 —
+    itm_points=0 was first built with far_strike_offset=0, a same-strike calendar, which
+    priced as a large ~200pt credit almost every day; corrected to the same 400pt gap as
+    the other two, which reprices it as a ~30-45pt debit, same order of magnitude as
+    itm_points=300/400 on the same snapshot). max_debit_pts=25 (fire when
+    near_lots*near_ltp - far_lots*far_ltp < this) is therefore the one threshold shape
+    that fits all three — same rule, just a different itm_points.
+    """
+    return {
+        "name": name, "type": "calendar_ratio_credit", "symbol": symbol, "sides": list(sides),
+        "strike_step": strike_step, "min_dte": min_dte, "near_lots": near_lots, "far_lots": far_lots,
+        "itm_points": itm_points, "far_strike_offset": far_strike_offset,
+        "max_debit_pts": max_debit_pts, "risk_level": risk_level,
+    }
+
+
+# Evaluated once per 5-min option_chain_5m snapshot; on fire they create a DRAFT trade
+# (never an open one — publish it from the Dashboard's Draft Strategies panel). All three
+# below are the same 1:2 calendar/diagonal shape (_calendar_ratio_trigger) at different
+# itm_points — add a fourth by adding one more call, no other config duplication needed.
 CHAIN_TRIGGERS = [
-    {
-        "name":           "NIFTY_CE_CAL_1X2",
-        "type":           "calendar_ratio_credit",
-        "symbol":         "NIFTY50",
-        "sides":          ["CE"],   # "CE" and/or "PE"; at most one draft per side per IST day
-        "strike_step":    100,      # K = next multiple above (CE) / below (PE) the front-month NIFTY future
-        "min_dte":        1,        # near expiry = nearest with DTE > this; far = the next expiry after it
-        "near_lots":      1,        # BUY  near_lots @ K on the near expiry
-        "far_lots":       2,        # SELL far_lots  @ K on the far expiry
-        "min_credit_pts": 5,        # fire when far_lots*far_ltp - near_lots*near_ltp > this (premium points)
-        "risk_level":     "high",   # net short far leg — stamped on the draft
-    },
-    # ITM diagonal 1:2 (2026-09-22): BUY near_lots @ K1 = base moved itm_points into the money
-    # (base = next strike_step above the future), SELL far_lots @ K2 = K1 + far_strike_offset
-    # (further OTM) on the next expiry. Fires when the net DEBIT is under 25 pts, i.e.
-    # (near_lots * near_ltp) - (far_lots * far_ltp) < 25 — a net credit also qualifies.
-    {
-        "name":              "NIFTY_CE_ITM300_DIAG_1X2",
-        "type":              "calendar_ratio_credit",
-        "symbol":            "NIFTY50",
-        "sides":             ["CE"],
-        "strike_step":       100,
-        "min_dte":           1,
-        "near_lots":         1,
-        "far_lots":          2,
-        "itm_points":        300,   # K1 = base - 300
-        "far_strike_offset": 400,   # K2 = K1 + 400
-        "max_debit_pts":     25,    # fire when near premium - 2x far premium < 25 pts
-        "risk_level":        "high",
-    },
-    {
-        "name":              "NIFTY_CE_ITM400_DIAG_1X2",
-        "type":              "calendar_ratio_credit",
-        "symbol":            "NIFTY50",
-        "sides":             ["CE"],
-        "strike_step":       100,
-        "min_dte":           1,
-        "near_lots":         1,
-        "far_lots":          2,
-        "itm_points":        400,   # K1 = base - 400
-        "far_strike_offset": 400,   # K2 = K1 + 400
-        "max_debit_pts":     25,
-        "risk_level":        "high",
-    },
+    _calendar_ratio_trigger("NIFTY_CE_ITM400_DIAG_1X2", itm_points=400),
+    _calendar_ratio_trigger("NIFTY_CE_ITM300_DIAG_1X2", itm_points=300),
+    _calendar_ratio_trigger("NIFTY_CE_ITM200_DIAG_1X2", itm_points=200),
+    _calendar_ratio_trigger("NIFTY_CE_ITM100_DIAG_1X2", itm_points=100),
+    _calendar_ratio_trigger("NIFTY_CE_ITM0_DIAG_1X2", itm_points=0),
+    _calendar_ratio_trigger("NIFTY_CE_OTM100_DIAG_1X2", itm_points=-100),
 ]
+
 
 # Upstox instrument key per symbol name.
 # Indices use display name; equities use ISIN (not trading symbol).
