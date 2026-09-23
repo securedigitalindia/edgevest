@@ -159,14 +159,37 @@ def _utc_iso(dt) -> str:
     return dt.astimezone(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _game_end_date_ist(game: dict):
+    """The IST calendar date a game's end_time falls on — used to check
+    whether a game found via get_active_auto_game() is actually the one
+    meant to transition *today*, not some other day's."""
+    dt = datetime.strptime(game["end_time"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    return dt.astimezone(IST).date()
+
+
 def _run_market_open_game_tasks():
     """
-    Called once, at GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST (09:00 — 15min BEFORE
-    market open, a deliberate safety margin against last-second entries,
-    not the market-open moment itself; see the _wait_until() call in
-    run_live(), before wait_for_market_open()). Two independent steps
-    chained by timing, not by outcome — either can fail on its own without
-    blocking the other:
+    Normally called once, at GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST (09:00 — 15min
+    BEFORE market open, a deliberate safety margin against last-second
+    entries, not the market-open moment itself; see the _wait_until() call
+    in run_live(), before wait_for_market_open()).
+
+    BUT: _wait_until() only *waits* if called before 09:00 — if the poller
+    process happens to (re)start later than that (e.g. a manual restart for
+    a deploy, at any hour), this still runs immediately, whatever the actual
+    clock time is. Confirmed in prod 2026-09-23: a 22:37 IST restart fired
+    this, which — before this guard existed — closed *tomorrow's*
+    already-created open-game 10+ hours early and created a *duplicate*
+    "today's close" game for a trading day that had already fully closed out
+    hours earlier (exploitable: that day's real close was already public in
+    the original, already-resolved close-game, so anyone could've entered
+    the duplicate with a guaranteed-correct guess). Guard: only actually act
+    if the found open-game's own end_time falls on *today* — if EOD already
+    ran today (the normal case on a late restart), the active open-game is
+    legitimately tomorrow's, not today's, and must not be touched here.
+
+    Two independent steps chained by timing, not by outcome — either can
+    fail on its own without blocking the other:
       1. Close entries on last evening's "predict NIFTY's open" game — done
          with a margin before the answer becomes knowable at market open,
          not right at it. NOT resolved yet: candles_1d's official open
@@ -176,14 +199,20 @@ def _run_market_open_game_tasks():
       2. Create + activate today's "predict NIFTY's close" game.
     See docs/prd/nifty-daily-prediction-games.md.
     """
+    game = get_active_auto_game("nifty_next_open")
+    if not game:
+        print("  [games]  no pending open-prediction game to close "
+              "(none created last evening?)", flush=True)
+        return
+    if _game_end_date_ist(game) != _ist_now().date():
+        print(f"  [games]  active open-game '{game['title']}' targets a different day than "
+              f"today — already past today's transition (likely a late restart), skipping",
+              flush=True)
+        return
+
     try:
-        game = get_active_auto_game("nifty_next_open")
-        if game:
-            set_game_status(game["id"], "closed")
-            print(f"  [games]  closed entries on '{game['title']}' — resolves at EOD", flush=True)
-        else:
-            print("  [games]  no pending open-prediction game to close "
-                  "(none created last evening?)", flush=True)
+        set_game_status(game["id"], "closed")
+        print(f"  [games]  closed entries on '{game['title']}' — resolves at EOD", flush=True)
     except Exception as e:
         print(f"  [games]  failed to close open-prediction game — {e}", flush=True)
 

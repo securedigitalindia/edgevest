@@ -119,6 +119,21 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-23 (`v7.7.15` — patch on top of `v7.7.14`, backend-only, urgent)
+
+**Real prod incident, same day:** deploying `v7.7.13` meant restarting `edgevest-poller.service` after
+09:00 IST — `_wait_until(9, 0)` only waits if called *before* 09:00, so the restart fired
+`_run_market_open_game_tasks()` immediately, at whatever time it happened to be (22:37 IST). This
+closed tomorrow's already-created open-game 10+ hours early and created a **duplicate, actively
+exploitable** close-game for a trading day whose real close was already public (game id=8 in prod —
+manually closed via direct SQL as an immediate mitigation, see chat/incident notes, not part of this
+commit). Fixed at the source: `_run_market_open_game_tasks()` now verifies the active open-game's
+`end_time` actually falls on today before touching anything — if EOD already ran today, the active
+game is legitimately tomorrow's and gets left alone. Verified by reproducing the exact scenario in
+isolation.
+
+**Deploy this immediately** — restart the poller once more to pick it up. No new migration.
+
 ## Status as of 2026-09-23 (`v7.7.14` — patch on top of `v7.7.13`, backend-only)
 
 The real fix behind the wrong-value bug `v7.7.13` didn't fully address: Upstox's Historical Candle API

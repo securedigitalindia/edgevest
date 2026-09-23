@@ -181,6 +181,44 @@ open/close values. Root-caused with real data, not guessed:
   games had `credits_won=0` — the closest guess was still outside the 10-point `win_threshold` even
   against the wrong values, so nothing was actually paid out incorrectly. No clawback needed.)
 
+## A real prod incident: a late poller restart created an exploitable duplicate game
+
+2026-09-23, 22:37 IST — deploying `v7.7.13`/`v7.7.14` meant manually restarting
+`edgevest-poller.service`, and that restart happened after 09:00 IST. `_wait_until(9, 0)` only
+*waits* if called before 09:00 — called later, it's a no-op, so `_run_market_open_game_tasks()` fired
+immediately at 22:37 instead of waiting for a real 09:00. Confirmed via the real prod log:
+
+```
+22:37:06  [games]  closed entries on 'Predict NIFTY's Open — Thu, 24 Sep 2026' — resolves at EOD
+22:37:06  [games]  created & activated "Predict NIFTY's Close — Wed, 23 Sep 2026" (id=8)
+```
+
+Two real problems, not just a benign duplicate:
+1. **Tomorrow's already-created open-game got closed 10+ hours early** — it was legitimately created
+   at today's 16:00 EOD for Thursday, meant to stay open until Thursday 09:00. Inconvenient (cuts entry
+   time short), not dangerous — resolves correctly at Thursday's EOD regardless.
+2. **A duplicate close-game got created for a trading day that had already fully closed out** —
+   Wednesday's real close was already public (resolved in the original close-game, hours earlier).
+   `get_active_auto_game("nifty_today_close")`'s existing duplicate-guard didn't catch this, because the
+   *original* Wednesday close-game was already `resolved` (not `active`) by 22:37 — so from that guard's
+   point of view, no active close-game existed, clearing the way for a new one. **This was actively
+   exploitable**: anyone could enter the duplicate with the already-known correct answer for a
+   guaranteed win. Worse, `auto_kind` games have their manual admin Close button hidden (`v7.7.12`), so
+   it couldn't even be closed from the UI — required direct DB access to shut down.
+
+**Fixed:** `_run_market_open_game_tasks()` now checks, before doing anything, whether the currently
+active `nifty_next_open` game's own `end_time` falls on *today* — new `_game_end_date_ist()` helper. If
+EOD already ran today (the normal state on a late restart), the active open-game is legitimately
+tomorrow's, and the function now skips entirely rather than touching it. Verified by reproducing the
+exact prod scenario in isolation (today's close-game resolved, tomorrow's open-game active, fire the
+function) — tomorrow's game stays untouched, no duplicate created; and by a regression check confirming
+the normal same-day case still works exactly as before.
+
+**Lesson for any future clock-anchored hook using `_wait_until()`'s no-op-if-already-past behavior:**
+that pattern is only safe if the action itself is idempotent *and* self-aware of which day it's actually
+supposed to affect — a duplicate-guard alone isn't enough if the state that guard checks can have already
+moved on (e.g. from `active` to `resolved`) by the time a late trigger fires.
+
 ## The real fix: Upstox has a separate API for today's data — we were never calling it
 
 The `_is_incomplete_last_candle()` fix above helps, but doesn't fully solve same-day resolution —
