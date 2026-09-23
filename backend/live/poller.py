@@ -7,13 +7,19 @@ Run:
 
 Daily lifecycle:
   Startup   : holiday check → expiry cache refresh → build triggers
-  09:15 IST : first tick — resolve yesterday evening's NIFTY open-prediction
-              game, open today's NIFTY close-prediction game
+  09:15 IST : market opens — close entries on yesterday evening's NIFTY
+              open-prediction game (not resolved yet), open today's NIFTY
+              close-prediction game
   Market hrs: poll every 5s → store ticks → run triggers → build 1h candles at :15 boundary
-  16:00 IST : daily Upstox sync → resolve today's NIFTY close-prediction game,
-              open tomorrow's NIFTY open-prediction game → tick cleanup →
+  15:00 IST : close entries on today's NIFTY close-prediction game (30min
+              before the real close — not resolved yet either)
+  16:00 IST : daily Upstox sync → resolve BOTH of today's NIFTY games from
+              the now-available official candles_1d open/close → open
+              tomorrow's NIFTY open-prediction game → tick cleanup →
               expiry cache refresh → exit
-  (see docs/prd/nifty-daily-prediction-games.md for the games themselves)
+  (see docs/prd/nifty-daily-prediction-games.md for the games themselves —
+  neither game is resolved until 16:00, since candles_1d's open/close don't
+  exist before that sync runs)
 """
 
 import argparse
@@ -38,6 +44,7 @@ from config import (
     GAME_NIFTY_OPEN_WIN_THRESHOLD,
     GAME_NIFTY_CLOSE_REWARD_POOL,
     GAME_NIFTY_CLOSE_WIN_THRESHOLD,
+    GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST,
 )
 from live.upstox_client import get_ltp
 from live.triggers import build_trigger, BaseTrigger
@@ -49,8 +56,8 @@ from live.holidays import check_or_exit, is_trading_day, next_trading_day
 from live.fo_instruments import SPOT_IKEYS
 from db.queries import (
     update_price_cache, get_open_trade_ikeys, get_candles,
-    get_active_auto_game, create_game, set_game_status, resolve_game,
-    get_system_user_id,
+    get_active_auto_game, get_closed_auto_game, create_game, set_game_status,
+    resolve_game, get_system_user_id,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -149,14 +156,18 @@ def _utc_iso(dt) -> str:
     return dt.astimezone(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _run_market_open_game_tasks(nifty_open_ltp: float):
+def _run_market_open_game_tasks():
     """
-    Called once, on the first tick after the market opens (see the
-    `_market_open_game_tasks_done` guard in the poll loop below). Two
-    independent steps chained by timing, not by outcome — either can fail
-    on its own without blocking the other:
-      1. Close + resolve last evening's "predict NIFTY's open" game using
-         this first tick as the actual open.
+    Called once, right after the market opens (wait_for_market_open()
+    returns, before the poll loop starts). Two independent steps chained by
+    timing, not by outcome — either can fail on its own without blocking the
+    other:
+      1. Close entries on last evening's "predict NIFTY's open" game — the
+         answer becomes knowable the instant the market opens, so a guess
+         any later isn't fair. NOT resolved yet: candles_1d's official open
+         doesn't exist until the 16:00 EOD sync (see _run_eod_game_tasks()),
+         so this is graded then, alongside today's close-game, from the same
+         authoritative source rather than an approximate live-LTP snapshot.
       2. Create + activate today's "predict NIFTY's close" game.
     See docs/prd/nifty-daily-prediction-games.md.
     """
@@ -164,14 +175,12 @@ def _run_market_open_game_tasks(nifty_open_ltp: float):
         game = get_active_auto_game("nifty_next_open")
         if game:
             set_game_status(game["id"], "closed")
-            resolve_game(game["id"], result_value=str(nifty_open_ltp),
-                         win_threshold=GAME_NIFTY_OPEN_WIN_THRESHOLD)
-            print(f"  [games]  resolved '{game['title']}' — open={nifty_open_ltp}", flush=True)
+            print(f"  [games]  closed entries on '{game['title']}' — resolves at EOD", flush=True)
         else:
-            print("  [games]  no pending open-prediction game to resolve "
+            print("  [games]  no pending open-prediction game to close "
                   "(none created last evening?)", flush=True)
     except Exception as e:
-        print(f"  [games]  failed to resolve open-prediction game — {e}", flush=True)
+        print(f"  [games]  failed to close open-prediction game — {e}", flush=True)
 
     try:
         if get_active_auto_game("nifty_today_close"):
@@ -179,15 +188,18 @@ def _run_market_open_game_tasks(nifty_open_ltp: float):
             return
         today = _ist_now()
         label = today.strftime("%a, %d %b %Y")
-        close_at = today.replace(hour=MARKET_CLOSE_IST[0], minute=MARKET_CLOSE_IST[1],
-                                  second=0, microsecond=0)
+        cutoff_h, cutoff_m = GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST
+        cutoff = today.replace(hour=cutoff_h, minute=cutoff_m, second=0, microsecond=0)
         gid = create_game(
             title=f"Predict NIFTY's Close — {label}",
-            description=f"Guess where NIFTY 50 closes today ({label}). Closest guess within "
-                        f"{GAME_NIFTY_CLOSE_WIN_THRESHOLD} points of the actual close wins "
-                        f"{GAME_NIFTY_CLOSE_REWARD_POOL} credits — no winner if nobody's close enough.",
+            description=f"Guess where NIFTY 50 closes today ({label}). Entries close at "
+                        f"{cutoff_h:02d}:{cutoff_m:02d} IST (30 min before the real market close). "
+                        f"Closest guess within {GAME_NIFTY_CLOSE_WIN_THRESHOLD} points of the actual "
+                        f"close wins {GAME_NIFTY_CLOSE_REWARD_POOL} credits — no winner if nobody's "
+                        f"close enough. Results announced after market close, once official data "
+                        f"confirms it.",
             game_type="price_prediction", symbol="NIFTY50",
-            start_time=_utc_iso(today), end_time=_utc_iso(close_at),
+            start_time=_utc_iso(today), end_time=_utc_iso(cutoff),
             reward_pool=GAME_NIFTY_CLOSE_REWARD_POOL, winner_count=1,
             initial_cash=1_000_000, created_by=get_system_user_id(),
             auto_kind="nifty_today_close",
@@ -198,36 +210,72 @@ def _run_market_open_game_tasks(nifty_open_ltp: float):
         print(f"  [games]  failed to create today's close-prediction game — {e}", flush=True)
 
 
-def _run_eod_game_tasks():
+def _run_close_entry_cutoff_task():
     """
-    Called from _run_eod_tasks(), after the Upstox EOD sync — candles_1d has
-    today's official close by then. Same chained pattern as
-    _run_market_open_game_tasks(), mirrored for the other side of the day:
-      1. Close + resolve today's "predict NIFTY's close" game using the
-         official daily close (not a raw LTP snapshot — more accurate, and
-         the sync just made it final).
-      2. Create + activate a "predict NIFTY's open" game for the next
-         trading day (may be several days out over a weekend/holiday block).
-    See docs/prd/nifty-daily-prediction-games.md.
+    Called once, when the clock crosses GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST
+    (see the `_close_entries_done` guard in the poll loop below). Only closes
+    entries on today's "predict NIFTY's close" game, 30min before the real
+    market close — not resolved until EOD, alongside the open-game (see
+    _run_eod_game_tasks()).
     """
     try:
         game = get_active_auto_game("nifty_today_close")
         if game:
-            candles = get_candles("NIFTY50", "1d", limit=1)
-            if candles.empty:
-                print("  [games]  no NIFTY50 daily candle available yet — leaving close-prediction "
-                      "game unresolved this cycle", flush=True)
+            set_game_status(game["id"], "closed")
+            print(f"  [games]  closed entries on '{game['title']}' — resolves at EOD", flush=True)
+        else:
+            print("  [games]  no pending close-prediction game to close "
+                  "(none created this morning?)", flush=True)
+    except Exception as e:
+        print(f"  [games]  failed to close close-prediction game — {e}", flush=True)
+
+
+def _run_eod_game_tasks():
+    """
+    Called from _run_eod_tasks(), after the Upstox EOD sync — candles_1d has
+    today's official open AND close by then (neither exists in this system
+    before that sync runs). Resolves both of today's games from that one
+    candle, then creates the next trading day's open-game:
+      1. Resolve today's "predict NIFTY's open" game (entries closed at
+         market-open) using the candle's `open`.
+      2. Resolve today's "predict NIFTY's close" game (entries closed at
+         GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST) using the candle's `close`.
+      3. Create + activate a "predict NIFTY's open" game for the next
+         trading day (may be several days out over a weekend/holiday block).
+    See docs/prd/nifty-daily-prediction-games.md.
+    """
+    candles = get_candles("NIFTY50", "1d", limit=1)
+    if candles.empty:
+        print("  [games]  no NIFTY50 daily candle available yet — leaving today's "
+              "games unresolved this cycle", flush=True)
+    else:
+        today_candle = candles.iloc[-1]
+
+        try:
+            game = get_closed_auto_game("nifty_next_open")
+            if game:
+                actual_open = float(today_candle["open"])
+                resolve_game(game["id"], result_value=str(actual_open),
+                             win_threshold=GAME_NIFTY_OPEN_WIN_THRESHOLD)
+                print(f"  [games]  resolved '{game['title']}' — open={actual_open}", flush=True)
             else:
-                actual_close = float(candles.iloc[-1]["close"])
-                set_game_status(game["id"], "closed")
+                print("  [games]  no closed open-prediction game to resolve "
+                      "(missed the market-open close-entries step?)", flush=True)
+        except Exception as e:
+            print(f"  [games]  failed to resolve open-prediction game — {e}", flush=True)
+
+        try:
+            game = get_closed_auto_game("nifty_today_close")
+            if game:
+                actual_close = float(today_candle["close"])
                 resolve_game(game["id"], result_value=str(actual_close),
                              win_threshold=GAME_NIFTY_CLOSE_WIN_THRESHOLD)
                 print(f"  [games]  resolved '{game['title']}' — close={actual_close}", flush=True)
-        else:
-            print("  [games]  no pending close-prediction game to resolve "
-                  "(none created this morning?)", flush=True)
-    except Exception as e:
-        print(f"  [games]  failed to resolve close-prediction game — {e}", flush=True)
+            else:
+                print("  [games]  no closed close-prediction game to resolve "
+                      "(missed the close-entries-cutoff step?)", flush=True)
+        except Exception as e:
+            print(f"  [games]  failed to resolve close-prediction game — {e}", flush=True)
 
     try:
         if get_active_auto_game("nifty_next_open"):
@@ -241,10 +289,11 @@ def _run_eod_game_tasks():
                               second=0, microsecond=0)
         gid = create_game(
             title=f"Predict NIFTY's Open — {label}",
-            description=f"Guess where NIFTY 50 opens on {label}. Closest guess within "
-                        f"{GAME_NIFTY_OPEN_WIN_THRESHOLD} points of the actual open wins "
-                        f"{GAME_NIFTY_OPEN_REWARD_POOL} credits — no winner if nobody's close enough. "
-                        f"Entries close the moment the market opens.",
+            description=f"Guess where NIFTY 50 opens on {label}. Entries close the moment the "
+                        f"market opens. Closest guess within {GAME_NIFTY_OPEN_WIN_THRESHOLD} points "
+                        f"of the actual open wins {GAME_NIFTY_OPEN_REWARD_POOL} credits — no winner "
+                        f"if nobody's close enough. Results announced after market close, once "
+                        f"official data confirms the actual open.",
             game_type="price_prediction", symbol="NIFTY50",
             start_time=_utc_iso(now), end_time=_utc_iso(open_at),
             reward_pool=GAME_NIFTY_OPEN_REWARD_POOL, winner_count=1,
@@ -407,13 +456,14 @@ def run_live(force: bool = False):
     # only waits for the market to open (no scheduled Telegram messages).
     if not force:
         wait_for_market_open()
+        _run_market_open_game_tasks()
 
     error_streak = 0
     daily_alerts: list[dict] = []   # accumulates every signal fired today
     chain_triggers_thread: threading.Thread | None = None   # background run — see below
     _poll_count  = 0                # periodic GC counter
-    _market_open_game_tasks_done = False   # fires once, on the first tick with a NIFTY50 LTP
-    _nifty_ikey = UPSTOX_INSTRUMENT_KEYS.get("NIFTY50")
+    _close_entries_done = False     # fires once, when the clock crosses the close-game entry cutoff
+    _close_entry_cutoff_minutes = GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST[0] * 60 + GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST[1]
 
     while force or is_market_open():
         # Candle close: build from ticks → refresh triggers for that timeframe
@@ -493,15 +543,13 @@ def run_live(force: bool = False):
         # Tick store only needs trigger-instrument prices
         tick_store.record({k: v for k, v in prices.items() if k in ikey_to_name})
 
-        # Once per day, on the first tick that actually has a NIFTY50 price:
-        # resolve last evening's open-prediction game and open today's
-        # close-prediction game. Skipped under --force — that's for testing
-        # outside real market hours, not for creating real games.
-        if not force and not _market_open_game_tasks_done:
-            _nifty_ltp = prices.get(_nifty_ikey)
-            if _nifty_ltp is not None:
-                _market_open_game_tasks_done = True
-                _run_market_open_game_tasks(_nifty_ltp)
+        # Once per day, the moment the clock crosses the close-game entry
+        # cutoff (30min before real market close): stop taking entries on
+        # today's NIFTY close-prediction game. Skipped under --force — that's
+        # for testing outside real market hours, not for touching real games.
+        if not force and not _close_entries_done and _ist_minutes() >= _close_entry_cutoff_minutes:
+            _close_entries_done = True
+            _run_close_entry_cutoff_task()
 
         for ikey, ltp in prices.items():
             for trig in ikey_triggers.get(ikey, []):

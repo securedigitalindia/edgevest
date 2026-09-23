@@ -2784,6 +2784,21 @@ def get_active_auto_game(auto_kind: str) -> dict | None:
     return dict(row) if row else None
 
 
+def get_closed_auto_game(auto_kind: str) -> dict | None:
+    """The single closed-but-not-yet-resolved automation-owned game of this
+    kind, if any. Both daily NIFTY games close their entries hours before
+    they're actually resolved (at the 16:00 EOD sync, once candles_1d has
+    the official open/close) — this is how the EOD step finds "the game I
+    already closed earlier today, waiting on real data"."""
+    conn = get_connection()
+    row = conn.execute("""
+        SELECT * FROM games WHERE auto_kind = ? AND status = 'closed'
+        ORDER BY created_at DESC LIMIT 1
+    """, (auto_kind,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def get_game(game_id: int) -> dict | None:
     conn = get_connection()
     row = conn.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()

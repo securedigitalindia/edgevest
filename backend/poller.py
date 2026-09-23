@@ -10,20 +10,24 @@
 #    python poller.py analysis           — run & send daily NIFTY analysis now
 #    python poller.py analysis --print   — print to terminal without sending
 #    python poller.py games open         — manually run the market-open game
-#                                           step (resolve last evening's NIFTY
-#                                           open-prediction game using the
-#                                           real live LTP, create today's
-#                                           close-prediction game)
-#    python poller.py games close        — manually run the EOD game step
-#                                           (resolve today's NIFTY close-
-#                                           prediction game using the real
-#                                           official candles_1d close, create
-#                                           the next trading day's open-
+#                                           step (close entries on yesterday
+#                                           evening's NIFTY open-prediction
+#                                           game — not resolved yet, create
+#                                           today's close-prediction game)
+#    python poller.py games cutoff       — manually run the close-game entry
+#                                           cutoff step (close entries on
+#                                           today's NIFTY close-prediction
+#                                           game — not resolved yet either)
+#    python poller.py games eod          — manually run the EOD game step
+#                                           (resolve BOTH of today's NIFTY
+#                                           games from the real official
+#                                           candles_1d open/close, create the
+#                                           next trading day's open-
 #                                           prediction game)
-# Both are idempotent (safe to re-run — see docs/prd/nifty-daily-prediction-
-# games.md) and normally fire automatically inside `live` at 09:15/16:00;
-# this is the manual escape hatch (a missed run, or testing without waiting
-# for real market hours).
+# All three are idempotent (safe to re-run — see docs/prd/nifty-daily-
+# prediction-games.md) and normally fire automatically inside `live` at
+# 09:15/15:00/16:00; this is the manual escape hatch (a missed run, or
+# testing without waiting for real market hours).
 # ============================================================
 
 import sys
@@ -72,19 +76,18 @@ def main():
             run_daily_analysis()                  # build + send to Telegram
 
     elif command == "games":
-        from live.poller import _run_market_open_game_tasks, _run_eod_game_tasks
+        from live.poller import (
+            _run_market_open_game_tasks, _run_close_entry_cutoff_task, _run_eod_game_tasks,
+        )
         action = symbols[0] if symbols else None
         if action == "open":
-            from config import UPSTOX_INSTRUMENT_KEYS
-            from live.upstox_client import get_ltp
-            ikey = UPSTOX_INSTRUMENT_KEYS["NIFTY50"]
-            ltp = get_ltp([ikey])[ikey]
-            print(f"NIFTY50 live LTP: {ltp}")
-            _run_market_open_game_tasks(ltp)
-        elif action == "close":
+            _run_market_open_game_tasks()
+        elif action == "cutoff":
+            _run_close_entry_cutoff_task()
+        elif action == "eod":
             _run_eod_game_tasks()
         else:
-            print("Usage: python poller.py games open|close")
+            print("Usage: python poller.py games open|cutoff|eod")
             sys.exit(1)
 
     else:

@@ -29,15 +29,20 @@ REFERRAL_REWARD_GEMS       = 99   # gems awarded to the referrer once the refere
 # -----------------------------------------------------------
 # Daily NIFTY prediction games (auto-scheduled — live/poller.py)
 # -----------------------------------------------------------
-# Two price_prediction games run back-to-back every trading day, chained off
-# each other rather than fixed clock times: resolving the close-game at EOD
-# immediately creates the next day's open-game, and resolving the open-game
-# at market-open immediately creates today's close-game. See
-# docs/prd/nifty-daily-prediction-games.md.
+# Two price_prediction games run every trading day. Entries close promptly
+# (open-game at market-open, close-game 30min before actual market close —
+# see GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST), but BOTH are only resolved at the
+# 16:00 EOD sync, using candles_1d's official open/close columns — neither
+# value exists in this system before that sync runs, so resolving the
+# open-game any earlier would mean grading it against an approximate live
+# LTP snapshot instead of the same authoritative source used for close.
+# Resolving both together at EOD also immediately creates the next trading
+# day's open-game. See docs/prd/nifty-daily-prediction-games.md.
 GAME_NIFTY_OPEN_REWARD_POOL   = 50   # credits — paid only if someone qualifies (see threshold)
 GAME_NIFTY_OPEN_WIN_THRESHOLD = 10   # points — closest guess only wins if within this of the actual open
 GAME_NIFTY_CLOSE_REWARD_POOL   = 50
 GAME_NIFTY_CLOSE_WIN_THRESHOLD = 10
+GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST = (15, 0)   # entries lock 30min before the real 15:30 close
 
 # -----------------------------------------------------------
 # Database
