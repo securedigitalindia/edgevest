@@ -5,6 +5,7 @@ import useAuthStore from '../../store/authStore'
 import usePrices from '../../hooks/usePrices'
 import { useToast } from '../common/Toast'
 import { GemIcon, TrophyIcon, PeopleIcon, RefreshIcon } from '../common/Icons'
+import { fmtIstShort } from '../../utils/format'
 import './GameDetail.css'
 
 const TYPE_LABEL = { price_prediction:'🔮 Prediction', mcq:'📝 Quiz', leaderboard:'📈 Leaderboard' }
@@ -13,11 +14,6 @@ const TYPE_CLASS = { price_prediction:'gtype-prediction', mcq:'gtype-mcq', leade
 function fmtRs(v, dec=0) {
   if (v == null) return '—'
   return '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: dec })
-}
-function fmtIst(ts) {
-  if (!ts) return ''
-  const d = new Date(ts.replace('Z','') + (ts.endsWith('Z') ? '' : 'Z'))
-  return d.toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true })
 }
 
 export default function GameDetail({ id, onEdit }) {
@@ -51,7 +47,7 @@ export default function GameDetail({ id, onEdit }) {
         {game.description && <p style={{fontSize:13,color:'#475569',marginBottom:14,lineHeight:1.5}}>{game.description}</p>}
 
         <div className="game-meta-bar">
-          <span>⏰ Ends {fmtIst(game.end_time)}</span>
+          <span>⏰ Ends {fmtIstShort(game.end_time)}</span>
           <span style={{display:'inline-flex',alignItems:'center',gap:4}}><GemIcon size={12}/> {game.reward_pool} credits pool</span>
           <span style={{display:'inline-flex',alignItems:'center',gap:4}}><TrophyIcon size={12}/> Top {game.winner_count} win</span>
           <span style={{display:'inline-flex',alignItems:'center',gap:4}}><PeopleIcon size={12}/> {game.participant_count} participants</span>
@@ -158,7 +154,7 @@ function PredictionGame({ game, isAdmin, user }) {
       <div className="pred-ref">
         <div className="pred-ref-sym">{sym} · live</div>
         <div className="pred-ref-ltp">{refFmt}</div>
-        <div className="pred-ref-lbl">Where will it close on {fmtIst(game.end_time).split(',')[0]}?</div>
+        <div className="pred-ref-lbl">Where will it close on {fmtIstShort(game.end_time).split(',')[0]}?</div>
       </div>
       <div className="pred-divider" />
       <div className="pred-nudge-row">
@@ -480,7 +476,7 @@ function ParticipantsPanel({ game, userId }) {
             <span className="p-name">{e.user_name||'?'}{isMe && <span className="p-you-badge">YOU</span>}</span>
             {isPred && pp != null && <span style={{fontSize:12,fontWeight:700,color:col,flexShrink:0}}>{arrow} {fmtRs(pp)}{pct}</span>}
             {isPred && pp == null && <span style={{fontSize:11,color:'#94a3b8'}}>—</span>}
-            <span className="p-time">{fmtIst(e.submitted_at)}</span>
+            <span className="p-time">{fmtIstShort(e.submitted_at)}</span>
           </div>
         )
       })}

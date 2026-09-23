@@ -8,6 +8,7 @@ import GameDetail from '../components/games/GameDetail'
 import { useToast } from '../components/common/Toast'
 import { GameIcon, GemIcon, PeopleIcon, CloseIcon } from '../components/common/Icons'
 import Dropdown from '../components/common/Dropdown'
+import { fmtIstShort } from '../utils/format'
 import './Games.css'
 
 const STATUS_DOT = { draft:'#94a3b8', active:'#4ade80', closed:'#f87171', resolved:'#fbbf24' }
@@ -20,22 +21,33 @@ const FILTER_LABEL   = { all:'All', draft:'Draft', active:'Live', closed:'Closed
 
 const SYMBOLS = ['NIFTY50','BANKNIFTY','FINNIFTY','MIDCPNIFTY','SENSEX']
 
-function fmtIst(ts) {
-  if (!ts) return ''
-  const d = new Date(ts.replace('Z','') + (ts.endsWith('Z') ? '' : 'Z'))
-  return d.toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true })
-}
+// IST is a fixed UTC+5:30 offset year-round (no DST), so a plain millisecond
+// shift is exact — this feeds a <input type="datetime-local">, which has no
+// timezone concept of its own and otherwise falls back to the browser's OS
+// timezone (Date.getHours() etc. are always browser-local). Without forcing
+// IST here explicitly, editing a game's start/end time on any machine not
+// itself set to IST would show — and silently re-save — the wrong
+// wall-clock time relative to what fmtIstShort() displays everywhere else.
+const IST_OFFSET_MIN = 5 * 60 + 30
 
 function utcToLocalInput(utcStr) {
   if (!utcStr) return ''
-  const d = new Date(utcStr.replace('Z','') + (utcStr.endsWith('Z') ? '' : 'Z'))
+  const d = new Date(utcStr.endsWith('Z') ? utcStr : utcStr + 'Z')
+  const ist = new Date(d.getTime() + IST_OFFSET_MIN * 60000)
   const pad = n => String(n).padStart(2,'0')
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${ist.getUTCFullYear()}-${pad(ist.getUTCMonth()+1)}-${pad(ist.getUTCDate())}T${pad(ist.getUTCHours())}:${pad(ist.getUTCMinutes())}`
 }
 
 function localInputToUtc(localStr) {
   if (!localStr) return ''
-  return new Date(localStr).toISOString()
+  // localStr is the admin's typed wall-clock time, always meant as IST
+  // (same assumption as utcToLocalInput above) — never the browser's own
+  // timezone, which `new Date(localStr).toISOString()` used to assume.
+  const [datePart, timePart] = localStr.split('T')
+  const [y, mo, da] = datePart.split('-').map(Number)
+  const [h, mi] = timePart.split(':').map(Number)
+  const utcMillis = Date.UTC(y, mo - 1, da, h, mi) - IST_OFFSET_MIN * 60000
+  return new Date(utcMillis).toISOString()
 }
 
 // ─── MCQ question builder ─────────────────────────────────────────────────────
@@ -282,7 +294,7 @@ export default function Games({ subscribed }) {
                 <div style={{fontSize:11,color:'#64748b',display:'flex',gap:10,flexWrap:'wrap',marginBottom:entered?6:0}}>
                   <span style={{display:'inline-flex',alignItems:'center',gap:3}}><GemIcon size={10}/> {g.reward_pool} · Top {g.winner_count}</span>
                   <span style={{display:'inline-flex',alignItems:'center',gap:3}}><PeopleIcon size={10}/> {g.participant_count}</span>
-                  {g.end_time && <span>Ends {fmtIst(g.end_time)}</span>}
+                  {g.end_time && <span>Ends {fmtIstShort(g.end_time)}</span>}
                 </div>
                 {entered && (
                   <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
