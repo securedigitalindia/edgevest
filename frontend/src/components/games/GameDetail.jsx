@@ -72,6 +72,16 @@ export default function GameDetail({ id, onEdit }) {
 
 function PredictionGame({ game, isAdmin, user }) {
   const sym    = game.symbol || 'NIFTY50'
+  // price_prediction historically only ever meant "predict the close" — the
+  // wording below was hardcoded accordingly. Now that the daily NIFTY games
+  // also include an "open" variant (docs/prd/nifty-daily-prediction-games.md),
+  // that hardcoded copy is wrong for it (was literally showing "Predicted
+  // close for NIFTY50" on the open-prediction game). No dedicated DB field
+  // distinguishes them, so this derives it from the title the same way the
+  // automation names its own games ("Predict NIFTY's Open — <date>" /
+  // "...Close — <date>") — any other/manual price_prediction game without
+  // "open" in its title keeps the original "close" wording.
+  const target = /open/i.test(game.title) ? 'open' : 'close'
   const { data: { spot } = { spot: {} } } = usePrices()
   const refLtp = spot[sym]?.ltp ?? null
   const step   = sym.includes('BANK') ? 100 : 50
@@ -85,9 +95,9 @@ function PredictionGame({ game, isAdmin, user }) {
       <div style={{fontSize:12,color:'#64748b',padding:'10px 0'}}>
         Symbol: <strong style={{color:'#1e293b'}}>{sym}</strong>
         {game.status === 'resolved' && game.result_value &&
-          <> · Actual close: <strong style={{color:'#15803d'}}>{fmtRs(game.result_value,2)}</strong></>}
+          <> · Actual {target}: <strong style={{color:'#15803d'}}>{fmtRs(game.result_value,2)}</strong></>}
         {game.status === 'closed' && !game.result_value &&
-          <> · Awaiting resolution — enter actual close price below.</>}
+          <> · Awaiting resolution{game.auto_kind ? ' — resolves automatically.' : ` — enter actual ${target} price below.`}</>}
       </div>
     )
   }
@@ -103,10 +113,10 @@ function PredictionGame({ game, isAdmin, user }) {
       <div style={{border:'1px solid #bfdbfe',background:'#eff6ff',borderRadius:10,padding:16,marginBottom:4}}>
         <div style={{fontSize:11,fontWeight:700,color:'#1d4ed8',textTransform:'uppercase',letterSpacing:.4,marginBottom:8}}>Your Entry</div>
         <div style={{fontSize:20,fontWeight:700,color:'#1e293b',marginBottom:4}}>{fmtRs(pp,2)}</div>
-        <div style={{fontSize:12,color:'#64748b'}}>Predicted close for {sym}</div>
+        <div style={{fontSize:12,color:'#64748b'}}>Predicted {target} for {sym}</div>
         {actual != null ? (
           <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #bfdbfe',display:'flex',gap:20,flexWrap:'wrap'}}>
-            <div><div style={{fontSize:11,color:'#64748b'}}>Actual close</div><div style={{fontSize:14,fontWeight:600,color:'#1e293b'}}>{fmtRs(actual,2)}</div></div>
+            <div><div style={{fontSize:11,color:'#64748b'}}>Actual {target}</div><div style={{fontSize:14,fontWeight:600,color:'#1e293b'}}>{fmtRs(actual,2)}</div></div>
             <div><div style={{fontSize:11,color:'#64748b'}}>Difference</div><div style={{fontSize:14,fontWeight:600,color:diff<100?'#15803d':'#dc2626'}}>±{fmtRs(diff,2)}</div></div>
             {entry.rank  && <div><div style={{fontSize:11,color:'#64748b'}}>Your rank</div><div style={{fontSize:14,fontWeight:700,color:'#d97706'}}>#{entry.rank}</div></div>}
             {entry.credits_won && <div><div style={{fontSize:11,color:'#64748b'}}>Credits won</div><div style={{fontSize:14,fontWeight:700,color:'#fbbf24',display:'flex',alignItems:'center',gap:4}}><GemIcon size={13}/> {entry.credits_won}</div></div>}
@@ -154,7 +164,7 @@ function PredictionGame({ game, isAdmin, user }) {
       <div className="pred-ref">
         <div className="pred-ref-sym">{sym} · live</div>
         <div className="pred-ref-ltp">{refFmt}</div>
-        <div className="pred-ref-lbl">Where will it close on {fmtIstShort(game.end_time).split(',')[0]}?</div>
+        <div className="pred-ref-lbl">Where will it {target} on {fmtIstShort(game.end_time).split(',')[0]}?</div>
       </div>
       <div className="pred-divider" />
       <div className="pred-nudge-row">
@@ -563,6 +573,16 @@ function AdminActions({ game, onEdit }) {
     else toast(res.error||'Error', 'err')
   }
 
+  // Auto-managed games (the daily NIFTY open/close prediction games —
+  // docs/prd/nifty-daily-prediction-games.md) close and resolve themselves on
+  // their own schedule. A manual Close here would close entries early
+  // (breaking the automation's own timing); a manual Resolve here would
+  // bypass its win_threshold payout logic entirely (this screen's resolve
+  // action never passes one) — always paying the top-ranked entry regardless
+  // of how far off they actually were. Hide both for these games.
+  const isAutoManaged = !!game.auto_kind
+  const target = /open/i.test(game.title) ? 'open' : 'close'
+
   return (
     <div className="game-action-bar">
       {(game.status === 'draft' || game.status === 'active') && (
@@ -573,20 +593,26 @@ function AdminActions({ game, onEdit }) {
         <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={doDelete}>🗑 Delete</button>
       </>}
       {game.status === 'active' && (
-        <button className="btn btn-danger btn-sm" onClick={doClose} disabled={close.isPending}>⏹ Close Game</button>
+        isAutoManaged
+          ? <span style={{fontSize:12,color:'#94a3b8'}}>Closes automatically — managed by the poller</span>
+          : <button className="btn btn-danger btn-sm" onClick={doClose} disabled={close.isPending}>⏹ Close Game</button>
       )}
-      {game.status === 'closed' && <>
-        <button className="btn btn-ghost btn-sm" style={{color:'var(--amber,#d97706)'}}
-          onClick={async () => { const r = await reopen.mutateAsync(); if (r.ok) toast('Game reopened!','ok'); else toast(r.error||'Error','err') }}
-          disabled={reopen.isPending}>↩ Reopen</button>
-        {game.game_type === 'price_prediction' && (
-          <input type="number" placeholder="Actual close price" value={resolvePrice}
-            onChange={e=>setResolvePrice(e.target.value)} style={{width:170,display:'inline-block'}} />
-        )}
-        <button className="btn btn-primary btn-sm" onClick={doResolve} disabled={resolve.isPending}>
-          ✅ Resolve &amp; Award Credits
-        </button>
-      </>}
+      {game.status === 'closed' && (
+        isAutoManaged ? (
+          <span style={{fontSize:12,color:'#94a3b8'}}>Resolves automatically at EOD, from the official {target} — managed by the poller</span>
+        ) : <>
+          <button className="btn btn-ghost btn-sm" style={{color:'var(--amber,#d97706)'}}
+            onClick={async () => { const r = await reopen.mutateAsync(); if (r.ok) toast('Game reopened!','ok'); else toast(r.error||'Error','err') }}
+            disabled={reopen.isPending}>↩ Reopen</button>
+          {game.game_type === 'price_prediction' && (
+            <input type="number" placeholder={`Actual ${target} price`} value={resolvePrice}
+              onChange={e=>setResolvePrice(e.target.value)} style={{width:170,display:'inline-block'}} />
+          )}
+          <button className="btn btn-primary btn-sm" onClick={doResolve} disabled={resolve.isPending}>
+            ✅ Resolve &amp; Award Credits
+          </button>
+        </>
+      )}
     </div>
   )
 }

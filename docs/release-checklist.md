@@ -119,6 +119,41 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-23 (`v7.7.12` — patch on top of `v7.7.11`, frontend-only)
+
+Two more Games UI fixes found while dogfooding the new NIFTY open-prediction game:
+
+- `PredictionGame`'s copy ("Predicted close for NIFTY50", "Actual close", "Where will it close on...")
+  was hardcoded for the close-only assumption `price_prediction` used to be safe to make — the
+  open-prediction game literally said "close" everywhere. Now derived from the game's title
+  (`/open/i.test(game.title)`), same convention the automation uses to name its own games.
+- `AdminActions`' manual "Close Game" / "Resolve & Award Credits" buttons are now hidden for any
+  `auto_kind` game — clicking either would have fought the automation (closing entries early, or
+  resolving without the `win_threshold` payout rule this screen's resolve action never applies).
+
+Frontend deploy only — no backend/DB change.
+
+## Status as of 2026-09-23 (`v7.7.11` — patch on top of `v7.7.10`, frontend-only)
+
+Fixed `Games.jsx`/`GameDetail.jsx` each having their own broken local `fmtIst()` (backwards
+`Z`-handling meant `new Date(...)` parsed timestamps in the machine's own local timezone instead of
+UTC — showed the wrong wall-clock time, e.g. "10:00 am" for a value that meant 3:30 pm IST, on any
+non-UTC machine). Replaced with the shared, correctly-written `fmtIstShort()` (`utils/format.js`) used
+everywhere else in the app; also fixed the same bug pattern in the `v7.7.10`-era edit form's
+`utcToLocalInput`/`localInputToUtc`. Frontend deploy only — no backend/DB change.
+
+## Status as of 2026-09-23 (`v7.7.10` — patch on top of `v7.7.9`, backend-only)
+
+Redesigned the daily NIFTY prediction games (`docs/prd/nifty-daily-prediction-games.md`): both games now
+resolve together at the 16:00 EOD sync, from one shared `candles_1d` fetch, instead of resolving the
+open-game immediately at 09:15 from an approximate live-LTP snapshot — `candles_1d`'s official `open`
+column doesn't exist before that same sync anyway. Entries still close promptly (09:15 for open, 15:00
+for close, `GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST`). New `get_closed_auto_game()` alongside
+`get_active_auto_game()`. Manual CLI trigger split: `poller.py games open|cutoff|eod` (was `open|close`).
+
+**Needs a poller restart only** (no `poller.py init` — no schema change this time, `auto_kind` already
+added in `v7.7.8`) — picks up the new 3-hook-point lifecycle.
+
 ## Status as of 2026-09-22 (`v7.7.9` — patch on top of `v7.7.8`, backend-only)
 
 Chain-trigger threshold tuning, applied directly on prod by the user and synced back into this repo:
