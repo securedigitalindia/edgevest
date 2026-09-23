@@ -119,7 +119,14 @@ function PredictionGame({ game, isAdmin, user }) {
             <div><div style={{fontSize:11,color:'#64748b'}}>Actual {target}</div><div style={{fontSize:14,fontWeight:600,color:'#1e293b'}}>{fmtRs(actual,2)}</div></div>
             <div><div style={{fontSize:11,color:'#64748b'}}>Difference</div><div style={{fontSize:14,fontWeight:600,color:diff<100?'#15803d':'#dc2626'}}>±{fmtRs(diff,2)}</div></div>
             {entry.rank  && <div><div style={{fontSize:11,color:'#64748b'}}>Your rank</div><div style={{fontSize:14,fontWeight:700,color:'#d97706'}}>#{entry.rank}</div></div>}
-            {entry.credits_won && <div><div style={{fontSize:11,color:'#64748b'}}>Credits won</div><div style={{fontSize:14,fontWeight:700,color:'#fbbf24',display:'flex',alignItems:'center',gap:4}}><GemIcon size={13}/> {entry.credits_won}</div></div>}
+            {/* Always show once resolved, even at 0 — previously hid the whole block on a loss
+                (entry.credits_won && ...), leaving no visible confirmation either way. */}
+            <div>
+              <div style={{fontSize:11,color:'#64748b'}}>Credits won</div>
+              {entry.credits_won
+                ? <div style={{fontSize:14,fontWeight:700,color:'#fbbf24',display:'flex',alignItems:'center',gap:4}}><GemIcon size={13}/> {entry.credits_won}</div>
+                : <div style={{fontSize:14,fontWeight:600,color:'#94a3b8'}}>0 — not close enough to win</div>}
+            </div>
           </div>
         ) : (
           <div style={{marginTop:8,fontSize:12,color:'#64748b'}}>{entry.rank ? `Rank #${entry.rank}` : 'Waiting for results…'}</div>

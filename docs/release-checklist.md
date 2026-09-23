@@ -119,6 +119,13 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-23 (`v7.7.17` — patch on top of `v7.7.16`, frontend-only)
+
+`PredictionGame`'s "Your Entry" resolved result card (`GameDetail.jsx`) previously hid the entire
+"Credits won" section on a loss (`entry.credits_won && ...` — falsy, renders nothing), leaving no
+visible confirmation either way once resolved. Now always shows: `Credits won: 50` with the gem icon on
+a win (unchanged), `Credits won: 0 — not close enough to win` on a loss (new). No backend change.
+
 ## Status as of 2026-09-23 (`v7.7.16` — patch on top of `v7.7.15`, frontend-only)
 
 Price-prediction game leaderboard (`GameDetail.jsx`'s `LeaderboardSection`) showed only the `±diff`
