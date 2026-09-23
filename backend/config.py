@@ -29,20 +29,30 @@ REFERRAL_REWARD_GEMS       = 99   # gems awarded to the referrer once the refere
 # -----------------------------------------------------------
 # Daily NIFTY prediction games (auto-scheduled — live/poller.py)
 # -----------------------------------------------------------
-# Two price_prediction games run every trading day. Entries close promptly
-# (open-game at market-open, close-game 30min before actual market close —
-# see GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST), but BOTH are only resolved at the
-# 16:00 EOD sync, using candles_1d's official open/close columns — neither
-# value exists in this system before that sync runs, so resolving the
-# open-game any earlier would mean grading it against an approximate live
-# LTP snapshot instead of the same authoritative source used for close.
-# Resolving both together at EOD also immediately creates the next trading
-# day's open-game. See docs/prd/nifty-daily-prediction-games.md.
+# Two price_prediction games run every trading day. Daily schedule (all IST,
+# see live/poller.py's module docstring for the exact hook points):
+#   GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST (09:00) — close entries on last
+#                             evening's open-game, create today's close-game
+#   GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST (15:00) — close entries on today's
+#                             close-game
+#   16:00 (EOD sync)      — resolve BOTH games from that day's official
+#                             candles_1d open/close, create tomorrow's
+#                             open-game
+# Both entry cutoffs are deliberately ~15min BEFORE the actual event they're
+# predicting (market opens 09:15, NIFTY's real/effective close is 15:15 —
+# not MARKET_CLOSE_IST's 15:30, confirmed by the user) — a safety margin so
+# nobody can snipe a near-certain last-moment entry once the answer is
+# effectively already known. Both are only resolved at 16:00 because
+# candles_1d's official open/close columns don't exist in this system
+# before that sync runs — resolving the open-game any earlier would mean
+# grading it against an approximate live LTP snapshot instead of the same
+# authoritative source used for close. See docs/prd/nifty-daily-prediction-games.md.
 GAME_NIFTY_OPEN_REWARD_POOL   = 50   # credits — paid only if someone qualifies (see threshold)
 GAME_NIFTY_OPEN_WIN_THRESHOLD = 10   # points — closest guess only wins if within this of the actual open
 GAME_NIFTY_CLOSE_REWARD_POOL   = 50
 GAME_NIFTY_CLOSE_WIN_THRESHOLD = 10
-GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST = (15, 0)   # entries lock 30min before the real 15:30 close
+GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST  = (9, 0)     # ~15min safety margin before MARKET_OPEN_IST (09:15)
+GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST = (15, 0)    # ~15min safety margin before NIFTY's real close (15:15)
 
 # -----------------------------------------------------------
 # Database
