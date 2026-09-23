@@ -119,6 +119,14 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-23 (`v7.7.16` — patch on top of `v7.7.15`, frontend-only)
+
+Price-prediction game leaderboard (`GameDetail.jsx`'s `LeaderboardSection`) showed only the `±diff`
+score, hiding what each participant actually guessed — the exact `predicted_price` was already stored
+per entry (`entry_data`), just never displayed post-resolution (the pre-resolution `ParticipantsPanel`
+already showed it). Now shows both: `₹23,441 (±5.8)`. Column header changed "Diff" → "Guess" to match.
+No backend change — `entry_data` was already returned by `list_entries()`.
+
 ## Status as of 2026-09-23 (`v7.7.15` — patch on top of `v7.7.14`, backend-only, urgent)
 
 **Real prod incident, same day:** deploying `v7.7.13` meant restarting `edgevest-poller.service` after

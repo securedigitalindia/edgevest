@@ -500,10 +500,19 @@ function ParticipantsPanel({ game, userId }) {
 function LeaderboardSection({ game }) {
   const entries   = game.entries || []
   const title     = game.status === 'resolved' ? '🏆 Final Results' : '📋 Participants'
-  const scoreLabel= game.game_type === 'price_prediction' ? 'Diff' : game.game_type === 'mcq' ? 'Score' : 'P&L'
+  const scoreLabel= game.game_type === 'price_prediction' ? 'Guess' : game.game_type === 'mcq' ? 'Score' : 'P&L'
 
+  // predicted_price is already stored per entry (entry_data) — showing the diff alone hides
+  // what the participant actually guessed, which is the more meaningful number once entries
+  // are visible (pre-resolution PredictionGame/ParticipantsPanel already shows the raw guess,
+  // this just brings the leaderboard in line with that instead of abstracting it away).
   function scoreFmt(e) {
-    if (game.game_type === 'price_prediction') return e.score != null ? `±${parseFloat(e.score).toLocaleString('en-IN',{maximumFractionDigits:1})}` : '—'
+    if (game.game_type === 'price_prediction') {
+      const pp = e.entry_data?.predicted_price
+      if (pp == null) return e.score != null ? `±${parseFloat(e.score).toLocaleString('en-IN',{maximumFractionDigits:1})}` : '—'
+      const diff = e.score != null ? ` (±${parseFloat(e.score).toLocaleString('en-IN',{maximumFractionDigits:1})})` : ''
+      return `${fmtRs(pp)}${diff}`
+    }
     if (game.game_type === 'mcq') return e.score != null ? `${e.score} correct` : '—'
     return e.score != null ? (e.score >= 0 ? '+' : '') + fmtRs(e.score) : '—'
   }
