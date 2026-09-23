@@ -11,13 +11,18 @@ resolved until the 16:00 EOD sync** — see "Why both resolve at EOD" below.
 
 1. **"Predict NIFTY's Open — `<date>`"** — created at EOD the evening before, for whichever day is the
    next actual trading day (`holidays.next_trading_day()` — skips weekends/holidays, so a Friday's EOD
-   can jump straight to the following Monday, or further over a long weekend). Entries close the
-   instant the market opens (09:15) — once NIFTY starts trading the answer is no longer a fair guess —
-   but it isn't graded until EOD.
-2. **"Predict NIFTY's Close — `<date>`"** — created the moment the open-game's entries close (09:15,
-   same instant, same function call), for *today*. Entries close at 15:00 (`GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST`,
-   30 minutes before the real 15:30 close, same "lock entries before the answer is nearly certain"
-   logic as the open-game), also not graded until EOD.
+   can jump straight to the following Monday, or further over a long weekend). Entries close at 09:00
+   (`GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST`) — a 15min safety margin *before* market open (09:15), not the
+   market-open moment itself, so nobody can lock in a guess once NIFTY has effectively already started
+   printing. Not graded until EOD.
+2. **"Predict NIFTY's Close — `<date>`"** — created the moment the open-game's entries close (09:00,
+   same instant, same function call), for *today*. Entries close at 15:00
+   (`GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST`) — a 15min safety margin before NIFTY's real/effective close
+   (15:15, confirmed by the user — **not** `MARKET_CLOSE_IST`'s 15:30). Also not graded until EOD.
+
+Both cutoffs are deliberately *before* the moment they're protecting, not exactly at it — the whole
+point of a cutoff is to stop a near-certain last-second entry once the answer is effectively already
+known, and a cutoff set exactly at that moment doesn't actually prevent that.
 
 Both are resolved together at 16:00, immediately followed by creating the next open-game.
 
@@ -32,10 +37,31 @@ open". User caught the inconsistency: the close-game already waits for the EOD s
 treatment, using `candles_1d`'s `open` column. The catch: **that column doesn't exist until the exact
 same 16:00 sync** — there's no earlier "official open" published anywhere in this system's pipeline.
 So resolving the open-game accurately necessarily means resolving it at EOD too, same as the close-game
-— entries still lock promptly (09:15 for open, 15:00 for close), only the grading/payout is deferred
+— entries still lock promptly (09:00 for open, 15:00 for close), only the grading/payout is deferred
 to when real data exists. Both games are graded from **one shared `candles_1d` row fetch** at EOD, so
 they're always consistent with each other and with the same sync that produces every other candle in
 this system.
+
+**Entry-cutoff times went through two corrections on 2026-09-23, ending at a safety-margin design:**
+1. First built as 15:00 for the close-game (a 30-minute-before-close guess, `MARKET_CLOSE_IST` minus an
+   arbitrary buffer), open-game entries closing exactly at market-open (09:15).
+2. User corrected the close-game's *reference point*: NIFTY's real/effective close happens at 15:15,
+   not 15:30 — so `GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST` briefly became `(15, 15)` (exactly at the real
+   close, no margin).
+3. **Final correction:** entries closing *exactly at* the answer-determining moment still lets someone
+   lock in a near-certain last-second guess right as the poller notices the cutoff. User: build in a
+   15min safety margin on both sides instead — `GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST = (9, 0)` (15min before
+   the 09:15 open) and `GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST = (15, 0)` (15min before NIFTY's real 15:15
+   close). This is a genuinely new hook point for the open side — previously the open-game's entries
+   closed implicitly, tied to `wait_for_market_open()` returning; now `run_live()` calls the
+   already-existing-but-previously-unused `_wait_until(9, 0)` helper *before* `wait_for_market_open()`,
+   so the open/close-game tasks fire 15 minutes earlier than before, then the poller keeps waiting for
+   the market to actually open before polling starts. `_wait_until()` is itself a no-op if the process
+   happens to start after 09:00 (e.g. a late restart), so this degrades safely.
+
+Both constants kept separate from `MARKET_OPEN_IST`/`MARKET_CLOSE_IST` — they're genuinely different
+moments (the market-hours boundary vs. when *this game's* answer becomes effectively fixed), not
+duplicated values that happen to coincide.
 
 ## Why chained, not clock-scheduled
 
@@ -92,9 +118,11 @@ tasks (~16:05), and exits; systemd restarts it ~30s later, and the new invocatio
 restarts daily — in practice, since nothing else crashes it, it's continuously alive across the
 16:05→09:15 idle window. Three new hook points, no new process/cron/systemd unit:
 
-1. **Right after `wait_for_market_open()` returns** (`_run_market_open_game_tasks()`, called once
-   before the main poll loop starts, `--force`-gated off) — closes entries on the open-game (does not
-   resolve it), then creates today's close-game.
+1. **At `GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST` (09:00), via `_wait_until(9, 0)` before
+   `wait_for_market_open()`** (`_run_market_open_game_tasks()`, `--force`-gated off) — closes entries on
+   the open-game (does not resolve it), then creates today's close-game. `_wait_until()` had sat unused
+   in this file since it was originally built for an earlier (later-abandoned) clock-scheduled design —
+   this is its first real use.
 2. **Inside the main poll loop, once per day, the moment the clock crosses
    `GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST`** (`_run_close_entry_cutoff_task()`, guarded by a
    `_close_entries_done` flag) — closes entries on the close-game (does not resolve it).
@@ -119,6 +147,102 @@ time a restart happened to land differently. Fixed: `wait_for_market_open()`'s l
 every 60s iteration, so this now correctly rides out an entire weekend/holiday block, however many
 days long, instead of being safe only by accident.
 
+## A real prod bug found while dogfooding: EOD resolution used yesterday's candle
+
+2026-09-23, from a fresh prod DB pull: both games had already resolved, but with visibly wrong
+open/close values. Root-caused with real data, not guessed:
+
+- **The actual cause, not games-specific:** `bootstrap/upstox_loader.py`'s `_is_incomplete_last_candle()`
+  — the function deciding whether to drop the freshest fetched candle as "still forming" — had, for the
+  `1d` timeframe, `return last_ist.date() == now_ist.date()`. This drops a candle whenever it's dated
+  *today*, with **no check on the actual time** — so even the 16:00 EOD sync (deliberately scheduled
+  30min after the 15:30 close specifically because Upstox's data is final by then) always threw today's
+  own candle away, every single day, forever. `candles_1d` was permanently one full day stale right
+  after every EOD sync, only ever caught up by the *next* day's sync. This silently affected every 1d
+  consumer in the system (monthly reports, strategies), not just these games — just never surfaced
+  loudly before because nothing else needed *same-day* 1d data. **Fixed:** the 1d check now also
+  requires we're actually before market close on that same date — a same-day candle is only "still
+  forming" until `MARKET_CLOSE_IST`, not for the entire rest of the day. Verified directly: today's
+  candle at the real current time (past close) → correctly kept; same candle simulated at 10:00 IST
+  (before close) → still correctly dropped; a different day's candle → unaffected either way.
+- **Games-specific defensive fix, on top:** `_run_eod_game_tasks()` previously trusted
+  `get_candles("NIFTY50", "1d", limit=1)`'s "most recent row" with no date check at all. Now compares
+  the fetched candle's date (converted to IST) against today's actual date — if they don't match, both
+  games are left `closed` (not resolved) rather than silently graded against stale data, logged clearly
+  ("still shows yesterday's session"). This is the safety net for *any* reason today's candle might be
+  missing (not just the bug above — a genuine Upstox delay, a failed sync, anything) — recoverable via
+  `poller.py games eod` once real data exists, same recovery path as "no candle at all yet". Verified
+  in isolation: stale-candle-only scenario → both games correctly stay unresolved; re-run once a
+  same-day candle is added → both resolve correctly.
+- **Not retroactively fixed:** the two prod games that had already resolved with wrong values before
+  this fix were left as-is — `get_closed_auto_game()` won't find an already-`resolved` game, so a
+  re-run can't silently correct them, and doing so would touch already-paid-out credits, a decision
+  left to the user rather than made unilaterally. (Turned out moot: checked, and every entry in both
+  games had `credits_won=0` — the closest guess was still outside the 10-point `win_threshold` even
+  against the wrong values, so nothing was actually paid out incorrectly. No clawback needed.)
+
+## The real fix: Upstox has a separate API for today's data — we were never calling it
+
+The `_is_incomplete_last_candle()` fix above helps, but doesn't fully solve same-day resolution —
+confirmed by testing live against Upstox for hours after close: the **Historical Candle API**
+(`get_historical_candles()`, what `fetch_historical()`/`bootstrap/upstox_loader.py` has always used) is
+**documented to only ever serve completed historical days**. It structurally never returns the current
+trading day, no matter what time you ask — that's by design, not a publish delay to wait out.
+
+Upstox has a **separate, dedicated endpoint** for exactly this: the **Intraday Candle Data V3 API**
+(`get_intra_day_candle_data` — already present in the installed SDK, just never called from this
+codebase). Verified live, hours after close: `days`/`1` on this endpoint returned today's full,
+accurate OHLC (`open=23352.15, close=23446.8`) — matching independently-confirmed-correct values
+exactly. Also verified across `1m`/`5m`/`15m`/`1h` — all agree, all correct. (This also explains an
+earlier red herring in this same debugging thread: our own poller's first captured tick landed at
+09:15:09, 9 seconds after market open, and NIFTY had already moved from 23352.15 to ~23404 by then —
+Upstox's own exchange-timed 1-minute candle caught the true 09:15:00 print; our own tick-polling loop
+structurally can't guarantee that, since there's always some non-zero delay before the first request
+lands.)
+
+**Fixed at the sync-pipeline level, not just for games** (`sync/daily_sync.py`'s `sync_symbol()`): now
+calls both APIs with a clean split of responsibility — `fetch_historical()` keeps backfilling/correcting
+everything *older* than today (unchanged), and a new `fetch_intraday()` (`bootstrap/upstox_loader.py`,
+wrapping the new `get_intraday_candles()` in `live/upstox_client.py`) fills in *today* specifically, via
+the intraday endpoint, for `1m`/`5m`/`15m`/`1h`/`1d` (the intraday endpoint has no `weeks`/`months`
+unit, so `1wk`/`1mo` stay historical-only — "this week"/"this month" being incomplete until it ends
+isn't a same-day gap anything currently needs). Both write through the same `upsert_candles()`, so every
+downstream reader — games, monthly reports, strategies — just reads `candles_1d` etc. normally and gets
+complete, correct same-day data, with no awareness that either of this exists.
+
+**Verified end-to-end** against a temp copy of the real (still-missing-today) prod DB: `candles_1d` went
+from 4668 → 4669 rows for NIFTY50, the new row exactly matching the confirmed-correct
+`open=23352.15, close=23446.8`; `1h` also picked up its final partial-hour boundary that the local
+tick-builder hadn't closed yet. The games feature needs **no special-casing at all** now — it already
+reads `candles_1d` normally; this just makes that table actually correct same-day. The earlier
+date-staleness check in `_run_eod_game_tasks()` stays in place as a defensive backstop (e.g. if the
+intraday fetch itself fails on some day), not as the primary mechanism anymore.
+
+## Two UI bugs found while dogfooding this feature (`v7.7.11`, `v7.7.12`)
+
+Not part of the automation itself, but found and fixed in the same arc, testing this
+exact feature end-to-end:
+
+- **Wrong local time instead of IST.** `Games.jsx`/`GameDetail.jsx` each had their own
+  local `fmtIst()` reimplementation with backwards `Z`-handling — it stripped a
+  trailing `Z` and never re-added it, so `new Date(...)` parsed the timestamp using
+  the *machine's own local timezone* instead of UTC. On a non-UTC machine this showed
+  e.g. "10:00 am" for a game whose `end_time` actually meant 3:30 pm IST. The rest of
+  the app was never affected — everywhere else already used the correctly-written
+  shared `fmtIstShort()` in `utils/format.js`; only these two Games files had their
+  own broken copy. Fixed by deleting both duplicates and switching every call site
+  to the shared helper.
+- **Hardcoded "close" wording.** `PredictionGame`'s copy ("Predicted close for
+  NIFTY50", "Actual close", "Where will it close on...") assumed `price_prediction`
+  always meant predicting a close — wrong for the new open-prediction game, which
+  literally said "close" everywhere. Now derived from the game's title
+  (`/open/i.test(game.title)`), the same convention the automation uses to name its
+  own games. Also hid `AdminActions`' manual "Close Game"/"Resolve & Award Credits"
+  buttons for any `auto_kind` game — either would have fought the automation (closing
+  entries early, or resolving without the `win_threshold` payout rule this screen's
+  resolve action never applies, silently paying the top-ranked entry regardless of
+  how far off they actually were).
+
 ## Verification (isolated temp SQLite DB, no side effects on the real dev DB)
 
 - `next_trading_day(Fri 2026-09-25)` → `Mon 2026-09-28` (correctly skips the weekend).
@@ -133,7 +257,9 @@ days long, instead of being safe only by accident.
   check) → inserted one fake `candles_1d` row (`open=25010, close=25060`) → `_run_eod_game_tasks()` →
   both games resolved in the same call from that one row (`open-game: result_value='25010.0'`,
   `close-game: result_value='25060.0'`), correct winner picked in each (the entry within 10 points),
-  next open-game created. Titles carried the correct target date at every step.
+  next open-game created. Titles carried the correct target date at every step. Re-run after the
+  09:00/15:00 safety-margin correction: open-game `end_time` landed on `03:30:00Z` (09:00 IST) and
+  close-game `end_time` on `09:30:00Z` (15:00 IST) — both exact.
 - Duplicate-call guard: calling `_run_eod_game_tasks()` again immediately after (simulating a same-
   window poller restart) logged "already exists — skipping create" and left the total `nifty_next_open`
   row count unchanged.
@@ -157,4 +283,4 @@ same three functions the live poller calls automatically, so this is a real trig
 not a simulation: `eod` reads the actual `candles_1d` open/close. All three are idempotent (the
 existing `get_active_auto_game()`/`get_closed_auto_game()` guards apply identically) — safe to re-run,
 e.g. after confirming a scheduled step didn't fire. Lets the full lifecycle be tested end-to-end
-without waiting for real 09:15/15:00/16:00 IST.
+without waiting for real 09:00/15:00/16:00 IST.

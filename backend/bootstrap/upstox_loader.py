@@ -13,9 +13,9 @@ from datetime import date, timedelta, datetime, timezone
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import SYMBOLS, TIMEFRAMES, FETCH_DELAY_SECONDS, UPSTOX_INSTRUMENT_KEYS
+from config import SYMBOLS, TIMEFRAMES, FETCH_DELAY_SECONDS, UPSTOX_INSTRUMENT_KEYS, MARKET_CLOSE_IST
 from db.queries import upsert_candles, update_sync_log, get_row_count, delete_candles
-from live.upstox_client import get_historical_candles
+from live.upstox_client import get_historical_candles, get_intraday_candles
 
 # -----------------------------------------------------------
 # Upstox V3 constraints (confirmed against the live API):
@@ -33,6 +33,17 @@ UPSTOX_TF_MAP = {
     "1d":  ("days",    1,  3650),
     "1wk": ("weeks",   1,  None),   # no cap
     "1mo": ("months",  1,  None),   # no cap
+}
+
+# Separate map for fetch_intraday() / get_intraday_candles() — Upstox's
+# Intraday Candle Data API only supports minutes/hours/days (confirmed via
+# their docs), no weeks/months, and takes interval as a string, not an int.
+UPSTOX_INTRADAY_TF_MAP = {
+    "1m":  ("minutes", "1"),
+    "5m":  ("minutes", "5"),
+    "15m": ("minutes", "15"),
+    "1h":  ("hours",   "1"),
+    "1d":  ("days",    "1"),
 }
 
 DATA_FLOOR = {
@@ -102,7 +113,21 @@ def _is_incomplete_last_candle(last_ts_utc: pd.Timestamp, tf_key: str) -> bool:
     now_ist = now_utc.astimezone(IST)
 
     if tf_key == "1d":
-        return last_ist.date() == now_ist.date()
+        if last_ist.date() != now_ist.date():
+            return False
+        # Same calendar day — genuinely still forming only until market
+        # close. Without this, a same-day 1d candle was ALWAYS dropped
+        # regardless of time, even by the 16:00 EOD sync (deliberately
+        # scheduled 30min after the 15:30 close specifically because
+        # Upstox's data is final by then) — so candles_1d was permanently
+        # one full day stale right after every EOD sync, only ever caught
+        # up by the NEXT day's sync. Confirmed 2026-09-23: this silently
+        # broke the daily NIFTY prediction games' same-day EOD resolution
+        # (docs/prd/nifty-daily-prediction-games.md) — not specific to that
+        # feature, affects every 1d consumer.
+        market_close = now_ist.replace(hour=MARKET_CLOSE_IST[0], minute=MARKET_CLOSE_IST[1],
+                                        second=0, microsecond=0)
+        return now_ist < market_close
     if tf_key == "1wk":
         return last_ist.isocalendar()[:2] == now_ist.isocalendar()[:2]
     if tf_key == "1mo":
@@ -160,6 +185,45 @@ def fetch_historical(
         df = df.iloc[:-1]
 
     return df.reset_index(drop=True)
+
+
+def fetch_intraday(instrument_key: str, tf_key: str) -> pd.DataFrame:
+    """
+    Today's data so far, via Upstox's separate Intraday Candle Data API —
+    the one gap fetch_historical() never fills (see get_intraday_candles()'s
+    docstring). No date range/chunking: the endpoint only ever returns the
+    current trading day. Only "1m"/"5m"/"15m"/"1h"/"1d" are supported here
+    (the intraday endpoint has no "weeks"/"months" unit) — "1wk"/"1mo" stay
+    fetch_historical()-only, same as before; "this week"/"this month" being
+    incomplete until it ends isn't a gap anything currently needs same-day.
+
+    No "incomplete last candle" dropping like fetch_historical() — if called
+    after market close (the normal case, from the 16:00 EOD sync) the
+    returned day/candles are already final; if called mid-session, a
+    partial-so-far row is exactly the correct, honest answer for an
+    "intraday, as of right now" endpoint, not something to drop.
+
+    Returns the same ascending, deduped, UTC tz-aware DataFrame shape as
+    fetch_historical(). Empty DataFrame before market open or on error.
+    """
+    if tf_key not in UPSTOX_INTRADAY_TF_MAP:
+        return pd.DataFrame()
+    unit, interval = UPSTOX_INTRADAY_TF_MAP[tf_key]
+
+    try:
+        candles = get_intraday_candles(instrument_key, unit, interval)
+    except RuntimeError as e:
+        print(f"    ✗  Upstox intraday error [{tf_key}]: {e}")
+        return pd.DataFrame()
+
+    if not candles:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(candles, columns=["ts", "open", "high", "low", "close", "volume", "oi"])
+    df["ts"] = pd.to_datetime(df["ts"], utc=True)
+    df = df.dropna(subset=["close"])
+    df = df.drop_duplicates(subset="ts").sort_values("ts").reset_index(drop=True)
+    return df
 
 
 # -----------------------------------------------------------

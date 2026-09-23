@@ -60,9 +60,29 @@ Startup      holiday check → expiry cache refresh → load triggers → wait f
 - `roll_recommended_trade(trade_id, exit_ltp, exit_time, new_expiry_str, new_pe_strike, ...)` — mark current as 'rolled', open replacement row with parent_trade_id linking back; use at monthly expiry
 
 ### Data Pipeline (`bootstrap/`, `sync/`)
-**`bootstrap/upstox_loader.py`** — `fetch_historical()` shared by bootstrap and sync, via Upstox's History V3 API (`live/upstox_client.get_historical_candles`). Chunks requests per Upstox's per-timeframe lookback caps (30 days for 1m/5m/15m, 91 days for 1h, ~10 years for 1d, no cap for 1wk/1mo), normalises to UTC, and drops an in-progress last candle uniformly across all timeframes via `_is_incomplete_last_candle()`.
 
-**`sync/daily_sync.py`** — true gap-fill: for each symbol/timeframe, fetches from `get_latest_ts()` (minus a small `SYNC_RECHECK_DAYS=2` defensive window, in case Upstox revises an already-published candle) through today, however large that gap is. Called only at 16:00 by the poller (not at startup — see `live/poller.py`'s `_run_startup_tasks()`).
+Two separate Upstox APIs for two separate jobs, confirmed 2026-09-23 (their Historical Candle API is
+documented to never include the current trading day, no matter how long after close you ask — not a
+publish delay, by design):
+
+**`bootstrap/upstox_loader.py`** — `fetch_historical()` (shared by bootstrap and sync, via Upstox's
+History V3 API, `live/upstox_client.get_historical_candles`) backfills/corrects everything **older**
+than today. Chunks requests per Upstox's per-timeframe lookback caps (30 days for 1m/5m/15m, 91 days
+for 1h, ~10 years for 1d, no cap for 1wk/1mo), normalises to UTC, and drops an in-progress last candle
+via `_is_incomplete_last_candle()` (fixed 2026-09-23 for `1d`: was dropping every same-day candle
+regardless of time, not just while still genuinely mid-session — now only "incomplete" until
+`MARKET_CLOSE_IST` on that same date). `fetch_intraday()` (new) fills in **today specifically**, via
+the separate Intraday Candle Data V3 API (`live/upstox_client.get_intraday_candles`,
+`UPSTOX_INTRADAY_TF_MAP`) — the one gap `fetch_historical()` structurally can never close. Covers
+`1m`/`5m`/`15m`/`1h`/`1d` only (that endpoint has no `weeks`/`months` unit); `1wk`/`1mo` stay
+historical-only.
+
+**`sync/daily_sync.py`** — `sync_symbol()` calls both, back to back, per timeframe: `fetch_historical()`
+for the gap-fill (from `get_latest_ts()` minus `SYNC_RECHECK_DAYS=2`, through today — never actually
+returns today, that's expected), then `fetch_intraday()` for today's own data. Both upsert into the
+same tables, so every downstream reader (games, monthly reports, strategies) just reads `candles_1d`
+etc. normally and gets complete, correct same-day data. Called only at 16:00 by the poller (not at
+startup — see `live/poller.py`'s `_run_startup_tasks()`).
 
 **Known limitation**: `utils/verify_db.py`'s diff-based `check_gaps()` cannot detect a single missing ad-hoc special session sitting between two otherwise-normal trading days (a diff of ~3 days across a weekend still looks like a normal weekend gap even with a day silently missing inside it — this is exactly how NSE's one-off Sunday, 2026-02-01 Union Budget session went undetected under yfinance). Correctness here rests on the data provider actually having every session, not on `verify_db` catching gaps after the fact — one motivation for using Upstox (a direct exchange feed) over yfinance.
 
@@ -120,11 +140,21 @@ Unrelated to Drishti/the poller — this is billing for the client-facing produc
 
 Two `price_prediction` games (existing `games` table/type, `/api/games*` routes, frontend UI — none of
 that is games-automation-specific) run every trading day with zero admin interaction. Entries close
-promptly (open-game at 09:15 market-open, close-game at `GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST` = 15:00,
-30min before the real close) but **neither is resolved until 16:00**, after the Upstox EOD sync —
-`candles_1d`'s `open`/`close` columns for today don't exist any earlier than that sync, so both games
-are graded from the same one candle fetch for consistency, not an approximate live-LTP snapshot for
-the open. Resolving both immediately creates the next trading day's open-game. One winner per game,
+15min *before* the moment they're protecting, as a safety margin against a last-second sure-thing entry
+— open-game at `GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST` = 09:00 (15min before `MARKET_OPEN_IST`'s 09:15),
+close-game at `GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST` = 15:00 (15min before NIFTY's real/effective close at
+15:15, confirmed by the user — deliberately **not** `MARKET_CLOSE_IST`'s 15:30). The 09:00 cutoff is a
+genuinely new hook point in `run_live()`: `_wait_until(9, 0)` (previously unused) fires before
+`wait_for_market_open()`, so game tasks run ~15min earlier than market-open itself. Neither game is
+resolved until 16:00, after the Upstox EOD sync — `candles_1d`'s `open`/
+`close` columns for today don't exist any earlier than that sync, so both games are graded from the
+same one candle fetch for consistency, not an approximate live-LTP snapshot for the open. The EOD
+resolve step verifies the fetched candle's date actually matches today before using it — a real bug
+(`bootstrap/upstox_loader.py`'s `_is_incomplete_last_candle()` dropped every same-day 1d candle
+regardless of time, not just games-specific, see its own docstring) meant `candles_1d` could be a full
+day stale even right after the EOD sync ran; both games now correctly stay unresolved rather than
+silently grading against stale data when that happens. Resolving both immediately creates the next
+trading day's open-game. One winner per game,
 paid only if within `GAME_NIFTY_{OPEN,CLOSE}_WIN_THRESHOLD` points of the actual value (`config.py`) —
 `resolve_game()`'s new optional `win_threshold` param, `None` everywhere else so manual admin games are
 unaffected. `games.auto_kind` (`nifty_next_open` / `nifty_today_close`) plus `get_active_auto_game()`

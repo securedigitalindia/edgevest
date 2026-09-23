@@ -119,6 +119,42 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-23 (`v7.7.14` — patch on top of `v7.7.13`, backend-only)
+
+The real fix behind the wrong-value bug `v7.7.13` didn't fully address: Upstox's Historical Candle API
+(`get_historical_candles()`, all `bootstrap/upstox_loader.py`/`sync/daily_sync.py` ever used) is
+documented to **never** return the current trading day, confirmed live 6+ hours after close — not a
+publish delay, a hard API boundary. Upstox has a separate **Intraday Candle Data V3 API**
+(`get_intra_day_candle_data`, already in the installed SDK, never called before) specifically for this.
+`sync/daily_sync.py`'s `sync_symbol()` now calls both: `fetch_historical()` for everything older than
+today (unchanged), new `fetch_intraday()` for today specifically (`1m`/`5m`/`15m`/`1h`/`1d` — no
+`weeks`/`months` unit on that endpoint). Verified end-to-end against a temp copy of real prod data:
+`candles_1d` went from missing today's row entirely to having the exact correct
+`open=23352.15, close=23446.80`. No games-specific code needed — `get_candles(..., "1d", limit=1)` just
+works correctly same-day now, benefiting every consumer (games, monthly report, strategies).
+
+Also includes `backend/scripts/correct_2026_09_23_games.py` — a **one-off** correction for the two
+2026-09-23 games that had already resolved against wrong data before this fix. Found a real, previously
+unpaid winner: user 8 should have won game #6 (close-prediction) by 5.8 points under the real close, but
+the game resolved against a stale value with no winner. **Must be run manually on prod** (dry-run first,
+then `--apply`) — not something this deploy does automatically, since it touches real user credits.
+Delete the script after running it once; the root cause is fixed, this shouldn't recur.
+
+**Needs a poller restart** (picks up the new sync logic) **and `python poller.py sync`** run once
+manually if you want today's data backfilled immediately rather than waiting for the next 16:00 cycle.
+No new migration.
+
+## Status as of 2026-09-23 (`v7.7.13` — patch on top of `v7.7.12`, backend-only)
+
+Both daily NIFTY games' entry cutoffs now close 15min *before* the real moment they're protecting
+instead of exactly at it — `GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST` = 09:00 (was implicitly tied to
+`MARKET_OPEN_IST`'s 09:15), `GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST` = 15:00 (was briefly 15:15 exact).
+Closing exactly at the answer-determining instant still allows a last-second snipe once the answer is
+effectively already known. Required a genuinely new hook point for the open side — `run_live()` now
+calls the poller's long-unused `_wait_until()` helper at 09:00, before `wait_for_market_open()`.
+
+**Needs a poller restart only.** No new migration, no frontend deploy.
+
 ## Status as of 2026-09-23 (`v7.7.12` — patch on top of `v7.7.11`, frontend-only)
 
 Two more Games UI fixes found while dogfooding the new NIFTY open-prediction game:

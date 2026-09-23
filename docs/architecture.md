@@ -39,8 +39,8 @@ The Flask API and the poller are **never the same process** and are deployed as 
 
 ### Data pipeline
 
-- **`backend/bootstrap/upstox_loader.py`** — `fetch_historical()`, shared by bootstrap and sync, via Upstox's History V3 API. Chunks per-timeframe lookback caps, normalizes to UTC, drops in-progress last candles.
-- **`backend/sync/daily_sync.py`** — true gap-fill from `get_latest_ts()` through today; runs once daily at 16:00, triggered by the poller's EOD task, not at startup.
+- **`backend/bootstrap/upstox_loader.py`** — `fetch_historical()`, shared by bootstrap and sync, via Upstox's History V3 API. Chunks per-timeframe lookback caps, normalizes to UTC, drops in-progress last candles. Only ever serves *completed* days, never today (Upstox's own API contract) — `fetch_intraday()` (new, 2026-09-23) covers today specifically, via Upstox's separate Intraday Candle Data V3 API, for `1m`/`5m`/`15m`/`1h`/`1d`.
+- **`backend/sync/daily_sync.py`** — true gap-fill from `get_latest_ts()` through today via `fetch_historical()`, then `fetch_intraday()` for today's own data; runs once daily at 16:00, triggered by the poller's EOD task, not at startup.
 - Historical data loading was migrated from yfinance to Upstox (this session's commit `0f9a56b`) — `backend/bootstrap/yfinance_loader.py` deleted, `upstox_loader.py` added. Motivation per `backend/CLAUDE.md`: yfinance silently missed at least one ad-hoc NSE special session (2026-02-01 Union Budget Sunday trading), which diff-based gap detection couldn't catch after the fact; Upstox is a direct exchange feed.
 
 ### Signal/trigger engine (`backend/live/`)

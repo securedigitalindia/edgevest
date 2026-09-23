@@ -19,7 +19,7 @@ from db.queries import (
     upsert_candles, update_sync_log,
     get_latest_ts, get_row_count
 )
-from bootstrap.upstox_loader import fetch_historical
+from bootstrap.upstox_loader import fetch_historical, fetch_intraday, UPSTOX_INTRADAY_TF_MAP
 
 # Always re-fetch at least this many trailing calendar days, even when
 # there's no gap, as insurance against Upstox revising an already-published
@@ -32,6 +32,22 @@ SYNC_RECHECK_DAYS = 2
 def sync_symbol(symbol_cfg: dict) -> dict:
     """
     Sync all timeframes for a single symbol.
+
+    Two separate Upstox APIs, two separate jobs (confirmed 2026-09-22 — the
+    Historical Candle API is documented to never include the current
+    trading day, no matter how long after close you ask):
+      - fetch_historical() (below): backfills/corrects everything OLDER
+        than today — the gap-fill job it's always done.
+      - fetch_intraday() (new): fills in TODAY specifically, via Upstox's
+        separate Intraday Candle Data API — the one gap fetch_historical()
+        structurally can never close. Only "1m"/"5m"/"15m"/"1h"/"1d" support
+        this (no "weeks"/"months" unit on that endpoint) — "1wk"/"1mo" get
+        historical-only, same as always ("this week"/"this month" being
+        incomplete until it ends isn't a same-day gap anything needs).
+    Both write through the same upsert_candles() — downstream readers
+    (games, reports, strategies) just read candles_1d etc. normally and get
+    complete, correct same-day data without knowing either of this exists.
+
     Returns a summary dict.
     """
     name = symbol_cfg["name"]
@@ -55,25 +71,36 @@ def sync_symbol(symbol_cfg: dict) -> dict:
         latest_date = pd.Timestamp(latest_before).tz_convert("Asia/Kolkata").date()
         from_date = min(latest_date, today) - timedelta(days=SYNC_RECHECK_DAYS)
 
-        df = fetch_historical(instrument_key, tf_key, from_date, today)
+        df_hist = fetch_historical(instrument_key, tf_key, from_date, today)
+        if not df_hist.empty:
+            update_sync_log(name, tf_key, upsert_candles(name, tf_key, df_hist))
+        time.sleep(FETCH_DELAY_SECONDS)
 
-        if df.empty:
-            print(f"    [{tf['description']}]  ✓  Already up to date")
-            summary["timeframes"][tf_key] = {"status": "up_to_date", "new_rows": 0}
-            continue
-
-        rows = upsert_candles(name, tf_key, df)
-        update_sync_log(name, tf_key, rows)
+        # Today specifically — fetch_historical() above never includes it,
+        # by design. Independent of whether historical found anything, so
+        # this always runs even when historical was already fully caught up.
+        got_today = False
+        if tf_key in UPSTOX_INTRADAY_TF_MAP:
+            df_today = fetch_intraday(instrument_key, tf_key)
+            if not df_today.empty:
+                update_sync_log(name, tf_key, upsert_candles(name, tf_key, df_today))
+                got_today = True
+            time.sleep(FETCH_DELAY_SECONDS)
 
         count_after = get_row_count(name, tf_key)
         latest_after = get_latest_ts(name, tf_key)
         new_rows = count_after - count_before
 
+        if new_rows == 0 and not got_today:
+            print(f"    [{tf['description']}]  ✓  Already up to date")
+            summary["timeframes"][tf_key] = {"status": "up_to_date", "new_rows": 0}
+            continue
+
         status = "updated" if new_rows > 0 else "corrected"
         emoji = "✓" if new_rows > 0 else "~"
 
         print(f"    [{tf['description']}]  {emoji}  "
-              f"+{new_rows} new rows  |  "
+              f"+{new_rows} new rows{' (incl. today)' if got_today else ''}  |  "
               f"latest: {str(latest_after)[:16]}  |  "
               f"total: {count_after}")
 
@@ -83,8 +110,6 @@ def sync_symbol(symbol_cfg: dict) -> dict:
             "latest": str(latest_after)[:16],
             "total": count_after,
         }
-
-        time.sleep(FETCH_DELAY_SECONDS)
 
     return summary
 

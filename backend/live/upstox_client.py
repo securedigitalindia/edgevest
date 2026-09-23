@@ -106,6 +106,35 @@ def get_historical_candles(
     return resp.data.candles or []
 
 
+def get_intraday_candles(instrument_key: str, unit: str, interval: str) -> list[list]:
+    """
+    Today's OHLCV so far, via Upstox's separate Intraday Candle Data V3 API.
+
+    Confirmed 2026-09-23 (docs + a live call): get_historical_candles() above
+    is documented to only ever serve *completed* historical days — the
+    current trading day is never included, by design, no matter how long
+    after close you ask. This is the dedicated endpoint for exactly that gap.
+
+    unit     : "minutes" | "hours" | "days" (NOT "weeks"/"months" — unsupported here)
+    interval : "1"-"300" for minutes, "1"-"5" for hours, "1" for days
+
+    Returns candles newest-first, same shape as get_historical_candles():
+        [timestamp_iso_+05:30, open, high, low, close, volume, oi]
+    Empty list before market open (nothing to return yet), not an error.
+    """
+    api = _get_history_api()
+    try:
+        resp = api.get_intra_day_candle_data(instrument_key, unit, interval)
+    except ApiException as e:
+        if e.status == 401:
+            raise RuntimeError(
+                "Upstox token rejected (401). "
+                "Tokens expire daily — regenerate and re-export UPSTOX_ACCESS_TOKEN."
+            ) from e
+        raise RuntimeError(f"Upstox intraday history API error {e.status}: {e.reason}") from e
+    return resp.data.candles or []
+
+
 def get_margin(legs: list[dict]) -> dict:
     """
     Calculate combined SPAN margin for a portfolio of legs.
