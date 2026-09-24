@@ -119,6 +119,27 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-09-24 (`v7.7.18` — patch on top of `v7.7.17`, backend-only, urgent)
+
+**Real prod incident, follow-on to `v7.7.15`:** that fix correctly stopped a late poller restart from
+wrongly closing a not-yet-due open-game — but only for the moment of the restart itself. Last night's
+restart (22:37 IST) hit exactly that path, correctly skipped touching *today's* (24th's) open-game since
+it wasn't due yet, then fell into `wait_for_market_open()`'s idle loop and sat there overnight. Nothing
+re-checked the 09:00 cutoff once *today's own* 09:00 genuinely arrived — that check was a single call,
+already spent on last night's (correct) skip — so the open-game stayed stuck active until manually
+triggered (`poller.py games open`) ~20 min after cutoff. Fixed by moving the cutoff recheck **inside**
+`wait_for_market_open()`'s loop itself (same shape as that loop's pre-existing `is_trading_day()`
+recheck, which already handles the identical class of problem for holidays/weekends), so it fires fresh
+every day the loop is still running for, not just the day the process happened to start. Verified with a
+simulated stuck-across-midnight scenario (monkeypatched clock) plus the normal single-day case, both in
+isolation. See `docs/prd/nifty-daily-prediction-games.md` and memory `feedback_poller_recurring_schedule_design`
+for the general principle this generalizes to.
+
+**Deploy this** — restart the poller to pick it up. No new migration. Not exploitable like `v7.7.15`'s
+bug (the effect here was a game staying open too long, not a duplicate/early-closed one), so less urgent
+than that one, but still a real user-facing bug (entries should have locked at 09:00, didn't until
+manually fixed).
+
 ## Status as of 2026-09-23 (`v7.7.17` — patch on top of `v7.7.16`, frontend-only)
 
 `PredictionGame`'s "Your Entry" resolved result card (`GameDetail.jsx`) previously hid the entire

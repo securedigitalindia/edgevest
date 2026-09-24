@@ -95,10 +95,35 @@ def wait_for_market_open():
     and start polling Saturday morning. is_trading_day() re-evaluates
     date.today() every iteration, so this correctly rides out an entire
     weekend/holiday block, however many days long.
+
+    Also re-fires the open-game entry-cutoff task (_run_market_open_game_tasks,
+    normally called once in run_live() right before this loop) if this loop
+    is still running when a NEW day's own cutoff arrives. Confirmed broken in
+    prod 2026-09-24: a restart at 22:37 IST the previous evening left
+    run_live()'s one-shot call correctly skipping the not-yet-due open-game
+    (via _run_market_open_game_tasks()'s own _game_end_date_ist() guard —
+    right call at that moment), but the process then sat in this loop through
+    the rest of that night and into the next morning, and nothing gave the
+    FOLLOWING day's own 09:00 cutoff a chance to fire — the open-game stayed
+    stuck open until manually triggered via `poller.py games open`. Same root
+    cause as the is_trading_day() re-check above (a long-lived process
+    outliving the single point in time a once-per-lifetime check was aimed
+    at) — the fix is the same shape: re-evaluate every iteration instead of
+    once. Idempotent and harmless to call again on a normal day (the task's
+    own get_active_auto_game()/get_closed_auto_game() lookups just find
+    nothing pending the second time), so no guard needed against double-firing
+    on the ordinary path where run_live()'s call already handled it.
     """
     print("Market not yet open. Waiting for 09:15 IST on a trading day...\n", flush=True)
+    open_cutoff_minutes = (GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST[0] * 60
+                           + GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST[1])
+    serviced_date = None
     while not (is_trading_day() and is_market_open()):
-        print(f"  {_ist_now().strftime('%a %H:%M:%S IST')}  — waiting...", flush=True)
+        now = _ist_now()
+        if now.date() != serviced_date and now.hour * 60 + now.minute >= open_cutoff_minutes:
+            _run_market_open_game_tasks()
+            serviced_date = now.date()
+        print(f"  {now.strftime('%a %H:%M:%S IST')}  — waiting...", flush=True)
         time.sleep(60)
     print("Market open. Starting poll loop.\n", flush=True)
 

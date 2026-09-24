@@ -145,7 +145,13 @@ that is games-automation-specific) run every trading day with zero admin interac
 close-game at `GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST` = 15:00 (15min before NIFTY's real/effective close at
 15:15, confirmed by the user — deliberately **not** `MARKET_CLOSE_IST`'s 15:30). The 09:00 cutoff is a
 genuinely new hook point in `run_live()`: `_wait_until(9, 0)` (previously unused) fires before
-`wait_for_market_open()`, so game tasks run ~15min earlier than market-open itself. Neither game is
+`wait_for_market_open()`, so game tasks run ~15min earlier than market-open itself. That call only fires
+once per process lifetime, so `wait_for_market_open()` **also** rechecks the 09:00 cutoff on every loop
+iteration (2026-09-24 fix) — otherwise a process still sitting in that loop when a *new* day's own 09:00
+arrives (e.g. after a late restart the previous evening correctly skipped a not-yet-due game) would never
+get another chance to fire it, leaving that day's open-game stuck active. Same shape as that loop's
+pre-existing `is_trading_day()` recheck. General principle for any future poller schedule logic: memory
+`feedback_poller_recurring_schedule_design`. Neither game is
 resolved until 16:00, after the Upstox EOD sync — `candles_1d`'s `open`/
 `close` columns for today don't exist any earlier than that sync, so both games are graded from the
 same one candle fetch for consistency, not an approximate live-LTP snapshot for the open. The EOD

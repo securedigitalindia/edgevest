@@ -219,6 +219,30 @@ that pattern is only safe if the action itself is idempotent *and* self-aware of
 supposed to affect — a duplicate-guard alone isn't enough if the state that guard checks can have already
 moved on (e.g. from `active` to `resolved`) by the time a late trigger fires.
 
+## Follow-on incident, 2026-09-24: the fix above was necessary but not sufficient
+
+The `_game_end_date_ist()` guard correctly made `_run_market_open_game_tasks()` *skip* touching a
+not-yet-due game on a late restart — but that guard only decides what to do the moment it's called, and
+it's only ever called once per process lifetime (right before `wait_for_market_open()`). 2026-09-24: the
+previous night's restart (22:37 IST) hit exactly this path, correctly skipped touching the 24th's
+open-game (not due yet, relative to the 23rd), then the process fell into `wait_for_market_open()`'s idle
+loop and sat there overnight. Nothing re-checked the 09:00 cutoff once the *24th's own* 09:00 genuinely
+arrived — that check was a single call, already spent on the correct skip the night before — so the
+open-game stayed stuck `active` for ~20 minutes until manually triggered (`poller.py games open`).
+
+**Fixed properly this time:** moved the cutoff recheck *inside* `wait_for_market_open()`'s own loop
+(tracking a `serviced_date` so it fires at most once per calendar date), rather than leaving it as a
+one-shot call before the loop. Exactly the same shape as that loop's pre-existing `is_trading_day()`
+recheck just above (§"Related bug... never checked the day") — this was the identical class of bug,
+just not caught until it actually happened a second time. Verified with a simulated stuck-across-midnight
+scenario (monkeypatched clock, confirms the new day gets its own fire attempt) plus the unchanged normal
+single-day case.
+
+**General principle for any future poller schedule/cutoff logic**, not just this feature: memory
+`feedback_poller_recurring_schedule_design` — the short version is *check every iteration of whichever
+idle loop the process might be sitting in when the target time arrives, never a call at a fixed point
+before/after that loop.*
+
 ## The real fix: Upstox has a separate API for today's data — we were never calling it
 
 The `_is_incomplete_last_candle()` fix above helps, but doesn't fully solve same-day resolution —
