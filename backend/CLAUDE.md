@@ -108,7 +108,7 @@ startup — see `live/poller.py`'s `_run_startup_tasks()`).
 
 **`live/alert.py`** — Telegram dispatcher. `send_alert(signal)` sends one signal message then one message per trade suggestion. Uses HTML parse mode.
 
-**`live/expiry.py`** — `ExpiryCache` fetches NSE option expiry dates from Upstox `OptionsApi`. `expiry_cache.pick(symbol, type, index)` returns a `date`. Types: `"weekly"`, `"monthly"`, `"quarterly"`.
+**`live/expiry.py`** — `ExpiryCache` fetches NSE option expiry dates from Upstox `OptionsApi`, one live `get_option_contracts()` call per symbol. `expiry_cache.pick(symbol, type, index)` returns a `date`. Types: `"weekly"`, `"monthly"`, `"quarterly"`. On a failed call (confirmed 2026-10-02 prod: a Cloudflare 504 hit NIFTY50 only, leaving its chain capture silently dead for a day — see `docs/release-checklist.md`'s `v7.7.19`), falls back to `fo_instruments.get_expiry_buckets()` — the bulk instrument file's own expiry data — instead of caching empty buckets. `live/poller.py` loads `fo_instruments` before `expiry_cache` at both startup and EOD so that fallback always has fresh data.
 
 **`live/trade_suggestions.py`** — trade suggestion templates. Each template function takes `(ltp, symbol, params)` and returns a trade dict with `title`, `legs`, `rationale`. Templates:
 - `nifty_pe_cal_qtrly` / `nifty_pe_cal_monthly` / `nifty_pe_cal_weekly_to_monthly` — PE calendar spreads

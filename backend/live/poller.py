@@ -153,17 +153,22 @@ def _run_startup_tasks():
     (market closed by then).
     """
     print("── Startup tasks ──────────────────────────────────")
-    print("Refreshing option expiry dates from Upstox...\n")
-    try:
-        expiry_cache.refresh()
-    except Exception as e:
-        print(f"  [expiry refresh failed]  {e}", flush=True)
 
+    # Load the F&O instrument file *before* the expiry cache: expiry_cache.refresh()
+    # falls back to this file's own expiry data (live/fo_instruments.get_expiry_buckets())
+    # when its own per-symbol live call fails, so this needs to already be loaded for
+    # that fallback to have data on the very first attempt rather than cold-loading mid-failure.
     try:
         from live.fo_instruments import refresh as refresh_fo
         refresh_fo()
     except Exception as e:
         print(f"  [F&O instruments refresh failed]  {e}", flush=True)
+
+    print("Refreshing option expiry dates from Upstox...\n")
+    try:
+        expiry_cache.refresh()
+    except Exception as e:
+        print(f"  [expiry refresh failed]  {e}", flush=True)
 
     print("───────────────────────────────────────────────────\n")
 
@@ -406,16 +411,19 @@ def _run_eod_tasks(daily_alerts: list):
         print(f"  [tick cleanup failed]  {e}", flush=True)
 
     print("Refreshing option expiry dates and F&O instruments from Upstox...")
-    try:
-        expiry_cache.refresh()
-    except Exception as e:
-        print(f"  [expiry refresh failed]  {e}", flush=True)
+    # F&O instruments first (same reasoning as the startup-task ordering): expiry_cache's
+    # fallback on a failed per-symbol call reads from this file's data, so it needs to
+    # already be freshly loaded, not stale from this morning, when that fallback runs.
     try:
         from live.fo_instruments import refresh as refresh_fo
         refresh_fo(force=True)   # force re-download at EOD so tomorrow's cache is fresh
         print()
     except Exception as e:
         print(f"  [F&O instruments refresh failed]  {e}", flush=True)
+    try:
+        expiry_cache.refresh()
+    except Exception as e:
+        print(f"  [expiry refresh failed]  {e}", flush=True)
 
     print(f"[{_ist_now().strftime('%H:%M IST')}]  ── EOD tasks complete ──────────────────────\n")
 

@@ -119,6 +119,39 @@ Dev and staging can go through step 4 independently, any time, without
 waiting on the backend/prod steps — they're lower-stakes and don't share
 prod's Razorpay keys or DB.
 
+## Status as of 2026-10-02 (`v7.7.19` — patch on top of `v7.7.18`, backend-only)
+
+**Real prod incident**, diagnosed from a `journalctl` excerpt the user shared: Upstox returned a 504
+during the 5s LTP poll (`live/upstox_client.get_ltp`), which `live/poller.py` treats as fatal and exits;
+systemd restarted the process, but the restart's own startup-task expiry refresh (`live/expiry.py`'s
+`ExpiryCache.refresh()`, one live `get_option_contracts()` call per symbol) *also* hit a 504 — for
+NIFTY50 only (BANKNIFTY/RELIANCE both succeeded). `ExpiryCache.refresh()` had no retry and no fallback:
+on failure it just cached empty weekly/monthly/quarterly lists for that symbol, permanently, until the
+next scheduled refresh (16:00 EOD or next day's startup). With NIFTY50's cache empty,
+`option_chain_capture.run_capture()`'s `expiry_cache.pick()` call returns `None` for every rank, so it
+silently captures zero rows every 5-min cycle — which in turn made `chain_triggers.py`'s own staleness
+guard (`_MAX_SNAPSHOT_AGE`) skip every `CHAIN_TRIGGERS` evaluation once the snapshot aged past 10
+minutes. Net effect: `option_chain_5m` for NIFTY50 silently stopped at 2026-10-01 10:30 IST and never
+recovered — no alert, no retry, just a quietly dead data/trigger pipeline for the exact symbol every
+chain trigger depends on.
+
+Fixed: `live/fo_instruments.py` gets a new `get_expiry_buckets(symbol)` — the bulk NSE F&O instrument
+file it already downloads at startup (a separate plain file fetch, not a live per-symbol API call) has
+the identical `expiry` + `weekly` flag data `ExpiryCache` needs. `ExpiryCache.refresh()` now falls back
+to this when the live call fails, instead of caching empty lists. `live/poller.py`'s startup and EOD
+refresh sequences reordered so `fo_instruments.refresh()` runs *before* `expiry_cache.refresh()`, so the
+fallback has fresh data on the very first failed attempt. Verified by replaying the exact failure
+(mocked `get_option_contracts()` to raise) against the real local instrument cache — cache now populates
+weekly:4/monthly:2/quarterly:12 instead of all-zeros.
+
+**Not fixed by this patch**: the first failure (the `get_ltp` 504 itself) still kills the process —
+that's expected/self-healing via systemd. There's also still no alert when the fallback path is used,
+so a simultaneous failure of both the live call and a stale/missing instrument file would still go
+unnoticed beyond the log line.
+
+**Deploy this** — restart the poller to pick it up. No new migration, no frontend behavior change
+(version bumped per the usual convention).
+
 ## Status as of 2026-09-24 (`v7.7.18` — patch on top of `v7.7.17`, backend-only, urgent)
 
 **Real prod incident, follow-on to `v7.7.15`:** that fix correctly stopped a late poller restart from

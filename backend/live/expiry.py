@@ -15,6 +15,7 @@ Usage:
 import upstox_client
 from datetime import date
 from config import UPSTOX_ACCESS_TOKEN, UPSTOX_INSTRUMENT_KEYS
+from live import fo_instruments
 
 # Quarterly expiry months (NSE convention)
 _QUARTERLY_MONTHS = {3, 6, 9, 12}
@@ -86,7 +87,22 @@ class ExpiryCache:
                       f"quarterly:{len(exp['quarterly'])}")
             except Exception as e:
                 print(f"  [expiry fetch failed — {name}]  {e}")
-                self._cache[name] = {"weekly": [], "monthly": [], "quarterly": []}
+                # Fall back to the already-downloaded NSE F&O instrument file (fo_instruments)
+                # instead of leaving this symbol's cache empty — it carries the exact same
+                # expiry + weekly-flag data, from a plain file download rather than this
+                # per-symbol live API call, so a transient failure here (e.g. a Cloudflare
+                # 504 that hit only this symbol) doesn't silently disable the symbol's whole
+                # option-chain capture until the next scheduled refresh.
+                try:
+                    fallback = fo_instruments.get_expiry_buckets(name)
+                except Exception as fe:
+                    print(f"  [expiry fallback also failed — {name}]  {fe}")
+                    fallback = {"weekly": [], "monthly": [], "quarterly": []}
+                self._cache[name] = fallback
+                print(f"  {name}  expiries loaded from fo_instruments fallback — "
+                      f"weekly:{len(fallback['weekly'])}  "
+                      f"monthly:{len(fallback['monthly'])}  "
+                      f"quarterly:{len(fallback['quarterly'])}")
 
     def get(self, symbol_name: str) -> dict[str, list[date]]:
         """Return cached expiry buckets for a symbol."""

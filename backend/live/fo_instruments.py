@@ -16,6 +16,8 @@ Generic helpers (any NSE F&O underlying):
     fo_ikey(symbol, instrument_type, expiry, strike, weekly)
     fo_lot_size(symbol, expiry)
     resolve_expiry(symbol, expiry_str)   — "May 2026" → date(2026,5,28)
+    get_expiry_buckets(symbol)           — weekly/monthly/quarterly date lists,
+                                            live/expiry.py's fallback source
 """
 
 import gzip
@@ -301,6 +303,42 @@ def resolve_expiry(symbol: str, expiry_str: str) -> date | None:
         print(f"  [fo_instruments]  no FUT expiry found for {symbol} {expiry_str}", flush=True)
         return None
     return min(candidates)   # earliest = only monthly FUT for that month
+
+
+# Quarterly expiry months (NSE convention) — duplicated from live/expiry.py's own
+# constant rather than imported, since expiry.py imports this module for its fallback
+# below (importing the other way would be circular).
+_QUARTERLY_MONTHS = {3, 6, 9, 12}
+
+
+def get_expiry_buckets(symbol: str) -> dict[str, list[date]]:
+    """
+    Derive weekly/monthly/quarterly expiry-date buckets for a symbol from the already
+    -loaded NSE F&O instrument file. Fallback source for live/expiry.py's ExpiryCache,
+    which normally gets this from a separate live get_option_contracts() call per
+    symbol — a call that can fail independently per symbol (seen in prod: a Cloudflare
+    504 on just NIFTY50 while BANKNIFTY/RELIANCE succeeded) even though this file's
+    bulk download succeeded and already carries the same expiry + weekly-flag data for
+    every contract. Only PE contracts are checked, matching ExpiryCache._categorise()'s
+    convention (expiry dates are identical for CE/PE on the same underlying).
+    """
+    _ensure_loaded()
+    underlying = _UNDERLYING_KEYS.get(symbol.upper()) or _symbol_to_underlying.get(symbol.upper())
+    if not underlying:
+        return {"weekly": [], "monthly": [], "quarterly": []}
+
+    weekly, monthly, quarterly = set(), set(), set()
+    for (uk, itype, exp, strike, is_weekly) in _generic_index:
+        if uk != underlying or itype != "PE":
+            continue
+        if is_weekly:
+            weekly.add(exp)
+        elif exp.month in _QUARTERLY_MONTHS:
+            quarterly.add(exp)
+        else:
+            monthly.add(exp)
+
+    return {"weekly": sorted(weekly), "monthly": sorted(monthly), "quarterly": sorted(quarterly)}
 
 
 # -----------------------------------------------------------
