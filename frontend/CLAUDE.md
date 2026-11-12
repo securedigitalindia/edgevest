@@ -59,6 +59,8 @@ src/
 │       ├── Users.jsx            — admin: user management, with a month-on-month new-client-signups trend bar
 │       ├── Plans.jsx            — admin: subscription plan editor
 │       ├── Subscriptions.jsx    — admin: all users' subscriptions, with paid/gems/renewed/no-subscription summary tiles (active-only, never counts a lapsed payment), a month-on-month active-clients trend bar (Paid/Gems/Both filter), and a longest-active-clients (tenure since first subscription, gaps included) panel
+│       ├── Strategies.jsx       — admin: strategies list + detail; renders DayView for day-entry strategies
+│       ├── DayView.jsx/.css, DayChart.jsx, dayChartSvg.js — admin: Strategies "Day view" (docs/prd/strategy-day-view.md): day picker, variant, entry strike, days before/after/live, one stacked NIFTY + debit/P&L/premiums chart (port of the artifact's SVG), 21-strike table
 │       └── Payments.jsx         — admin: all Razorpay payment orders (paid/pending/refunded), filterable, cross-linked from Users/Subscriptions by email
 ├── store/
 │   └── authStore.js   — Zustand: { user, ready } + setUser()

@@ -1,0 +1,33 @@
+/* Strategies → Day view (docs/prd/strategy-day-view.md). Same visual language as the shareable artifact, on the app's tokens. */
+.dv { display:flex; flex-direction:column; gap:14px; }
+.dv-controls { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px; }
+.dv-controls label { display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-weight:600; }
+.dv-controls select, .dv-controls input { font:14px "IBM Plex Sans", system-ui, sans-serif; color:var(--text); background:#fff; border:1px solid var(--border); border-radius:7px; padding:7px 9px; min-width:0; text-transform:none; letter-spacing:0; }
+.dv-controls input[type=number] { width:84px; }
+.dv-seg { display:flex; border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+.dv-seg button { font:600 13px "IBM Plex Sans", system-ui, sans-serif; background:#fff; color:var(--muted); border:0; padding:8px 14px; cursor:pointer; }
+.dv-seg button.on { background:var(--text); color:#fff; }
+.dv-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px; min-width:0; }
+.dv-card h3 { font-size:15px; font-weight:600; margin:0 0 2px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.dv-sub { color:var(--muted); font-size:13px; margin:2px 0 8px; max-width:78ch; line-height:1.5; }
+.dv-live { font-size:11px; font-weight:700; color:#fff; background:var(--red); border-radius:99px; padding:2px 9px; letter-spacing:.04em; }
+.dv-chart { position:relative; width:100%; }
+.dv-tip { position:absolute; top:8px; pointer-events:none; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:6px 9px; font-size:12px; box-shadow:0 4px 14px rgba(0,0,0,.15); white-space:nowrap; z-index:3; }
+.dv-legend { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; color:var(--muted); margin-top:6px; }
+.dv-legend i { display:inline-block; width:14px; height:3px; border-radius:2px; vertical-align:middle; margin-right:5px; }
+.dv-tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; }
+.dv-tile { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:10px 12px; min-width:0; }
+.dv-k { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+.dv-v { font:600 19px "IBM Plex Mono", ui-monospace, monospace; margin-top:2px; overflow-wrap:anywhere; }
+.dv-s { font-size:12px; color:var(--muted); margin-top:1px; }
+.dv-up { color:var(--green); } .dv-dn { color:var(--red); } .dv-warn { color:#b7791f; }
+.dv-table-wrap { overflow-x:auto; }
+.dv-table { border-collapse:collapse; width:100%; font-size:13px; }
+.dv-table th, .dv-table td { padding:6px 9px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--border); }
+.dv-table th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-weight:600; }
+.dv-table th:first-child, .dv-table td:first-child { text-align:left; }
+.dv-table td { font-family:"IBM Plex Mono", ui-monospace, monospace; }
+.dv-table td:first-child { font-family:"IBM Plex Sans", system-ui, sans-serif; }
+.dv-row { cursor:pointer; } .dv-row:hover { background:#f4f7fb; } .dv-row.sel { background:#eaf1fb; font-weight:600; }
+.dv-nodata { text-align:left !important; color:var(--muted); font-family:"IBM Plex Sans", system-ui, sans-serif !important; }
+.dv-notes { font-size:12.5px; color:var(--muted); } .dv-notes ul { margin:6px 0 0; padding-left:18px; line-height:1.55; }

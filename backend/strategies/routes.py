@@ -6,7 +6,7 @@ importing them at load time would be circular.
 """
 from flask import Blueprint, request, jsonify
 
-from . import registry, service
+from . import day_view, registry, service
 
 
 def create_strategies_blueprint(require_role, current_user):
@@ -16,6 +16,28 @@ def create_strategies_blueprint(require_role, current_user):
     @require_role("super_admin", "admin")
     def api_list_strategies():
         return jsonify(strategies=service.list_strategies())
+
+    @bp.route("/api/strategies/<strategy_id>/days", methods=["GET"])
+    @require_role("super_admin", "admin")
+    def api_day_strategy_days(strategy_id):
+        if day_view.get(strategy_id) is None:
+            return jsonify(ok=False, error=f"unknown day-entry strategy: {strategy_id}"), 404
+        return jsonify(ok=True, **service.day_list(strategy_id))
+
+    @bp.route("/api/strategies/<strategy_id>/day", methods=["GET"])
+    @require_role("super_admin", "admin")
+    def api_day_strategy_day(strategy_id):
+        if day_view.get(strategy_id) is None:
+            return jsonify(ok=False, error=f"unknown day-entry strategy: {strategy_id}"), 404
+        date_str = request.args.get("date", "")
+        variant = request.args.get("variant", "")
+        try:
+            rec = service.day_detail(strategy_id, date_str, variant)
+        except ValueError as e:
+            return jsonify(ok=False, error=str(e)), 400
+        if rec is None:
+            return jsonify(ok=False, error=f"no captured option-chain data for {date_str}"), 404
+        return jsonify(ok=True, **rec)
 
     @bp.route("/api/strategies/<strategy_id>/config", methods=["GET"])
     @require_role("super_admin", "admin")

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { listStrategies, getStrategyConfig, setStrategyConfig, runStrategy } from '../api/strategies'
+import { listStrategies, getStrategyConfig, setStrategyConfig, runStrategy, getDayList, getDay } from '../api/strategies'
 
 export function useStrategies() {
   return useQuery({ queryKey: ['strategies'], queryFn: listStrategies })
@@ -53,5 +53,22 @@ export function useStrategyRun(id, { enabled = true, end_date, configVersion } =
     queryFn: () => runStrategy(id, end_date ? { end_date } : {}),
     enabled: !!id && enabled,
     refetchInterval: 60_000,
+  })
+}
+
+// Day view: the day list refreshes every minute (a new day / a new touch appears as the poller captures the chain);
+// one day's payload refreshes every minute only while it is the live (newest) day.
+export function useDayList(id) {
+  return useQuery({ queryKey: ['strategy-days', id], queryFn: () => getDayList(id), enabled: !!id, refetchInterval: 60_000 })
+}
+
+export function useDay(id, date, variant, live) {
+  return useQuery({
+    queryKey: ['strategy-day', id, date, variant],
+    queryFn: () => getDay(id, date, variant),
+    enabled: !!id && !!date && !!variant,
+    refetchInterval: live ? 60_000 : false,
+    staleTime: live ? 30_000 : 10 * 60_000,
+    placeholderData: prev => prev,     // keep the previous chart on screen while the next day loads
   })
 }

@@ -1,0 +1,256 @@
+<title>Strategy Day Viewer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1d2330;--mut:#667085;--line:#e3e1d9;--grid:#ece9e0;--acc:#1f5fbf;--up:#0f7b4f;--dn:#c0392b;--warn:#b7791f;--shade:rgba(31,95,191,.07);--chip:#eef1f6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161d;--card:#1a1f29;--ink:#e8ebf1;--mut:#97a0b1;--line:#2a313e;--grid:#242b37;--acc:#6aa3ff;--up:#4fd08f;--dn:#ff7a6b;--warn:#e5b45a;--shade:rgba(106,163,255,.09);--chip:#232a37;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12161d;--card:#1a1f29;--ink:#e8ebf1;--mut:#97a0b1;--line:#2a313e;--grid:#242b37;--acc:#6aa3ff;--up:#4fd08f;--dn:#ff7a6b;--warn:#e5b45a;--shade:rgba(106,163,255,.09);--chip:#232a37;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 "IBM Plex Sans",system-ui,sans-serif;padding-block:18px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1020px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+h1{font:600 20px "IBM Plex Sans",system-ui;margin:0;letter-spacing:-.01em}
+h2{font:600 15px "IBM Plex Sans",system-ui;margin:0 0 2px}
+.sub{color:var(--mut);margin:2px 0 0;font-size:13px;max-width:70ch}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+.ctl{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.ctl label{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
+select,input{font:14px "IBM Plex Sans",system-ui;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:7px 9px;min-width:0}
+input[type=number]{width:84px}
+.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{font:600 13px "IBM Plex Sans",system-ui;background:var(--bg);color:var(--mut);border:0;padding:8px 18px;cursor:pointer}
+.seg button.on{background:var(--acc);color:#fff}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+.tile .k{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
+.tile .v{font:600 19px "IBM Plex Mono",ui-monospace,monospace;margin-top:2px;overflow-wrap:anywhere}
+.tile .s{font-size:12px;color:var(--mut);margin-top:1px}
+.up{color:var(--up)}.dn{color:var(--dn)}.warn{color:var(--warn)}
+.chart{position:relative;width:100%}
+.chart svg{width:100%;height:auto;display:block}
+.tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.18);white-space:nowrap;z-index:3;display:none}
+.tip b{font-weight:600}
+.leg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--mut);margin-top:6px}
+.leg i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 9px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+th{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+th:first-child,td:first-child{text-align:left}
+td{font-family:"IBM Plex Mono",ui-monospace,monospace}
+td:first-child{font-family:"IBM Plex Sans",system-ui}
+tr.row{cursor:pointer}tr.row:hover{background:var(--chip)}tr.sel{background:var(--chip);font-weight:600}
+.note{font-size:12.5px;color:var(--mut)}
+.note ul{margin:6px 0 0;padding-left:18px}
+.msg{padding:18px;color:var(--mut);text-align:center}
+.pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:var(--chip);color:var(--mut);font-family:"IBM Plex Sans",system-ui}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+
+<div class="wrap">
+  <div>
+    <h1>Strategy Day Viewer</h1>
+    <p class="sub" id="desc"></p>
+  </div>
+  <div class="card ctl">
+    <label id="lblStrat">Strategy<select id="strat"></select></label>
+    <label>Day<select id="day"></select></label>
+    <label>Variant<div class="seg" id="variants"></div></label>
+    <label>Entry strike<select id="off"></select></label>
+    <label>Days before<select id="wb"><option value="1">− 1 day</option><option value="2">− 2 days</option><option value="3">− 3 days</option><option value="5">− 5 days</option><option value="7">− 7 days</option></select></label>
+    <label>Days after<select id="wa"><option value="1">+ 1 day</option><option value="2">+ 2 days</option><option value="3">+ 3 days</option><option value="5">+ 5 days</option><option value="7">+ 7 days</option><option value="14">+ 14 days</option><option value="21">+ 21 days</option><option value="30">+ 30 days</option></select></label>
+    <label>Chart shows<div class="seg"><button id="mD" class="on">Debit</button><button id="mP">P&amp;L</button><button id="mR">Premiums</button></div></label>
+    <label>Lot size<input id="lot" type="number" value="65" min="1"></label>
+    <label>Sets<input id="sets" type="number" value="1" min="1"></label>
+  </div>
+  <div id="body"></div>
+</div>
+
+<script>
+/* Strategy Day Viewer. DATA = list of strategies produced by build_data.py (see README.md). Nothing here is strategy specific. */
+const STRATS = __DATA__;
+let D = STRATS[0], DAYS = [], OFFS = [];
+const st = {strat: 0, day: null, variant: null, off: 0, lot: 65, sets: 1, metric: "D", before: 1, after: 1};
+const $ = id => document.getElementById(id);
+const f1 = v => v == null ? "–" : (Math.round(v * 10) / 10).toLocaleString("en-IN");
+const sg = v => v == null ? "–" : (v > 0 ? "+" : "") + f1(v);
+const inr = v => v == null ? "–" : (v < 0 ? "−" : "") + "₹" + Math.abs(Math.round(v)).toLocaleString("en-IN");
+const cls = v => v == null ? "" : v > 0 ? "up" : v < 0 ? "dn" : "";
+const dshort = d => new Date(d + "T00:00:00").toLocaleDateString("en-IN", {day: "numeric", month: "short"});
+const offLabel = (o, L) => o === 0 ? `Auto: first touch ${L}` : `${o > 0 ? "+" : "−"}${Math.abs(o) * D.step} → ${L + o * D.step}`;
+const legTxt = l => `${l.qty < 0 ? "Sell" : "Buy"} ${Math.abs(l.qty)} ${l.strike} ${l.opt}`;
+
+/* ---------- calculations: generic over any number of legs ---------- */
+const _cc = {};
+function calc(day, v, off) { const k = D.id + day + v + off; return _cc[k] || (_cc[k] = calc0(day, v, off)); }
+function calc0(day, v, off) {
+  const rec = D.days[day], x = rec.V[v][String(off)];
+  if (!x || x.skip) return {rec, x, skip: x ? x.skip : "no data"};
+  const n = rec.spot.length, legs = x.legs;
+  const deb = rec.spot.map((_, i) => { let s = 0; for (const g of legs) { if (g.px[i] == null) return null; s += g.qty * g.px[i]; } return s; });
+  const debit0 = legs.reduce((a, g) => a + g.qty * g.px0, 0);
+  const pnl = deb.map(q => q == null ? null : q - debit0);
+  const pS = rec.day0 ? rec.d.indexOf(rec.d[rec.day0 - 1]) : 0, nE = rec.day1 < n ? rec.d.lastIndexOf(rec.d[rec.day1]) + 1 : n;
+  const rng = (a, b) => { const q = deb.slice(a, b).filter(z => z != null); return q.length ? [Math.min(...q), Math.max(...q)] : null; };
+  const lastOf = (a, b) => { for (let i = b - 1; i >= a; i--) if (deb[i] != null) return deb[i]; return null; };
+  const hasNext = rec.day1 < n;
+  return {rec, x, legs, deb, pnl, debit0, n,
+    prev: rec.day0 ? rng(pS, rec.day0) : null, today: rng(rec.touch.i, rec.day1), next: hasNext ? rng(rec.day1, nE) : null,
+    prevClose: rec.day0 ? lastOf(pS, rec.day0) : null, close: lastOf(rec.day0, rec.day1), nextClose: hasNext ? lastOf(rec.day1, nE) : null, hasNext,
+    thin: legs.some((g, k) => g.oi != null && g.oi < D.legs[k].thin_oi), stale: legs.some(g => g.st)};
+}
+
+/* ---------- SVG multi-panel chart with hover ---------- */
+function panelChart(host, labels, panels, o) {
+  o = o || {};
+  const W = 920, Lp = 58, Rp = 16, n = labels.length, GAPH = 30;
+  const X = i => Lp + (n < 2 ? 0 : i / (n - 1) * (W - Lp - Rp));
+  let y0 = 8, svg = "";
+  panels.forEach(p => {
+    const vals = [];
+    p.series.forEach(s => s.y.forEach(v => { if (v != null && isFinite(v)) vals.push(v); }));
+    (p.hlines || []).forEach(l => vals.push(l.y)); if (p.zero) vals.push(0);
+    if (!vals.length) vals.push(0, 1);
+    let lo = Math.min(...vals), hi = Math.max(...vals); if (hi === lo) { hi += 1; lo -= 1; }
+    const pad = (hi - lo) * .1; lo -= pad; hi += pad;
+    const t0 = y0; p.top = t0; p.Y = v => t0 + p.h - (v - lo) / (hi - lo) * p.h; p.lo = lo; p.hi = hi;
+    y0 += p.h + GAPH;
+  });
+  const H = y0 - GAPH + 26;
+  if (o.shade) svg += `<rect x="${X(o.shade[0])}" y="4" width="${Math.max(0, X(o.shade[1]) - X(o.shade[0]))}" height="${H - 30}" style="fill:var(--shade)"/>`;
+  panels.forEach(p => {
+    for (let k = 0; k <= 4; k++) {
+      const v = p.lo + (p.hi - p.lo) * k / 4, y = p.Y(v);
+      svg += `<line x1="${Lp}" x2="${W - Rp}" y1="${y}" y2="${y}" style="stroke:var(--grid)"/><text x="${Lp - 6}" y="${y + 4}" text-anchor="end" font-size="11" style="fill:var(--mut)">${(p.fmt || f1)(v)}</text>`;
+    }
+    if (p.zero) svg += `<line x1="${Lp}" x2="${W - Rp}" y1="${p.Y(0)}" y2="${p.Y(0)}" style="stroke:var(--mut)" stroke-dasharray="3 3"/>`;
+    (p.hlines || []).forEach(l => { svg += `<line x1="${Lp}" x2="${W - Rp}" y1="${p.Y(l.y)}" y2="${p.Y(l.y)}" style="stroke:${l.color || "var(--mut)"}" stroke-dasharray="${l.dash || "5 4"}"/><text x="${W - Rp}" y="${p.Y(l.y) - 3}" text-anchor="end" font-size="11" style="fill:${l.color || "var(--mut)"}">${l.label}</text>`; });
+    svg += `<text x="${Lp}" y="${p.top - 0}" font-size="11" font-weight="600" dy="-1" style="fill:var(--mut)" transform="translate(0,0)"></text>`;
+    p.series.forEach(s => {
+      const seg = (a, b, dash, op) => {
+        let d = "", pen = false;
+        for (let i = a; i <= b; i++) { const v = s.y[i]; if (v == null) { pen = false; continue; } d += (pen ? "L" : "M") + X(i).toFixed(1) + " " + p.Y(v).toFixed(1); pen = true; }
+        return d ? `<path d="${d}" fill="none" style="stroke:${s.color}" stroke-width="${s.w || 2}" stroke-linejoin="round" ${dash ? 'stroke-dasharray="4 3"' : ""} opacity="${op}"/>` : "";
+      };
+      if (s.split != null) svg += seg(0, s.split, true, .55) + seg(s.split, n - 1, false, 1); else svg += seg(0, n - 1, false, s.op || 1);
+    });
+    (p.marks || []).forEach(m => {
+      const x = X(m.i), y = p.Y(m.v), up = m.pos !== "below";
+      svg += `<circle cx="${x}" cy="${y}" r="4.5" style="fill:${m.color};stroke:var(--card)" stroke-width="2"/><text x="${Math.min(Math.max(x, Lp + 30), W - 40)}" y="${y + (up ? -9 : 17)}" text-anchor="middle" font-size="11" font-weight="600" style="fill:${m.color}">${m.label}</text>`;
+    });
+    svg += `<text x="${Lp}" y="${p.top - 1}" font-size="11" style="fill:var(--mut)" dy="0">${p.title || ""}</text>`;
+  });
+  (o.vlines || []).forEach(v => { svg += `<line x1="${X(v.i)}" x2="${X(v.i)}" y1="4" y2="${H - 30}" style="stroke:${v.color || "var(--acc)"}" stroke-dasharray="4 3" stroke-width="1.5"/>${o.vlabels === false && v.label !== "entry day" ? "" : `<text x="${X(v.i) + 4}" y="14" font-size="11" font-weight="600" style="fill:${v.color || "var(--acc)"}">${v.label}</text>`}`; });
+  const step = Math.max(1, Math.ceil(n / (o.xt || 8)));
+  for (let i = 0; i < n; i += step) svg += `<text x="${X(i)}" y="${H - 8}" text-anchor="middle" font-size="11" style="fill:var(--mut)">${labels[i]}</text>`;
+  svg += `<line id="g" x1="0" x2="0" y1="4" y2="${H - 30}" style="stroke:var(--mut)" opacity="0"/><rect id="hit" x="${Lp}" y="0" width="${W - Lp - Rp}" height="${H - 24}" fill="transparent"/>`;
+  const cv = n => { try { return getComputedStyle(document.documentElement).getPropertyValue("--" + n).trim() || "#888"; } catch (e) { return "#888"; } };
+  svg = svg.replace(/var\(--(\w+)\)/g, (m, n) => cv(n)).replace(/style="(fill|stroke):([^"]+)"/g, '$1="$2"');
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;max-width:100%" preserveAspectRatio="xMidYMid meet" font-family="IBM Plex Sans, system-ui, sans-serif">${svg}</svg><div class="tip"></div>`;
+  const el = host.querySelector("svg"), tip = host.querySelector(".tip"), g = el.querySelector("#g"), hit = el.querySelector("#hit");
+  const move = e => {
+    const r = el.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W;
+    const i = Math.max(0, Math.min(n - 1, Math.round((px - Lp) / (W - Lp - Rp) * (n - 1))));
+    g.setAttribute("x1", X(i)); g.setAttribute("x2", X(i)); g.setAttribute("opacity", .6);
+    let h = `<b>${o.dayOf ? o.dayOf[i] + " " : ""}${labels[i]}</b>`; if (o.extra) h += "<br>" + o.extra(i);
+    panels.forEach(p => p.series.forEach(s => { if ((s.tip !== false) && s.y[i] != null) h += `<br><span style="color:${s.color}">●</span> ${s.name}: ${(p.fmt || f1)(s.y[i])}`; }));
+    tip.innerHTML = h; tip.style.display = "block";
+    const tx = X(i) / W * r.width; tip.style.left = (tx > r.width * .6 ? tx - tip.offsetWidth - 12 : tx + 12) + "px"; tip.style.top = "8px";
+  };
+  hit.addEventListener("mousemove", move); hit.addEventListener("touchmove", e => move(e.touches[0]), {passive: true});
+  hit.addEventListener("mouseleave", () => { tip.style.display = "none"; g.setAttribute("opacity", 0); });
+}
+
+
+/* ---------- render ---------- */
+const rangeTxt = r => r ? `${f1(r[0])} – ${f1(r[1])}` : "–";
+const LEGCOL = ["var(--dn)", "var(--up)", "var(--acc)", "var(--warn)"];
+
+function render() {
+  const day = st.day, v = st.variant, rec = D.days[day], T = rec.touch, L = T.level;
+  const c = calc(day, v, st.off), mult = st.lot * st.sets, M = st.metric === "D", R = st.metric === "R";
+  const body = $("body");
+  if (c.skip) {
+    body.innerHTML = `<div class="card msg">${v} entry at ${L + st.off * D.step} has no price on ${dshort(day)}: ${c.skip}. The stored option chain has no usable price there, so nothing can be computed. Try another strike, the other variant, or another day.</div>`;
+    return;
+  }
+  const legs = c.legs, n = c.n, pn = c.nextClose != null ? c.nextClose - c.debit0 : null;
+  const flag = (c.thin ? "⚠ thin open interest " : "") + (c.stale ? "⚠ stale price" : "");
+  const tiles = [["First touch", `${L}`, `${T.time} IST · NIFTY ${f1(T.spot)} · ${T.kind === "cross" ? "jumped through" : `within ${D.near} pts`}`]];
+  legs.forEach(g => tiles.push([`${g.qty < 0 ? "Sell" : "Buy"} ${Math.abs(g.qty)}`, `${g.strike} ${g.opt}`, `${g.exp} · ${f1(g.px0)}${Math.abs(g.qty) > 1 ? " each = " + f1(Math.abs(g.qty) * g.px0) : ""} · OI ${(g.oi || 0).toLocaleString("en-IN")}`]));
+  const k0 = tiles.length;
+  tiles.push(["Entry debit (− = credit)", `${f1(c.debit0)} pts`, `${inr(c.debit0 * mult)}${c.x.lag ? " · priced " + c.x.lag + " min after the touch (first trade)" : ""}${flag ? " · " + flag : ""}`],
+    ["Day before", rangeTxt(c.prev), `debit range · close ${f1(c.prevClose)}`],
+    ["Entry day (after entry)", rangeTxt(c.today), `debit range · close ${f1(c.close)}`],
+    ["Day after", c.hasNext ? rangeTxt(c.next) : "no data yet", c.hasNext ? `debit range · close ${f1(c.nextClose)}` : ""],
+    ["P&L at day-after close", c.hasNext ? sg(pn) : "–", c.hasNext ? inr(pn * mult) : ""]);
+  let h = `<div class="card"><h2>${dshort(day)} · ${v} · ${legs.map(legTxt).join(" · ")}</h2><p class="sub">${R ? "Each leg's premium (× its quantity) and the net debit between them." : M ? "Net debit in points = Σ quantity × premium (buys positive, sells negative). Going up means the position got more expensive to hold." : "P&amp;L in points since entry = change in net debit."} Dashed and shaded is before the entry (what it would have shown). Hover for premiums and NIFTY.</p><div class="chart" id="c1"></div><div class="leg" id="l1"></div></div>`;
+  h += `<div class="tiles">` + tiles.map(([k, val, s], i) => `<div class="tile"><div class="k">${k}</div><div class="v ${i === tiles.length - 1 ? cls(pn) : ""} ${i === k0 && flag ? "warn" : ""}" style="${i > k0 && i < tiles.length - 1 ? "font-size:15px" : ""}">${val}</div><div class="s">${s}</div></div>`).join("") + `</div>`;
+  h += `<div class="card"><h2>Premiums and debit by entry strike</h2><p class="sub">Entry premiums at ${T.time} (${OFFS.length} entry strikes), then the net debit at each close. Click a row to select it.</p><div class="tbl"><table id="t3"></table></div></div>`;
+  h += `<div class="card note"><b>Notes</b><ul>
+   <li><b>Strategy:</b> ${D.desc}</li>
+   <li><b>Entry rule:</b> first 5-minute snapshot where NIFTY is within ${D.near} points of a multiple of ${D.step}, or jumped through one. The open counts.</li>
+   <li><b>Expiries:</b> ${legs.map(g => `${g.role.toLowerCase()} ${g.exp}`).join(", ")}.</li>
+   <li><b>Prices</b> are last-traded, not bid/ask. ⚠ = thin open interest or a price that did not move for 30 minutes. No brokerage, slippage, margin or exit rule. Lot ${st.lot} is not verified. Data to ${D.data_to} IST. Days far from the entry are stored at coarser time steps (entry day 5 min, ±2 days 15 min, rest hourly).</li></ul></div>`;
+  body.innerHTML = h;
+
+  const dayMs = s => Date.parse(s + "T00:00:00Z"), e0 = dayMs(day);
+  let a = rec.d.findIndex(x => dayMs(x) >= e0 - st.before * 864e5);
+  let b = rec.d.length; while (b > 0 && dayMs(rec.d[b - 1]) > e0 + st.after * 864e5) b--;
+  const nd = new Set(rec.d.slice(a, b)).size, win = nd <= 3 ? 1 : 2;
+  const sl = x => x.slice(a, b), j0 = c.x.j, jr = j0 - a;
+  const labels = sl(rec.t).map((tm, i) => win === 1 ? tm : dshort(rec.d[a + i]) + " " + tm);
+  const legSeries = legs.map((g, k) => ({name: `${legTxt(g)} premium${Math.abs(g.qty) > 1 ? " ×" + Math.abs(g.qty) : ""}`, y: sl(g.px.map(p => p == null ? null : Math.abs(g.qty) * p)), color: LEGCOL[k % 4], w: 2.2, split: jr}));
+  const R2 = legSeries.concat([{name: "Net debit", y: sl(c.deb), color: "var(--ink)", w: 3, split: jr}]);
+  const series = R ? R2 : [{name: M ? "Net debit" : "P&L", y: sl(M ? c.deb : c.pnl), color: "var(--ink)", w: 3, split: jr}];
+  const hl = (M || R) ? [{y: c.debit0, label: "entry debit " + f1(c.debit0), color: "var(--acc)"}] : [];
+  const vl = [];
+  for (let i = a; i < b; i++) if (nd <= 10 || i === rec.day0) if (i === a || rec.d[i] !== rec.d[i - 1]) vl.push({i: i - a, label: i === rec.day0 ? "entry day" : dshort(rec.d[i]), color: i === rec.day0 ? "var(--acc)" : "var(--mut)"});
+  panelChart($("c1"), labels, [
+    {h: 150, title: "NIFTY", fmt: q => Math.round(q).toLocaleString("en-IN"), series: [{name: "NIFTY", y: sl(rec.spot), color: "var(--acc)", w: 2}], hlines: [{y: L, label: "touch " + L, color: "var(--mut)"}], marks: [{i: jr, v: rec.spot[j0], label: "entry", color: "var(--acc)"}]},
+    {h: 270, title: R ? "Leg premiums (pts)" : M ? "Net debit (pts)" : "P&L (pts)", zero: !M && !R, series, hlines: hl, marks: [{i: jr, v: (M || R ? c.deb : c.pnl)[j0], label: "entry", color: "var(--ink)"}]}], {
+    shade: [0, jr], xt: win === 1 ? 12 : 9, vlines: vl, vlabels: nd <= 10,
+    dayOf: win === 1 ? sl(rec.d).map(dshort) : null,
+    extra: i => `NIFTY ${f1(rec.spot[a + i])}<br>` + legs.map(g => `${g.role} ${g.strike}: ${f1(g.px[a + i])}`).join(" · ") + `<br>debit ${f1(c.deb[a + i])} · P&amp;L ${sg(c.pnl[a + i])}`});
+  $("l1").innerHTML = series.map(s => `<span><i style="background:${s.color}"></i>${s.name}</span>`).join("") + `<span><i style="background:var(--acc)"></i>NIFTY</span>`;
+
+  let t = `<tr><th>Entry strike</th><th>Legs</th>${legs.map(g => `<th>${g.role} px</th>`).join("")}<th>Entry debit (− credit)</th><th>Day-before close</th><th>Entry-day close</th><th>Day-after close</th><th>P&amp;L day-after</th><th></th></tr>`;
+  OFFS.slice().reverse().forEach(o => {
+    const k = calc(day, v, o);
+    if (k.skip) { t += `<tr class="row" data-o="${o}"><td>${offLabel(o, L)}</td><td colspan="${legs.length + 7}" style="text-align:left;color:var(--mut)">no price: ${k.skip}</td></tr>`; return; }
+    const p = k.nextClose != null ? k.nextClose - k.debit0 : null;
+    const fl = (k.thin ? "⚠ thin " : "") + (k.stale ? "⚠ stale" : "");
+    t += `<tr class="row ${o === st.off ? "sel" : ""}" data-o="${o}"><td>${offLabel(o, L)}</td><td>${k.legs.map(g => g.strike).join(" / ")}</td>${k.legs.map(g => `<td>${f1(g.px0)}</td>`).join("")}<td>${f1(k.debit0)}</td><td>${f1(k.prevClose)}</td><td>${f1(k.close)}</td><td>${f1(k.nextClose)}</td><td class="${cls(p)}">${sg(p)}</td><td class="warn">${fl}</td></tr>`;
+  });
+  $("t3").innerHTML = t;
+  $("t3").querySelectorAll("tr.row").forEach(r => r.onclick = () => { st.off = +r.dataset.o; $("off").value = st.off; render(); });
+}
+
+function fillOff() {
+  const L = D.days[st.day].touch.level;
+  $("off").innerHTML = OFFS.slice().reverse().map(o => `<option value="${o}">${offLabel(o, L)}</option>`).join("");
+  if (!OFFS.includes(st.off)) st.off = 0;
+  $("off").value = st.off;
+}
+function loadStrategy(i) {
+  st.strat = i; D = STRATS[i]; OFFS = D.offs;
+  DAYS = Object.keys(D.days).filter(k => D.days[k].touch);
+  st.day = DAYS[DAYS.length - 1]; st.variant = D.variants[0]; st.lot = D.lot; $("lot").value = D.lot;
+  $("desc").textContent = D.desc + " Pick a day: the entry is the first touch of a " + D.step + "-multiple after the open. One chart shows the position from before the entry to after it; the table compares neighbouring entry strikes.";
+  $("day").innerHTML = DAYS.slice().reverse().map(d => `<option value="${d}">${dshort(d)} · ${D.days[d].touch.level} at ${D.days[d].touch.time}</option>`).join("");
+  $("day").value = st.day;
+  $("variants").innerHTML = D.variants.map(x => `<button data-v="${x}" class="${x === st.variant ? "on" : ""}">${x}</button>`).join("");
+  $("variants").querySelectorAll("button").forEach(b => b.onclick = () => { st.variant = b.dataset.v; $("variants").querySelectorAll("button").forEach(z => z.classList.toggle("on", z === b)); render(); });
+  fillOff(); render();
+}
+$("strat").innerHTML = STRATS.map((s, i) => `<option value="${i}">${s.name}</option>`).join("");
+$("lblStrat").style.display = STRATS.length > 1 ? "" : "none";
+$("strat").onchange = e => loadStrategy(+e.target.value);
+$("day").onchange = e => { st.day = e.target.value; fillOff(); render(); };
+$("off").onchange = e => { st.off = +e.target.value; render(); };
+$("wb").onchange = e => { st.before = +e.target.value; render(); };
+$("wa").onchange = e => { st.after = +e.target.value; render(); };
+$("lot").oninput = e => { st.lot = Math.max(1, +e.target.value || 1); render(); };
+$("sets").oninput = e => { st.sets = Math.max(1, +e.target.value || 1); render(); };
+[["mD", "D"], ["mP", "P"], ["mR", "R"]].forEach(([id, s]) => $(id).onclick = () => { st.metric = s; ["mD", "mP", "mR"].forEach(i => $(i).classList.toggle("on", i === id)); render(); });
+loadStrategy(0);
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render); } catch (e) {}
+</script>

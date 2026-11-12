@@ -3,16 +3,18 @@ backend/strategies/service.py — orchestration for the strategy admin
 dashboard (docs/prd/admin-strategies-dashboard.md). No Flask/HTTP concerns;
 routes.py calls into this, this calls into db/queries.py for all SQL.
 """
+import time
 from datetime import datetime, timezone
 
 from db import queries
 from db.init_db import get_connection
 from live.expiry import expiry_cache
 
-from . import registry  # import first — triggers registry's sys.path.insert for backend/analysis/
+from . import day_view, registry  # import first — triggers registry's sys.path.insert for backend/analysis/
 from nifty_fut_ref import IST  # noqa: E402 — only importable after the line above
 
 DEFAULT_SYMBOL = "NIFTY50"
+_DAY_TTL: dict = {}
 
 
 def list_strategies() -> list[dict]:
@@ -22,10 +24,56 @@ def list_strategies() -> list[dict]:
         out.append({
             "id": p.id, "label": p.label, "default_params": p.default_params,
             "description": p.description, "summary": p.summary,
-            "configured": cfg is not None,
+            "configured": cfg is not None, "kind": "window",
             "config": {"start_date": cfg["start_date"], "params": cfg["params"], "confirmed_at": cfg["confirmed_at"]} if cfg else None,
         })
+    # Day-entry strategies (docs/prd/strategy-day-view.md): no start_date/params to confirm — they are viewed per day.
+    for sid, d in day_view.DAY_STRATEGIES.items():
+        out.append({"id": sid, "label": d["label"], "default_params": {}, "description": d["description"], "summary": d["summary"],
+                    "configured": True, "kind": "day_entry", "config": None, "variants": d["variants"]})
     return out
+
+
+def day_strategy_meta(strategy_id: str) -> dict:
+    d = day_view.get(strategy_id)
+    return {"id": strategy_id, "label": d["label"], "lot": d["lot"], "step": d["entry"]["step"], "near": d["entry"]["near"],
+            "variants": d["variants"], "offs": d["offs"], "description": d["description"],
+            "legs": [{"role": l["role"], "qty": l["qty"], "thin_oi": l["thin_oi"], "expiry": l["expiry"]} for l in d["legs"]]}
+
+
+def day_list(strategy_id: str) -> dict:
+    conn = get_connection()
+    try:
+        return {**day_strategy_meta(strategy_id), **day_view.list_days(conn, strategy_id)}
+    finally:
+        conn.close()
+
+
+def day_detail(strategy_id: str, date_str: str, variant: str) -> dict | None:
+    """One entry day for one variant. A past day is cached once the data has run POST days beyond it; today is always recomputed."""
+    if variant not in day_view.get(strategy_id)["variants"]:
+        raise ValueError(f"unknown variant: {variant}")
+    # bump the version when the computation changes (e.g. the spot convention) so older cached rows are never read
+    cache_key = f"dayview#v1_{strategy_id}_{variant}"
+    cached = queries.get_cached_strategy_window(cache_key, date_str)
+    if cached is not None:
+        return cached
+    hit = _DAY_TTL.get((strategy_id, date_str, variant))   # today / unsettled days: reuse for 45 s (the page polls every minute)
+    if hit and time.time() - hit[0] < 45:
+        return hit[1]
+    conn = get_connection()
+    try:
+        rec = day_view.compute_day(conn, strategy_id, date_str, [variant])
+        if rec is None:
+            return None
+        latest = (day_view.list_days(conn, strategy_id).get("as_of") or "")[:10] or None
+    finally:
+        conn.close()
+    if day_view.is_settled(rec, latest):
+        queries.write_cached_strategy_window(cache_key, date_str, rec)
+    else:
+        _DAY_TTL[(strategy_id, date_str, variant)] = (time.time(), rec)
+    return rec
 
 
 def get_config(strategy_id: str) -> dict | None:

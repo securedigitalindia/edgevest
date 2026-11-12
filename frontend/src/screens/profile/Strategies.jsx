@@ -5,6 +5,7 @@ import { useStrategies, useStrategyConfig, useSetStrategyConfig, useStrategyRun 
 import { useToast } from '../../components/common/Toast'
 import PageHeader from '../../components/common/PageHeader'
 import SvgChart from './StrategyChart'
+import DayView from './DayView'
 import { fmtPnl, fmtPts, fmtIstShort } from '../../utils/format'
 import './Profile.css'
 import './Strategies.css'
@@ -63,7 +64,7 @@ function StrategyList() {
           <button key={s.id} type="button" className="strat-list-card" onClick={() => navigate(`/profile/strategies/${s.id}`)}>
             <div className="strat-list-card-top">
               <span className="strat-list-card-title">{s.label}</span>
-              <span className={`strat-status-pill ${s.configured ? 'on' : 'off'}`}>{s.configured ? 'Configured' : 'Not configured'}</span>
+              <span className={`strat-status-pill ${s.configured ? 'on' : 'off'}`}>{s.kind === 'day_entry' ? 'Day view' : s.configured ? 'Configured' : 'Not configured'}</span>
             </div>
             <div className="strat-list-card-desc">{s.description}</div>
             <div className="strat-chip-row">
@@ -72,7 +73,7 @@ function StrategyList() {
             <div className="strat-list-card-foot">
               {s.config
                 ? <span>Tracking from {s.config.start_date} · {inputChips(s.id, null, s.config.params).slice(0, 3).map(([k, v]) => `${k} ${v}`).join(' · ')}</span>
-                : <span>Set a start date and inputs to begin</span>}
+                : <span>{s.kind === 'day_entry' ? 'Pick a day to see the entry and how it performed' : 'Set a start date and inputs to begin'}</span>}
               <span className="strat-list-card-go" aria-hidden="true">›</span>
             </div>
           </button>
@@ -110,7 +111,9 @@ function StrategyPage({ strategyId }) {
         </>
       )}
 
-      {selected && !loadingConfig && (!configured || editing) && (
+      {selected?.kind === 'day_entry' && <DayView strategy={selected} />}
+
+      {selected && selected.kind !== 'day_entry' && !loadingConfig && (!configured || editing) && (
         <ConfigForm
           strategy={selected}
           existing={config}
@@ -120,11 +123,11 @@ function StrategyPage({ strategyId }) {
         />
       )}
 
-      {selected && !loadingConfig && configured && !editing && (
+      {selected && selected.kind !== 'day_entry' && !loadingConfig && configured && !editing && (
         <StrategyDetail strategy={selected} config={config} onEdit={() => setEditing(true)} configVersion={config.confirmed_at} />
       )}
 
-      {selected && loadingConfig && <div className="empty">Loading inputs…</div>}
+      {selected && selected.kind !== 'day_entry' && loadingConfig && <div className="empty">Loading inputs…</div>}
     </div>
   )
 }
