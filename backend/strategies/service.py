@@ -29,9 +29,16 @@ def list_strategies() -> list[dict]:
         })
     # Day-entry strategies (docs/prd/strategy-day-view.md): no start_date/params to confirm — they are viewed per day.
     for sid, d in day_view.DAY_STRATEGIES.items():
+        if not d.get("dashboard", True):
+            continue   # defined for the artifact builder / triggers only
         out.append({"id": sid, "label": d["label"], "default_params": {}, "description": d["description"], "summary": d["summary"],
                     "configured": True, "kind": "day_entry", "config": None, "variants": d["variants"]})
     return out
+
+
+def is_dashboard_day_strategy(strategy_id: str) -> bool:
+    d = day_view.get(strategy_id)
+    return d is not None and d.get("dashboard", True)
 
 
 def day_strategy_meta(strategy_id: str) -> dict:

@@ -20,14 +20,14 @@ def create_strategies_blueprint(require_role, current_user):
     @bp.route("/api/strategies/<strategy_id>/days", methods=["GET"])
     @require_role("super_admin", "admin")
     def api_day_strategy_days(strategy_id):
-        if day_view.get(strategy_id) is None:
+        if not service.is_dashboard_day_strategy(strategy_id):
             return jsonify(ok=False, error=f"unknown day-entry strategy: {strategy_id}"), 404
         return jsonify(ok=True, **service.day_list(strategy_id))
 
     @bp.route("/api/strategies/<strategy_id>/day", methods=["GET"])
     @require_role("super_admin", "admin")
     def api_day_strategy_day(strategy_id):
-        if day_view.get(strategy_id) is None:
+        if not service.is_dashboard_day_strategy(strategy_id):
             return jsonify(ok=False, error=f"unknown day-entry strategy: {strategy_id}"), 404
         date_str = request.args.get("date", "")
         variant = request.args.get("variant", "")

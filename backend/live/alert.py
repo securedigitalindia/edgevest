@@ -298,7 +298,8 @@ def send_rec_exit_alert(trade_id: int, symbol: str, display_code: str | None,
 
 def send_chain_trigger_alert(trigger_name: str, side: str, rule: str, note: str, legs: list[dict],
                              credit: float, fut_ltp: float, snapshot_ts_ist: str,
-                             draft_code: str | None = None, draft_error: str | None = None):
+                             draft_code: str | None = None, draft_error: str | None = None,
+                             conviction: str | None = None, spot_label: str = "Fut"):
     """An option-chain trigger fired (live/chain_triggers.py). States plainly whether a DRAFT trade is
     linked to it (draft_code) or not (draft_error carries the reason)."""
     net = f"credit {credit:g}" if credit >= 0 else f"debit {-credit:g}"
@@ -313,8 +314,11 @@ def send_chain_trigger_alert(trigger_name: str, side: str, rule: str, note: str,
         icon = "🔴" if l["side"] == "SELL" else "🟢"
         lines.append(f"  {icon}  {l['side']:<4} {l['lots']}L  {int(l['strike']):,} {l['type']}  "
                      f"{_h(l['expiry'])}  @₹{l['price']:,.2f}")
-    lines += ["", _row("Net", net), _row("Rule", rule, bold_value=False),
-              _row("Fut", f"{fut_ltp:,.1f}", bold_value=False),
+    lines += ["", _row("Net", net)]
+    if conviction:
+        lines.append(_row("Conviction", conviction))
+    lines += [_row("Rule", rule, bold_value=False),
+              _row(spot_label, f"{fut_ltp:,.1f}", bold_value=False),
               _row("Chain", snapshot_ts_ist, bold_value=False), ""]
     if draft_code or not draft_error:
         link = _frontend_url("/trades")

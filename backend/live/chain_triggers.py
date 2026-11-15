@@ -5,7 +5,8 @@
 #  on fire create a DRAFT trade — never an open one, no alert, no margin
 #  until an admin publishes it (see add_manual_trade(status="draft")).
 #
-#  Config: config.CHAIN_TRIGGERS. One type today, "calendar_ratio_credit":
+#  Config: config.CHAIN_TRIGGERS. Types: "calendar_ratio_credit", "pe_ratio_diagonal_credit" and
+#  "vertical_ratio_credit" (same-expiry 1:2 vertical, conviction tiers — see its evaluator). First type:
 #    base     = next strike_step above (CE) / below (PE) the front-month
 #               NIFTY future's live price
 #    K1       = base moved itm_points into the money (default 0 = base itself)
@@ -199,10 +200,192 @@ def _evaluate_pe_ratio_diagonal_credit(cfg: dict, fut_ltp: float, ts: str, merge
                 _send_alert(draft_error=str(e), **alert_args)
 
 
+def _conviction(cfg: dict, credit: float) -> str:
+    return "HIGH" if credit >= cfg["high_credit_pts"] else "MEDIUM" if credit >= cfg["medium_credit_pts"] else "LOW"
+
+
+def _month_expiry(monthlies: list[str], today, k: int) -> str | None:
+    """The monthly/quarterly expiry in the calendar month k after today's (M+k in the Day view / backtests)."""
+    idx = today.year * 12 + (today.month - 1) + k
+    y, m = idx // 12, idx % 12 + 1
+    hits = [e for e in monthlies if (int(e[:4]), int(e[5:7])) == (y, m)]
+    return min(hits) if hits else None
+
+
+def _next_month_expiry(monthlies: list[str], today) -> str | None:
+    return _month_expiry(monthlies, today, 1)
+
+
+def _evaluate_vertical_ratio_credit(cfg: dict, fut_ltp, ts: str, merged: list[str], today=None) -> None:
+    """
+    Same-expiry 1:2 vertical ratio spread (docs/prd/vertical-ratio-credit-trigger.md). Per side:
+        E       = nearest strike_step multiple to the snapshot's NIFTY spot (MAX(spot_ltp), the backtest convention)
+        BUY  buy_lots  @ E -/+ buy_points   (PE below E, CE above)
+        SELL sell_lots @ E -/+ sell_points  — both in next calendar month's expiry
+        credit  = sell_lots*sell_ltp - buy_lots*buy_ltp   (points)
+    Fires once per trigger per side per IST day, at the first snapshot where credit >= min_credit_pts and
+    both legs' open interest >= min_oi. The conviction (LOW/MEDIUM/HIGH, by credit) is stamped on the
+    draft's note and the Telegram alert. fut_ltp is unused (spot comes from the snapshot).
+    """
+    from live.manual_trade import add_manual_trade
+
+    symbol = cfg["symbol"]
+    today = today or datetime.now(IST).date()
+    expiry = _next_month_expiry(queries.get_monthly_expiries(symbol), today)   # monthly only — `merged` also holds weeklies
+    if expiry is None:
+        print(f"  [chain_triggers] {cfg['name']}: no expiry in next calendar month stored — skipped", flush=True)
+        return
+    spot = queries.get_chain_spot(ts, symbol)
+    if not spot:
+        return
+    step = cfg["strike_step"]
+    entry = math.floor(spot / step + 0.5) * step
+
+    for side in cfg["sides"]:
+        sign = 1 if side == "CE" else -1   # PE strikes lie below E, CE above
+        k_buy, k_sell = entry + sign * cfg["buy_points"], entry + sign * cfg["sell_points"]
+        buy_ltp, buy_oi = queries.get_chain_quote(ts, symbol, expiry, k_buy, side)
+        sell_ltp, sell_oi = queries.get_chain_quote(ts, symbol, expiry, k_sell, side)
+        if buy_ltp is None or sell_ltp is None:
+            continue
+        credit = round(cfg["sell_lots"] * sell_ltp - cfg["buy_lots"] * buy_ltp, 2)
+        liquid = (buy_oi or 0) >= cfg["min_oi"] and (sell_oi or 0) >= cfg["min_oi"]
+        rule_label = f"credit >= {cfg['min_credit_pts']:g}, OI >= {cfg['min_oi']:g}"
+        met = credit >= cfg["min_credit_pts"] and liquid
+        print(f"  [chain_triggers] {cfg['name']} {side}: E={int(entry)} K={int(k_buy)}/{int(k_sell)} spot={spot:.1f} "
+              f"buy={buy_ltp} sell={sell_ltp} oi={int(buy_oi or 0)}/{int(sell_oi or 0)} -> credit {credit:g}  "
+              f"({rule_label}: {'MET' if met else 'not met'})", flush=True)
+        if not met:
+            continue
+
+        conviction = _conviction(cfg, credit)
+        fire_id = queries.claim_chain_trigger_fire(cfg["name"], side, today.isoformat(), credit)
+        if fire_id is None:
+            continue   # already fired for this side today
+        legs = [
+            {"side": "BUY",  "type": side, "strike": int(k_buy),  "expiry": _fmt_expiry(expiry), "lots": cfg["buy_lots"],  "price": buy_ltp},
+            {"side": "SELL", "type": side, "strike": int(k_sell), "expiry": _fmt_expiry(expiry), "lots": cfg["sell_lots"], "price": sell_ltp},
+        ]
+        note = (f"{cfg['buy_lots']}:{cfg['sell_lots']} VERT {side} {int(k_buy)}/{int(k_sell)} "
+                f"(auto · credit {credit:g} · {conviction} conviction)")
+        snap_ist = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone(IST).strftime("%d %b %H:%M IST")
+        alert_args = dict(trigger_name=cfg["name"], side=side, rule=rule_label, note=note, legs=legs, credit=credit,
+                          fut_ltp=spot, snapshot_ts_ist=snap_ist, conviction=conviction, spot_label="Spot")
+        try:
+            trade_id = add_manual_trade(symbol, legs, note=note, risk_level=cfg.get("risk_level"), status="draft")
+            queries.set_chain_trigger_fire_trade(fire_id, trade_id)
+            print(f"  [chain_triggers] {cfg['name']} FIRED {side} E={int(entry)} K={int(k_buy)}/{int(k_sell)} credit={credit} "
+                  f"{conviction} -> draft trade {trade_id}", flush=True)
+            try:
+                draft_code = (queries.get_recommendation(trade_id) or {}).get("display_code")
+            except Exception:
+                draft_code = None
+            _send_alert(draft_code=draft_code, **alert_args)
+        except Exception as e:
+            queries.release_chain_trigger_fire(fire_id)   # let the next snapshot retry
+            print(f"  [chain_triggers] {cfg['name']} {side}: draft creation failed — {e}", flush=True)
+            key = (cfg["name"], side, today.isoformat())
+            if key not in _failure_alerted:
+                _failure_alerted.add(key)
+                _send_alert(draft_error=str(e), **alert_args)
+
+
+def _debit_conviction(cfg: dict, debit: float) -> str:
+    return "HIGH" if debit < cfg["high_below"] else "MEDIUM" if debit < cfg["medium_below"] else "LOW"
+
+
+def _evaluate_diagonal_debit_conviction(cfg: dict, fut_ltp, ts: str, merged: list[str], today=None) -> None:
+    """
+    Month diagonal scanned across a strike range (docs/prd/diagonal-debit-conviction-trigger.md). Per side, at each
+    snapshot: E = 100-multiple nearest the snapshot's NIFTY spot; for every strike S in the range
+    (PE: E+itm .. E-otm, CE: E-itm .. E+otm) price  near_qty @ S (M+1)  +  far_qty @ S -/+ far_offset (M+2),
+        debit = near_qty*near_ltp + far_qty*far_ltp   (points; negative = net credit)
+    Quantities are signed (+buy / -sell); debit = near_qty*near_ltp + far_qty*far_ltp. Both legs must be liquid
+    (near OI >= near_min_oi, far OI >= far_min_oi). The strike with the LOWEST liquid debit (= largest credit)
+    wins; it fires if that debit < max_debit_pts — once per trigger per side per IST day. Conviction by that debit:
+    < high_below HIGH, < medium_below MEDIUM, else LOW (stamped in the draft note and the Telegram alert).
+    """
+    from live.manual_trade import add_manual_trade
+
+    symbol = cfg["symbol"]
+    today = today or datetime.now(IST).date()
+    monthlies = queries.get_monthly_expiries(symbol)
+    near, far = _month_expiry(monthlies, today, 1), _month_expiry(monthlies, today, 2)
+    if near is None or far is None:
+        print(f"  [chain_triggers] {cfg['name']}: next-month / month-after expiry not both stored — skipped", flush=True)
+        return
+    spot = queries.get_chain_spot(ts, symbol)
+    if not spot:
+        return
+    step = cfg["strike_step"]
+    entry = math.floor(spot / step + 0.5) * step
+
+    for side in cfg["sides"]:
+        sign = 1 if side == "CE" else -1   # PE: far leg and OTM lie below, CE above
+        lo, hi = (entry - cfg["itm_points"], entry + cfg["otm_points"]) if side == "CE" else (entry - cfg["otm_points"], entry + cfg["itm_points"])
+        best = None   # (debit, S, far_strike, near_ltp, far_ltp) — lowest debit = largest credit
+        k = lo
+        while k <= hi:
+            far_strike = k + sign * cfg["far_offset"]
+            near_ltp, near_oi = queries.get_chain_quote(ts, symbol, near, k, side)
+            far_ltp, far_oi = queries.get_chain_quote(ts, symbol, far, far_strike, side)
+            if near_ltp is not None and far_ltp is not None and (near_oi or 0) >= cfg["near_min_oi"] and (far_oi or 0) >= cfg["far_min_oi"]:
+                debit = round(cfg["near_qty"] * near_ltp + cfg["far_qty"] * far_ltp, 2)
+                if best is None or debit < best[0]:
+                    best = (debit, k, far_strike, near_ltp, far_ltp)
+            k += step
+        thr = cfg["max_debit_pts"]
+        rule_label = (f"debit < {thr:g}" if thr > 0 else f"credit > {-thr:g}") + f" (best of strikes {int(lo)}-{int(hi)})"
+        if best is None:
+            print(f"  [chain_triggers] {cfg['name']} {side}: E={int(entry)} spot={spot:.1f} no liquid strike priced in {int(lo)}-{int(hi)}", flush=True)
+            continue
+        debit, strike, far_strike, near_ltp, far_ltp = best
+        met = debit < cfg["max_debit_pts"]
+        net_label = f"credit {-debit:g}" if debit < 0 else f"debit {debit:g}"
+        print(f"  [chain_triggers] {cfg['name']} {side}: E={int(entry)} spot={spot:.1f} best S={int(strike)}/{int(far_strike)} "
+              f"near={near_ltp} far={far_ltp} -> {net_label}  ({rule_label}: {'MET' if met else 'not met'})", flush=True)
+        if not met:
+            continue
+
+        conviction = _debit_conviction(cfg, debit)
+        fire_id = queries.claim_chain_trigger_fire(cfg["name"], side, today.isoformat(), -debit)
+        if fire_id is None:
+            continue   # already fired for this side today
+        legs = [
+            {"side": "BUY" if cfg["near_qty"] > 0 else "SELL", "type": side, "strike": int(strike),     "expiry": _fmt_expiry(near), "lots": abs(cfg["near_qty"]), "price": near_ltp},
+            {"side": "BUY" if cfg["far_qty"] > 0 else "SELL",  "type": side, "strike": int(far_strike), "expiry": _fmt_expiry(far),  "lots": abs(cfg["far_qty"]),  "price": far_ltp},
+        ]
+        note = (f"{abs(cfg['near_qty'])}:{abs(cfg['far_qty'])} DIAG {side} {int(strike)}/{int(far_strike)} "
+                f"(auto · {net_label} · {conviction} conviction)")
+        snap_ist = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone(IST).strftime("%d %b %H:%M IST")
+        alert_args = dict(trigger_name=cfg["name"], side=side, rule=rule_label, note=note, legs=legs, credit=-debit,
+                          fut_ltp=spot, snapshot_ts_ist=snap_ist, conviction=conviction, spot_label="Spot")
+        try:
+            trade_id = add_manual_trade(symbol, legs, note=note, risk_level=cfg.get("risk_level"), status="draft")
+            queries.set_chain_trigger_fire_trade(fire_id, trade_id)
+            print(f"  [chain_triggers] {cfg['name']} FIRED {side} S={int(strike)}/{int(far_strike)} debit={debit} "
+                  f"{conviction} -> draft trade {trade_id}", flush=True)
+            try:
+                draft_code = (queries.get_recommendation(trade_id) or {}).get("display_code")
+            except Exception:
+                draft_code = None
+            _send_alert(draft_code=draft_code, **alert_args)
+        except Exception as e:
+            queries.release_chain_trigger_fire(fire_id)   # let the next snapshot retry
+            print(f"  [chain_triggers] {cfg['name']} {side}: draft creation failed — {e}", flush=True)
+            key = (cfg["name"], side, today.isoformat())
+            if key not in _failure_alerted:
+                _failure_alerted.add(key)
+                _send_alert(draft_error=str(e), **alert_args)
+
+
 _EVALUATORS = {
     "calendar_ratio_credit": _evaluate_calendar_ratio_credit,
     "pe_ratio_diagonal_credit": _evaluate_pe_ratio_diagonal_credit,
+    "vertical_ratio_credit": _evaluate_vertical_ratio_credit,
+    "diagonal_debit_conviction": _evaluate_diagonal_debit_conviction,
 }
+_NO_FUT_TYPES = {"vertical_ratio_credit", "diagonal_debit_conviction"}   # price off the snapshot's spot — never wait on (or skip for) the Upstox futures fetch
 
 
 def _fetch_fut_ltp(symbol: str) -> float | None:
@@ -251,14 +434,21 @@ def run_chain_triggers() -> None:
             print(f"  [chain_triggers] unknown type {cfg['type']!r} for {cfg.get('name')} — skipped", flush=True)
             continue
         symbol = cfg["symbol"]
-        if symbol not in fut_ltp_by_symbol:
-            fut_ltp_by_symbol[symbol] = _fetch_fut_ltp(symbol)
-        fut_ltp = fut_ltp_by_symbol[symbol]
-        if not fut_ltp:
-            continue
-        if symbol not in merged_by_symbol:
-            merged_by_symbol[symbol] = queries.get_merged_cadence_dates(symbol, include_quarterly=True)
+        if cfg["type"] in _NO_FUT_TYPES:
+            fut_ltp = None
+        else:
+            if symbol not in fut_ltp_by_symbol:
+                fut_ltp_by_symbol[symbol] = _fetch_fut_ltp(symbol)
+            fut_ltp = fut_ltp_by_symbol[symbol]
+            if not fut_ltp:
+                continue
+        if cfg["type"] in _NO_FUT_TYPES:
+            merged = []   # that type reads its own monthly-expiry list — skip the 3-4 s weekly+monthly merge
+        else:
+            if symbol not in merged_by_symbol:
+                merged_by_symbol[symbol] = queries.get_merged_cadence_dates(symbol, include_quarterly=True)
+            merged = merged_by_symbol[symbol]
         try:
-            fn(cfg, fut_ltp, ts, merged_by_symbol[symbol])
+            fn(cfg, fut_ltp, ts, merged)
         except Exception as e:
             print(f"  [chain_triggers] {cfg.get('name')} failed — {e}", flush=True)

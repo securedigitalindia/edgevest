@@ -14,6 +14,8 @@ Leg fields
   strike   offset in index points from the entry strike S — a number, or a dict per variant
   expiry   "M+k": monthly expiry k calendar months after the entry date's month (M+1 = next month, M+2 = month after)
   thin_oi  open interest below this is flagged as thin
+Optional strategy field: dashboard=False keeps it out of the Strategies screen / its routes (artifact builder and
+triggers still use it) — the day computation is heavy on prod, so new ones start artifact-only.
 """
 DAY_STRATEGIES = {
     "diag_1x3_next_month": dict(
@@ -40,6 +42,20 @@ DAY_STRATEGIES = {
         legs=[
             dict(role="Buy", qty=1, opt="{opt}", strike=0, expiry="M+1", thin_oi=50000),
             dict(role="Sell", qty=-4, opt="{opt}", strike=dict(PE=-2000, CE=2000), expiry="M+2", thin_oi=100000),
+        ],
+    ),
+    "buy1_sell2_vertical": dict(
+        dashboard=False,
+        label="Buy 1 / Sell 2 Vertical",
+        description="Buy 1 option 1,000 points away from the entry strike and sell 2 options 1,500 points away, both in next month's expiry (a ratio spread, no calendar leg). PE goes below the entry strike, CE above. The 2 short options carry large risk if NIFTY runs through the far strike.",
+        summary=["PE + CE, independent", "Entry: first touch of a 100-multiple", "Buy 1 next month, 1,000 away", "Sell 2 next month, 1,500 away", "No exit rule"],
+        symbol="NIFTY50", lot=65,
+        entry=dict(rule="touch", step=100, near=10),
+        variants=["PE", "CE"],
+        offs=list(range(-10, 11)),
+        legs=[
+            dict(role="Buy", qty=1, opt="{opt}", strike=dict(PE=-1000, CE=1000), expiry="M+1", thin_oi=50000),
+            dict(role="Sell", qty=-2, opt="{opt}", strike=dict(PE=-1500, CE=1500), expiry="M+1", thin_oi=50000),
         ],
     ),
 }

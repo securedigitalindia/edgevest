@@ -5,6 +5,7 @@
 # ============================================================
 
 import sqlite3
+import time
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional
 import pandas as pd
@@ -3637,6 +3638,90 @@ def get_chain_ltp(ts: str, symbol: str, expiry_date: str, strike: float, opt_typ
         return row[0] if row and row[0] else None
     finally:
         conn.close()
+
+
+_MONTHLY_EXPIRY_CACHE: dict = {}
+
+
+def get_monthly_expiries(symbol: str) -> list[str]:
+    """Monthly + quarterly expiry dates stored for a symbol (NOT weekly), ascending. GROUP BY on the
+    (symbol, expiry_type, expiry_date) index is ~0.2 s where DISTINCT is ~12 s; cached 10 min."""
+    hit = _MONTHLY_EXPIRY_CACHE.get(symbol)
+    if hit and time.time() - hit[0] < 600:
+        return hit[1]
+    conn = get_connection()
+    try:
+        out = sorted({r[0] for typ in ("monthly", "quarterly") for r in conn.execute(
+            "SELECT expiry_date FROM option_chain_5m INDEXED BY idx_option_chain_5m_sym_type_expiry "
+            "WHERE symbol = ? AND expiry_type = ? GROUP BY expiry_date", (symbol, typ))})
+    finally:
+        conn.close()
+    _MONTHLY_EXPIRY_CACHE[symbol] = (time.time(), out)
+    return out
+
+
+def get_chain_spot(ts: str, symbol: str) -> float | None:
+    """NIFTY spot for one option_chain_5m snapshot, using the same convention as the Day view / backtests:
+    MAX(spot_ltp) of the snapshot (a capture stores a few slightly different spot values)."""
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT MAX(spot_ltp) FROM option_chain_5m WHERE symbol = ? AND ts = ? AND spot_ltp > 0", (symbol, ts)).fetchone()
+        return row[0] if row and row[0] else None
+    finally:
+        conn.close()
+
+
+def get_chain_quote(ts: str, symbol: str, expiry_date: str, strike: float, opt_type: str) -> tuple[float | None, float | None]:
+    """(ltp, open interest) of one option from a specific option_chain_5m snapshot; ltp is None if absent or no trade yet."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT ltp, oi FROM option_chain_5m WHERE ts = ? AND symbol = ? AND expiry_date = ? AND strike = ? AND opt_type = ?",
+            (ts, symbol, expiry_date, strike, opt_type),
+        ).fetchone()
+        if not row:
+            return None, None
+        return (row[0] or None), row[1]
+    finally:
+        conn.close()
+
+
+def get_chain_triggers_for_trades(trade_ids: list[int]) -> dict[int, str]:
+    """{recommended_trades.id: chain trigger name} for drafts/trades that an option-chain trigger created."""
+    if not trade_ids:
+        return {}
+    conn = get_connection()
+    try:
+        marks = ",".join("?" * len(trade_ids))
+        rows = conn.execute(f"SELECT trade_id, trigger_name FROM chain_trigger_fires WHERE trade_id IN ({marks})", list(trade_ids)).fetchall()
+        return {r[0]: r[1] for r in rows}
+    finally:
+        conn.close()
+
+
+def delete_stale_chain_drafts(before_ist_date: str) -> list[int]:
+    """
+    Hard-delete DRAFT trades that an option-chain trigger created on an IST day BEFORE `before_ist_date`
+    ("YYYY-MM-DD") — the morning clean-up of yesterday's unreviewed trigger drafts. Only drafts linked in
+    chain_trigger_fires are touched: hand-authored drafts (strategy_cli / dashboard form) and anything already
+    published (status 'open') are never deleted. The chain_trigger_fires rows stay (they are the one-per-day claims).
+    Returns the deleted trade ids.
+    """
+    conn = get_connection()
+    try:
+        ids = [r[0] for r in conn.execute(
+            "SELECT rt.id FROM recommended_trades rt JOIN chain_trigger_fires f ON f.trade_id = rt.id "
+            "WHERE rt.status = 'draft' AND f.ist_date < ?", (before_ist_date,)).fetchall()]
+    finally:
+        conn.close()
+    deleted = []
+    for trade_id in ids:
+        try:
+            delete_recommendation(trade_id)
+            deleted.append(trade_id)
+        except Exception as e:   # e.g. an account trade got linked — leave it, report, carry on
+            print(f"  [draft cleanup] draft {trade_id} not deleted — {e}", flush=True)
+    return deleted
 
 
 def claim_chain_trigger_fire(trigger_name: str, side: str, ist_date: str, credit_pts: float) -> int | None:

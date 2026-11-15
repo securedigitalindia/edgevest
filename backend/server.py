@@ -726,8 +726,17 @@ def api_recommendations_drafts():
     # docs/prd/manual-strategy-cli.md), read from the DB there.
     from db.queries import list_recommendations_by_status
     from live.manual_trade import preview_margin_for_trade
+    from db.queries import get_chain_triggers_for_trades
+    import re
     drafts = list_recommendations_by_status("draft")
     out = [_shape_recommendation_row(r, *preview_margin_for_trade(r["id"])) for r in drafts]
+    # Which option-chain trigger created each draft (None = hand-authored) and its LOW/MEDIUM/HIGH conviction (stamped in the
+    # note by live/chain_triggers.py) — drives the Draft Strategies panel's filters.
+    by_trade = get_chain_triggers_for_trades([d["id"] for d in out])
+    for d in out:
+        d["chain_trigger"] = by_trade.get(d["id"])
+        m = re.search(r"\b(LOW|MEDIUM|HIGH) conviction", d.get("note") or "")
+        d["conviction"] = m.group(1) if m else None
     return jsonify(drafts=out)
 
 

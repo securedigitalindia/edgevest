@@ -52,6 +52,7 @@ GAME_NIFTY_OPEN_WIN_THRESHOLD = 10   # points — closest guess only wins if wit
 GAME_NIFTY_CLOSE_REWARD_POOL   = 50
 GAME_NIFTY_CLOSE_WIN_THRESHOLD = 10
 GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST  = (9, 0)     # ~15min safety margin before MARKET_OPEN_IST (09:15)
+CHAIN_DRAFT_CLEANUP_IST            = (9, 5)     # each trading day from this time: delete yesterday-and-older UNREVIEWED chain-trigger drafts (before the first 09:20 chain snapshot can fire)
 GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST = (15, 0)    # ~15min safety margin before NIFTY's real close (15:15)
 
 # -----------------------------------------------------------
@@ -252,6 +253,78 @@ def _pe_ratio_diagonal_trigger(name: str, *, leg_gap: float = 400, min_credit_pt
 
 
 # CHAIN_TRIGGERS.append(_pe_ratio_diagonal_trigger("NIFTY_PE_RATIO_DIAG_4LEG_400", min_credit_pts=5))
+
+
+def _vertical_ratio_trigger(name: str, buy_points: float, *, min_credit_pts: float, medium_credit_pts: float,
+                            high_credit_pts: float, min_oi: float, sell_gap: float = 500,
+                            buy_lots: int = 1, sell_lots: int = 2, strike_step: float = 100,
+                            sides=("PE", "CE"), symbol: str = "NIFTY50", risk_level: str = "high") -> dict:
+    """
+    One same-expiry 1:2 vertical ratio spread (live/chain_triggers.py, type "vertical_ratio_credit"):
+    E = the strike_step multiple nearest NIFTY *spot* (the chain snapshot's own spot, not the future);
+    BUY buy_lots @ E -/+ buy_points and SELL sell_lots @ E -/+ (buy_points + sell_gap), both in NEXT
+    CALENDAR MONTH's expiry (PE goes below E, CE above). Fires when credit = sell_lots*sell_ltp -
+    buy_lots*buy_ltp >= min_credit_pts and both legs' open interest >= min_oi. Conviction by credit:
+    LOW [min_credit_pts, medium_credit_pts), MEDIUM [medium, high), HIGH >= high_credit_pts.
+    Backtest / design: docs/prd/vertical-ratio-credit-trigger.md. Every number is explicit at the call
+    site (same rule as _calendar_ratio_trigger).
+    """
+    if not (min_credit_pts < medium_credit_pts < high_credit_pts):
+        raise ValueError(f"{name}: need min_credit_pts < medium_credit_pts < high_credit_pts")
+    return {
+        "name": name, "type": "vertical_ratio_credit", "symbol": symbol, "sides": list(sides),
+        "strike_step": strike_step, "buy_points": buy_points, "sell_points": buy_points + sell_gap,
+        "buy_lots": buy_lots, "sell_lots": sell_lots, "min_credit_pts": min_credit_pts,
+        "medium_credit_pts": medium_credit_pts, "high_credit_pts": high_credit_pts, "min_oi": min_oi,
+        "risk_level": risk_level,
+    }
+
+
+for _buy_points in (800, 900, 1000):
+    CHAIN_TRIGGERS.append(_vertical_ratio_trigger(
+        f"NIFTY_VERT_1X2_{_buy_points}_{_buy_points + 500}", _buy_points,
+        min_credit_pts=15, medium_credit_pts=20, high_credit_pts=25, min_oi=50000))
+
+
+def _diagonal_debit_trigger(name: str, *, near_qty: int, far_qty: int, far_offset: float, itm_points: float,
+                            otm_points: float, high_below: float, medium_below: float, max_debit_pts: float,
+                            near_min_oi: float, far_min_oi: float, strike_step: float = 100, sides=("PE", "CE"),
+                            symbol: str = "NIFTY50", risk_level: str = "high") -> dict:
+    """
+    Month diagonal scanned over a strike range, with conviction by net DEBIT (live/chain_triggers.py, type
+    "diagonal_debit_conviction"). For every strike S from itm_points in the money to otm_points out of the money
+    around the NIFTY spot (PE: E+itm .. E-otm, CE: E-itm .. E+otm), trade near_qty @ S in NEXT calendar month's
+    expiry and far_qty @ S -/+ far_offset in the month AFTER (PE below S, CE above). Quantities are SIGNED:
+    +n = buy n lots, -n = sell n (same convention as strategies/day_strategies.py).
+    debit = near_qty*near_ltp + far_qty*far_ltp (points; negative = a net CREDIT). The strike with the LOWEST
+    liquid debit wins; it fires when that debit is below max_debit_pts, once per side per IST day. Conviction:
+    HIGH if debit < high_below, MEDIUM if debit < medium_below, else LOW — so a credit rule is written with
+    negative numbers (e.g. max_debit_pts=-25, medium_below=-50, high_below=-75 = credit 25+/50+/75+).
+    Designs: docs/prd/diagonal-debit-conviction-trigger.md. Every number explicit at the call site.
+    """
+    if not (high_below < medium_below < max_debit_pts):
+        raise ValueError(f"{name}: need high_below < medium_below < max_debit_pts")
+    if near_qty == 0 or far_qty == 0:
+        raise ValueError(f"{name}: near_qty and far_qty must be non-zero signed lots")
+    return {
+        "name": name, "type": "diagonal_debit_conviction", "symbol": symbol, "sides": list(sides),
+        "strike_step": strike_step, "far_offset": far_offset, "itm_points": itm_points, "otm_points": otm_points,
+        "near_qty": near_qty, "far_qty": far_qty, "high_below": high_below, "medium_below": medium_below,
+        "max_debit_pts": max_debit_pts, "near_min_oi": near_min_oi, "far_min_oi": far_min_oi, "risk_level": risk_level,
+    }
+
+
+# Month Diagonal 1:3 — SELL 1 @ S next month, BUY 3 @ S -/+ 1000 month after. Fires on debit < 200 (HIGH < 120, MEDIUM < 180).
+CHAIN_TRIGGERS.append(_diagonal_debit_trigger(
+    "NIFTY_DIAG_1X3_1000", near_qty=-1, far_qty=3, far_offset=1000, itm_points=200, otm_points=500,
+    high_below=120, medium_below=180, max_debit_pts=200, near_min_oi=50000, far_min_oi=100000))
+
+
+# Buy 1 / Sell 4 Far — BUY 1 @ S next month, SELL 4 @ S -/+ 2000 month after. A net CREDIT rule:
+# fires on credit > 25 (LOW 25-50, MEDIUM 50-75, HIGH 75+), written as debit thresholds (credit = -debit).
+CHAIN_TRIGGERS.append(_diagonal_debit_trigger(
+    "NIFTY_B1S4_FAR_2000", near_qty=1, far_qty=-4, far_offset=2000, itm_points=200, otm_points=500,
+    high_below=-75, medium_below=-50, max_debit_pts=-25, near_min_oi=50000, far_min_oi=100000))
 
 
 # Upstox instrument key per symbol name.

@@ -91,8 +91,23 @@ function CreateRecForm() {
 // leg/stats markup here. Purely additive alongside the existing list —
 // separate query key/section, doesn't touch that list's data or rendering.
 
+// Readable names for the option-chain triggers that stage drafts (config.CHAIN_TRIGGERS names); anything else
+// (older triggers) falls back to its raw name, and drafts with no trigger are hand-authored = "Manual".
+const TRIGGER_LABELS = {
+  NIFTY_DIAG_1X3_1000:      'Diagonal 1:3 (1000)',
+  NIFTY_B1S4_FAR_2000:      'Buy 1 / Sell 4 Far (2000)',
+  NIFTY_VERT_1X2_800_1300:  'Vertical 1:2 (800/1300)',
+  NIFTY_VERT_1X2_900_1400:  'Vertical 1:2 (900/1400)',
+  NIFTY_VERT_1X2_1000_1500: 'Vertical 1:2 (1000/1500)',
+}
+const draftTriggerKey = d => d.chain_trigger || 'manual'
+const draftTriggerLabel = key => key === 'manual' ? 'Manual' : (TRIGGER_LABELS[key] || key)
+const CONVICTION_LABEL = { HIGH: 'High', MEDIUM: 'Medium', LOW: 'Low' }
+
 function DraftsPanel() {
   const { data: drafts = [], isLoading } = useDraftRecs()
+  const [triggerFilter, setTriggerFilter] = useState('all')
+  const [convictionFilter, setConvictionFilter] = useState('all')
 
   // Poll live LTPs for draft legs too — same shared price poller RecsPanel
   // uses for open positions (hooks/usePrices.js dedupes/unions every
@@ -105,12 +120,42 @@ function DraftsPanel() {
   // no-accounts banner above only appears when there's something to act on.
   if (!isLoading && drafts.length === 0) return null
 
+  // Filter by which trigger staged the draft (and its LOW/MEDIUM/HIGH conviction). A selection whose drafts are all
+  // gone (e.g. the 09:05 clean-up) falls back to "all" instead of showing an empty panel.
+  const triggerCounts = drafts.reduce((m, d) => (m[draftTriggerKey(d)] = (m[draftTriggerKey(d)] || 0) + 1, m), {})
+  const convictionCounts = drafts.reduce((m, d) => (d.conviction && (m[d.conviction] = (m[d.conviction] || 0) + 1), m), {})
+  const triggerKeys = Object.keys(triggerCounts).sort((a, b) => draftTriggerLabel(a).localeCompare(draftTriggerLabel(b)))
+  const activeTrigger = triggerFilter === 'all' || triggerCounts[triggerFilter] ? triggerFilter : 'all'
+  const activeConviction = convictionFilter === 'all' || convictionCounts[convictionFilter] ? convictionFilter : 'all'
+  const shown = drafts.filter(d =>
+    (activeTrigger === 'all' || draftTriggerKey(d) === activeTrigger) &&
+    (activeConviction === 'all' || d.conviction === activeConviction))
+  const showFilters = triggerKeys.length > 1 || Object.keys(convictionCounts).length > 1
+
   return (
     <div className="card">
-      <div className="card-header"><h2>Draft Strategies</h2></div>
+      <div className="card-header">
+        <h2>Draft Strategies</h2>
+        <span style={{fontSize:12,color:'var(--muted)'}}>{shown.length === drafts.length ? drafts.length : `${shown.length} of ${drafts.length}`}</span>
+      </div>
+      {showFilters && (
+        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',padding:'8px 16px 6px',borderBottom:'1px solid var(--border)',background:'#fafafa'}}>
+          <Dropdown value={activeTrigger} onChange={setTriggerFilter}
+            options={[{value:'all', label:`All Strategies · ${drafts.length}`},
+                      ...triggerKeys.map(k => ({value:k, label:`${draftTriggerLabel(k)} · ${triggerCounts[k]}`}))]} />
+          {Object.keys(convictionCounts).length > 0 && (
+            <div style={{marginLeft:'auto'}}>
+              <Dropdown value={activeConviction} onChange={setConvictionFilter} align="right"
+                options={[{value:'all', label:'All Conviction'},
+                          ...['HIGH', 'MEDIUM', 'LOW'].filter(c => convictionCounts[c]).map(c => ({value:c, label:`${CONVICTION_LABEL[c]} · ${convictionCounts[c]}`}))]} />
+            </div>
+          )}
+        </div>
+      )}
       <div className="card-body" style={{padding:10}}>
         {isLoading && <div className="empty">Loading…</div>}
-        {!isLoading && drafts.map(d => <RecItem key={d.id} rec={d} prices={prices} />)}
+        {!isLoading && shown.length === 0 && <div className="empty">No drafts match this filter</div>}
+        {!isLoading && shown.map(d => <RecItem key={d.id} rec={d} prices={prices} />)}
       </div>
     </div>
   )
