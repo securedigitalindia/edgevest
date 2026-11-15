@@ -52,7 +52,6 @@ GAME_NIFTY_OPEN_WIN_THRESHOLD = 10   # points — closest guess only wins if wit
 GAME_NIFTY_CLOSE_REWARD_POOL   = 50
 GAME_NIFTY_CLOSE_WIN_THRESHOLD = 10
 GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST  = (9, 0)     # ~15min safety margin before MARKET_OPEN_IST (09:15)
-CHAIN_DRAFT_CLEANUP_IST            = (9, 5)     # each trading day from this time: delete yesterday-and-older UNREVIEWED chain-trigger drafts (before the first 09:20 chain snapshot can fire)
 GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST = (15, 0)    # ~15min safety margin before NIFTY's real close (15:15)
 
 # -----------------------------------------------------------

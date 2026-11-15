@@ -48,7 +48,6 @@ from config import (
     GAME_NIFTY_CLOSE_WIN_THRESHOLD,
     GAME_NIFTY_OPEN_ENTRY_CUTOFF_IST,
     GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST,
-    CHAIN_DRAFT_CLEANUP_IST,
 )
 from live.upstox_client import get_ltp
 from live.triggers import build_trigger, BaseTrigger
@@ -86,33 +85,25 @@ def is_market_open() -> bool:
             MARKET_CLOSE_IST[0] * 60 + MARKET_CLOSE_IST[1])
 
 
-_drafts_cleaned_date = None   # IST date the morning draft clean-up last ran in this process
-
-
 def _cleanup_old_chain_drafts():
     """
-    Once per trading day, from CHAIN_DRAFT_CLEANUP_IST (09:05 — before the first 09:20 chain snapshot can fire a new
-    draft): hard-delete the option-chain triggers' UNREVIEWED drafts from earlier days, so the Draft Strategies panel
-    starts each morning with only today's. Hand-authored drafts and published trades are never touched
-    (db.queries.delete_stale_chain_drafts). Called on EVERY loop iteration (pre-market wait loop and the poll loop),
-    not once at a fixed call site — memory `feedback_poller_recurring_schedule_design`: a long-lived process must
-    recheck, or a restart that skips the due moment leaves the cleanup undone. Idempotent: it only ever deletes
-    drafts dated before today, so running it again (e.g. after a restart) is harmless. Trading days only, so
-    Friday's drafts stay reviewable over the weekend. Never raises.
+    Part of the 09:00 pre-market tasks (called first thing inside _run_market_open_game_tasks(), so it runs at exactly
+    the same moments as the game open/close step: the 09:00 hook in run_live(), the pre-market wait loop's per-day
+    recheck, and any late restart). Hard-deletes the option-chain triggers' UNREVIEWED drafts from earlier IST days so
+    the Draft Strategies panel starts each trading morning with only today's. Hand-authored drafts and published trades
+    are never touched (db.queries.delete_stale_chain_drafts). Idempotent — it only ever deletes drafts dated before
+    today, so repeated calls are harmless. Trading days only, so Friday's drafts stay reviewable over the weekend.
+    Never raises, and is independent of the game steps (a failure here must not block them, or the reverse).
     """
-    global _drafts_cleaned_date
     now = _ist_now()
-    if now.date() == _drafts_cleaned_date or now.hour * 60 + now.minute < CHAIN_DRAFT_CLEANUP_IST[0] * 60 + CHAIN_DRAFT_CLEANUP_IST[1]:
-        return
     try:
         if not is_trading_day(now.date()):
             return
         deleted = delete_stale_chain_drafts(now.date().isoformat())
-        _drafts_cleaned_date = now.date()
         print(f"  [{now.strftime('%H:%M IST')}]  draft clean-up: deleted {len(deleted)} older chain-trigger draft(s)"
               f"{' ' + str(deleted) if deleted else ''}", flush=True)
     except Exception as e:
-        print(f"  [draft clean-up failed]  {e}", flush=True)   # retried next iteration
+        print(f"  [draft clean-up failed]  {e}", flush=True)
 
 
 def wait_for_market_open():
@@ -153,7 +144,6 @@ def wait_for_market_open():
         if now.date() != serviced_date and now.hour * 60 + now.minute >= open_cutoff_minutes:
             _run_market_open_game_tasks()
             serviced_date = now.date()
-        _cleanup_old_chain_drafts()
         print(f"  {now.strftime('%a %H:%M:%S IST')}  — waiting...", flush=True)
         time.sleep(60)
     print("Market open. Starting poll loop.\n", flush=True)
@@ -259,7 +249,11 @@ def _run_market_open_game_tasks():
          authoritative source rather than an approximate live-LTP snapshot.
       2. Create + activate today's "predict NIFTY's close" game.
     See docs/prd/nifty-daily-prediction-games.md.
+
+    Also the morning draft clean-up (_cleanup_old_chain_drafts) — same 09:00 hook, run first so the early returns
+    below can never skip it.
     """
+    _cleanup_old_chain_drafts()
     game = get_active_auto_game("nifty_next_open")
     if not game:
         print("  [games]  no pending open-prediction game to close "
@@ -582,8 +576,6 @@ def run_live(force: bool = False):
     _close_entry_cutoff_minutes = GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST[0] * 60 + GAME_NIFTY_CLOSE_ENTRY_CUTOFF_IST[1]
 
     while force or is_market_open():
-        if not force:
-            _cleanup_old_chain_drafts()   # no-op after the first pass of the day
         # Candle close: build from ticks → refresh triggers for that timeframe
         for tf_key, watcher in watchers.items():
             if not watcher.should_build():
