@@ -223,8 +223,8 @@ def _evaluate_vertical_ratio_credit(cfg: dict, fut_ltp, ts: str, merged: list[st
         BUY  buy_lots  @ E -/+ buy_points   (PE below E, CE above)
         SELL sell_lots @ E -/+ sell_points  — both in next calendar month's expiry
         credit  = sell_lots*sell_ltp - buy_lots*buy_ltp   (points)
-    Fires once per trigger per side per IST day, at the first snapshot where credit >= min_credit_pts and
-    both legs' open interest >= min_oi. The conviction (LOW/MEDIUM/HIGH, by credit) is stamped on the
+    Fires at every snapshot where credit >= min_credit_pts and both legs' open interest >= min_oi — once per
+    strike E and conviction tier per IST day (a new E, or a higher tier on the same E, fires again; see _fire_chain_signal). The conviction (LOW/MEDIUM/HIGH, by credit) is stamped on the
     draft's note and the Telegram alert. fut_ltp is unused (spot comes from the snapshot).
     """
     from live.manual_trade import add_manual_trade
@@ -258,36 +258,45 @@ def _evaluate_vertical_ratio_credit(cfg: dict, fut_ltp, ts: str, merged: list[st
         if not met:
             continue
 
-        conviction = _conviction(cfg, credit)
-        fire_id = queries.claim_chain_trigger_fire(cfg["name"], side, today.isoformat(), credit)
-        if fire_id is None:
-            continue   # already fired for this side today
-        legs = [
+        _fire_chain_signal(cfg, side, symbol, ts, spot, today, int(k_buy), _conviction(cfg, credit), credit, [
             {"side": "BUY",  "type": side, "strike": int(k_buy),  "expiry": _fmt_expiry(expiry), "lots": cfg["buy_lots"],  "price": buy_ltp},
             {"side": "SELL", "type": side, "strike": int(k_sell), "expiry": _fmt_expiry(expiry), "lots": cfg["sell_lots"], "price": sell_ltp},
-        ]
-        note = (f"{cfg['buy_lots']}:{cfg['sell_lots']} VERT {side} {int(k_buy)}/{int(k_sell)} "
-                f"(auto · credit {credit:g} · {conviction} conviction)")
-        snap_ist = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone(IST).strftime("%d %b %H:%M IST")
-        alert_args = dict(trigger_name=cfg["name"], side=side, rule=rule_label, note=note, legs=legs, credit=credit,
-                          fut_ltp=spot, snapshot_ts_ist=snap_ist, conviction=conviction, spot_label="Spot")
+        ], f"{cfg['buy_lots']}:{cfg['sell_lots']} VERT {side} {int(k_buy)}/{int(k_sell)}", f"credit {credit:g}", rule_label)
+
+
+def _fire_chain_signal(cfg: dict, side: str, symbol: str, ts: str, spot: float, today, strike_key, conviction: str,
+                       net_credit: float, legs: list, head: str, net_label: str, rule_label: str) -> None:
+    """
+    One multi-fire signal: claims (trigger, side, day, strike, conviction tier) — skipped if that strike already fired
+    at this tier or higher today — then creates the draft trade and sends the Telegram alert. A rise in conviction on a
+    strike that fired before is a new fire, labelled "up from LOW". Never raises into the evaluation loop.
+    """
+    from live.manual_trade import add_manual_trade
+
+    signal_id, prev = queries.claim_chain_signal(cfg["name"], side, today.isoformat(), strike_key, conviction, net_credit)
+    if signal_id is None:
+        return   # this strike already fired at this conviction (or higher) today
+    note = f"{head} (auto · {net_label} · {conviction} conviction{' · up from ' + prev if prev else ''})"
+    snap_ist = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone(IST).strftime("%d %b %H:%M IST")
+    alert_args = dict(trigger_name=cfg["name"], side=side, rule=rule_label, note=note, legs=legs, credit=net_credit,
+                      fut_ltp=spot, snapshot_ts_ist=snap_ist, conviction=conviction, spot_label="Spot")
+    try:
+        trade_id = add_manual_trade(symbol, legs, note=note, risk_level=cfg.get("risk_level"), status="draft")
+        queries.set_chain_signal_trade(signal_id, trade_id)
+        print(f"  [chain_triggers] {cfg['name']} FIRED {side} {head} {net_label} {conviction}"
+              f"{' (up from ' + prev + ')' if prev else ''} -> draft trade {trade_id}", flush=True)
         try:
-            trade_id = add_manual_trade(symbol, legs, note=note, risk_level=cfg.get("risk_level"), status="draft")
-            queries.set_chain_trigger_fire_trade(fire_id, trade_id)
-            print(f"  [chain_triggers] {cfg['name']} FIRED {side} E={int(entry)} K={int(k_buy)}/{int(k_sell)} credit={credit} "
-                  f"{conviction} -> draft trade {trade_id}", flush=True)
-            try:
-                draft_code = (queries.get_recommendation(trade_id) or {}).get("display_code")
-            except Exception:
-                draft_code = None
-            _send_alert(draft_code=draft_code, **alert_args)
-        except Exception as e:
-            queries.release_chain_trigger_fire(fire_id)   # let the next snapshot retry
-            print(f"  [chain_triggers] {cfg['name']} {side}: draft creation failed — {e}", flush=True)
-            key = (cfg["name"], side, today.isoformat())
-            if key not in _failure_alerted:
-                _failure_alerted.add(key)
-                _send_alert(draft_error=str(e), **alert_args)
+            draft_code = (queries.get_recommendation(trade_id) or {}).get("display_code")
+        except Exception:
+            draft_code = None
+        _send_alert(draft_code=draft_code, **alert_args)
+    except Exception as e:
+        queries.release_chain_signal(signal_id)   # let the next snapshot retry
+        print(f"  [chain_triggers] {cfg['name']} {side} {head}: draft creation failed — {e}", flush=True)
+        key = (cfg["name"], side, today.isoformat(), str(strike_key))
+        if key not in _failure_alerted:
+            _failure_alerted.add(key)
+            _send_alert(draft_error=str(e), **alert_args)
 
 
 def _debit_conviction(cfg: dict, debit: float) -> str:
@@ -302,7 +311,7 @@ def _evaluate_diagonal_debit_conviction(cfg: dict, fut_ltp, ts: str, merged: lis
         debit = near_qty*near_ltp + far_qty*far_ltp   (points; negative = net credit)
     Quantities are signed (+buy / -sell); debit = near_qty*near_ltp + far_qty*far_ltp. Both legs must be liquid
     (near OI >= near_min_oi, far OI >= far_min_oi). The strike with the LOWEST liquid debit (= largest credit)
-    wins; it fires if that debit < max_debit_pts — once per trigger per side per IST day. Conviction by that debit:
+    is reported in the log; EVERY liquid strike whose debit < max_debit_pts fires, once per strike and conviction tier per IST day (a rise in tier on the same strike fires again). Conviction by that debit:
     < high_below HIGH, < medium_below MEDIUM, else LOW (stamped in the draft note and the Telegram alert).
     """
     from live.manual_trade import add_manual_trade
@@ -323,69 +332,32 @@ def _evaluate_diagonal_debit_conviction(cfg: dict, fut_ltp, ts: str, merged: lis
     for side in cfg["sides"]:
         sign = 1 if side == "CE" else -1   # PE: far leg and OTM lie below, CE above
         lo, hi = (entry - cfg["itm_points"], entry + cfg["otm_points"]) if side == "CE" else (entry - cfg["otm_points"], entry + cfg["itm_points"])
-        best = None   # (debit, S, far_strike, near_ltp, far_ltp) — lowest debit = largest credit
+        cands = []   # (debit, S, far_strike, near_ltp, far_ltp) for every liquid strike in the range
         k = lo
         while k <= hi:
             far_strike = k + sign * cfg["far_offset"]
             near_ltp, near_oi = queries.get_chain_quote(ts, symbol, near, k, side)
             far_ltp, far_oi = queries.get_chain_quote(ts, symbol, far, far_strike, side)
             if near_ltp is not None and far_ltp is not None and (near_oi or 0) >= cfg["near_min_oi"] and (far_oi or 0) >= cfg["far_min_oi"]:
-                debit = round(cfg["near_qty"] * near_ltp + cfg["far_qty"] * far_ltp, 2)
-                if best is None or debit < best[0]:
-                    best = (debit, k, far_strike, near_ltp, far_ltp)
+                cands.append((round(cfg["near_qty"] * near_ltp + cfg["far_qty"] * far_ltp, 2), k, far_strike, near_ltp, far_ltp))
             k += step
         thr = cfg["max_debit_pts"]
-        rule_label = (f"debit < {thr:g}" if thr > 0 else f"credit > {-thr:g}") + f" (best of strikes {int(lo)}-{int(hi)})"
-        if best is None:
+        rule_label = (f"debit < {thr:g}" if thr > 0 else f"credit > {-thr:g}") + f" (strikes {int(lo)}-{int(hi)})"
+        if not cands:
             print(f"  [chain_triggers] {cfg['name']} {side}: E={int(entry)} spot={spot:.1f} no liquid strike priced in {int(lo)}-{int(hi)}", flush=True)
             continue
-        debit, strike, far_strike, near_ltp, far_ltp = best
-        met = debit < cfg["max_debit_pts"]
-        net_label = f"credit {-debit:g}" if debit < 0 else f"debit {debit:g}"
-        print(f"  [chain_triggers] {cfg['name']} {side}: E={int(entry)} spot={spot:.1f} best S={int(strike)}/{int(far_strike)} "
-              f"near={near_ltp} far={far_ltp} -> {net_label}  ({rule_label}: {'MET' if met else 'not met'})", flush=True)
-        if not met:
-            continue
-
-        conviction = _debit_conviction(cfg, debit)
-        fire_id = queries.claim_chain_trigger_fire(cfg["name"], side, today.isoformat(), -debit)
-        if fire_id is None:
-            continue   # already fired for this side today
-        legs = [
-            {"side": "BUY" if cfg["near_qty"] > 0 else "SELL", "type": side, "strike": int(strike),     "expiry": _fmt_expiry(near), "lots": abs(cfg["near_qty"]), "price": near_ltp},
-            {"side": "BUY" if cfg["far_qty"] > 0 else "SELL",  "type": side, "strike": int(far_strike), "expiry": _fmt_expiry(far),  "lots": abs(cfg["far_qty"]),  "price": far_ltp},
-        ]
-        note = (f"{abs(cfg['near_qty'])}:{abs(cfg['far_qty'])} DIAG {side} {int(strike)}/{int(far_strike)} "
-                f"(auto · {net_label} · {conviction} conviction)")
-        snap_ist = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).astimezone(IST).strftime("%d %b %H:%M IST")
-        alert_args = dict(trigger_name=cfg["name"], side=side, rule=rule_label, note=note, legs=legs, credit=-debit,
-                          fut_ltp=spot, snapshot_ts_ist=snap_ist, conviction=conviction, spot_label="Spot")
-        try:
-            trade_id = add_manual_trade(symbol, legs, note=note, risk_level=cfg.get("risk_level"), status="draft")
-            queries.set_chain_trigger_fire_trade(fire_id, trade_id)
-            print(f"  [chain_triggers] {cfg['name']} FIRED {side} S={int(strike)}/{int(far_strike)} debit={debit} "
-                  f"{conviction} -> draft trade {trade_id}", flush=True)
-            try:
-                draft_code = (queries.get_recommendation(trade_id) or {}).get("display_code")
-            except Exception:
-                draft_code = None
-            _send_alert(draft_code=draft_code, **alert_args)
-        except Exception as e:
-            queries.release_chain_trigger_fire(fire_id)   # let the next snapshot retry
-            print(f"  [chain_triggers] {cfg['name']} {side}: draft creation failed — {e}", flush=True)
-            key = (cfg["name"], side, today.isoformat())
-            if key not in _failure_alerted:
-                _failure_alerted.add(key)
-                _send_alert(draft_error=str(e), **alert_args)
-
-
-_EVALUATORS = {
-    "calendar_ratio_credit": _evaluate_calendar_ratio_credit,
-    "pe_ratio_diagonal_credit": _evaluate_pe_ratio_diagonal_credit,
-    "vertical_ratio_credit": _evaluate_vertical_ratio_credit,
-    "diagonal_debit_conviction": _evaluate_diagonal_debit_conviction,
-}
-_NO_FUT_TYPES = {"vertical_ratio_credit", "diagonal_debit_conviction"}   # price off the snapshot's spot — never wait on (or skip for) the Upstox futures fetch
+        cands.sort()   # best (lowest debit = largest credit) first
+        met_list = [c for c in cands if c[0] < thr]
+        best = cands[0]
+        net_label = f"credit {-best[0]:g}" if best[0] < 0 else f"debit {best[0]:g}"
+        print(f"  [chain_triggers] {cfg['name']} {side}: E={int(entry)} spot={spot:.1f} best S={int(best[1])}/{int(best[2])} "
+              f"near={best[3]} far={best[4]} -> {net_label}; {len(met_list)} of {len(cands)} liquid strikes meet the rule", flush=True)
+        for debit, strike, far_strike, near_ltp, far_ltp in met_list:   # every qualifying strike fires (once per conviction tier)
+            _fire_chain_signal(cfg, side, symbol, ts, spot, today, int(strike), _debit_conviction(cfg, debit), -debit, [
+                {"side": "BUY" if cfg["near_qty"] > 0 else "SELL", "type": side, "strike": int(strike),     "expiry": _fmt_expiry(near), "lots": abs(cfg["near_qty"]), "price": near_ltp},
+                {"side": "BUY" if cfg["far_qty"] > 0 else "SELL",  "type": side, "strike": int(far_strike), "expiry": _fmt_expiry(far),  "lots": abs(cfg["far_qty"]),  "price": far_ltp},
+            ], f"{abs(cfg['near_qty'])}:{abs(cfg['far_qty'])} DIAG {side} {int(strike)}/{int(far_strike)}",
+                f"credit {-debit:g}" if debit < 0 else f"debit {debit:g}", rule_label)
 
 
 def _fetch_fut_ltp(symbol: str) -> float | None:

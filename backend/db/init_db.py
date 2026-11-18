@@ -380,6 +380,25 @@ def init_db():
     """)
     print("  ✓  Table ready: chain_trigger_fires")
 
+    # chain_trigger_signals — per (trigger, side, IST day, strike, conviction tier): the multi-fire successor used by the
+    # vertical / diagonal conviction triggers (a new strike, or a higher conviction on the same strike, fires again).
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS chain_trigger_signals (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            trigger_name  TEXT    NOT NULL,
+            side          TEXT    NOT NULL,
+            ist_date      TEXT    NOT NULL,
+            strike_key    TEXT    NOT NULL,
+            conviction    TEXT    NOT NULL,
+            rank          INTEGER NOT NULL,
+            trade_id      INTEGER,
+            credit_pts    REAL,
+            fired_at      TEXT    NOT NULL,
+            UNIQUE (trigger_name, side, ist_date, strike_key, rank)
+        )
+    """)
+    print("  ✓  Table ready: chain_trigger_signals")
+
     # -------------------------------------------------------
     # recommended_trades — one row per trade (header only)
     # All leg details live in trade_legs.

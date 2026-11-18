@@ -3693,8 +3693,12 @@ def get_chain_triggers_for_trades(trade_ids: list[int]) -> dict[int, str]:
     conn = get_connection()
     try:
         marks = ",".join("?" * len(trade_ids))
-        rows = conn.execute(f"SELECT trade_id, trigger_name FROM chain_trigger_fires WHERE trade_id IN ({marks})", list(trade_ids)).fetchall()
-        return {r[0]: r[1] for r in rows}
+        _ensure_chain_signals_table(conn)
+        out = {}
+        for table in ("chain_trigger_fires", "chain_trigger_signals"):
+            rows = conn.execute(f"SELECT trade_id, trigger_name FROM {table} WHERE trade_id IN ({marks})", list(trade_ids)).fetchall()
+            out.update({r[0]: r[1] for r in rows})
+        return out
     finally:
         conn.close()
 
@@ -3703,15 +3707,16 @@ def delete_stale_chain_drafts(before_ist_date: str) -> list[int]:
     """
     Hard-delete DRAFT trades that an option-chain trigger created on an IST day BEFORE `before_ist_date`
     ("YYYY-MM-DD") — the morning clean-up of yesterday's unreviewed trigger drafts. Only drafts linked in
-    chain_trigger_fires are touched: hand-authored drafts (strategy_cli / dashboard form) and anything already
-    published (status 'open') are never deleted. The chain_trigger_fires rows stay (they are the one-per-day claims).
+    chain_trigger_fires / chain_trigger_signals are touched: hand-authored drafts (strategy_cli / dashboard form) and anything already
+    published (status 'open') are never deleted. The claim rows (chain_trigger_fires / chain_trigger_signals) stay.
     Returns the deleted trade ids.
     """
     conn = get_connection()
     try:
-        ids = [r[0] for r in conn.execute(
-            "SELECT rt.id FROM recommended_trades rt JOIN chain_trigger_fires f ON f.trade_id = rt.id "
-            "WHERE rt.status = 'draft' AND f.ist_date < ?", (before_ist_date,)).fetchall()]
+        _ensure_chain_signals_table(conn)
+        ids = sorted({r[0] for table in ("chain_trigger_fires", "chain_trigger_signals") for r in conn.execute(
+            f"SELECT rt.id FROM recommended_trades rt JOIN {table} f ON f.trade_id = rt.id "
+            "WHERE rt.status = 'draft' AND f.ist_date < ?", (before_ist_date,)).fetchall()})
     finally:
         conn.close()
     deleted = []
@@ -3752,6 +3757,78 @@ def release_chain_trigger_fire(fire_id: int) -> None:
     conn = get_connection()
     try:
         conn.execute("DELETE FROM chain_trigger_fires WHERE id = ? AND trade_id IS NULL", (fire_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── chain_trigger_signals — one row per (trigger, side, IST day, strike, conviction tier) that has fired. Unlike
+# chain_trigger_fires (one per side per day) a trigger may fire again for another strike, or for the SAME strike when
+# its conviction rises; a lower-or-equal tier for a strike that already fired is never repeated. Created lazily here
+# (CREATE IF NOT EXISTS) so a release needs no `poller.py init`; init_db also creates it.
+CHAIN_CONVICTION_RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3}
+
+
+def _ensure_chain_signals_table(conn) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chain_trigger_signals (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            trigger_name  TEXT    NOT NULL,
+            side          TEXT    NOT NULL,
+            ist_date      TEXT    NOT NULL,
+            strike_key    TEXT    NOT NULL,   -- the strike the position is anchored on (near / buy strike)
+            conviction    TEXT    NOT NULL,   -- LOW | MEDIUM | HIGH
+            rank          INTEGER NOT NULL,   -- 1 | 2 | 3
+            trade_id      INTEGER,            -- the draft recommended_trades.id, NULL until created
+            credit_pts    REAL,
+            fired_at      TEXT    NOT NULL,   -- ISO-8601 UTC
+            UNIQUE (trigger_name, side, ist_date, strike_key, rank)
+        )
+    """)
+
+
+def claim_chain_signal(trigger_name: str, side: str, ist_date: str, strike_key: str, conviction: str,
+                       credit_pts: float) -> tuple[int | None, str | None]:
+    """
+    Reserve a fire for (trigger, side, day, strike) at `conviction`. Returns (signal_id, previous_conviction):
+    signal_id is None when this strike already fired at this tier or a higher one today; previous_conviction is
+    the highest tier it fired before (None for a first fire for that strike), so a rise can be labelled.
+    """
+    rank = CHAIN_CONVICTION_RANK[conviction]
+    conn = get_connection()
+    try:
+        _ensure_chain_signals_table(conn)
+        prev = conn.execute(
+            "SELECT conviction, rank FROM chain_trigger_signals WHERE trigger_name=? AND side=? AND ist_date=? AND strike_key=? "
+            "ORDER BY rank DESC LIMIT 1", (trigger_name, side, ist_date, str(strike_key))).fetchone()
+        if prev and prev[1] >= rank:
+            conn.commit()
+            return None, prev[0]
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO chain_trigger_signals (trigger_name, side, ist_date, strike_key, conviction, rank, credit_pts, fired_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (trigger_name, side, ist_date, str(strike_key), conviction, rank, credit_pts,
+             datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
+        conn.commit()
+        return (cur.lastrowid if cur.rowcount else None), (prev[0] if prev else None)
+    finally:
+        conn.close()
+
+
+def set_chain_signal_trade(signal_id: int, trade_id: int) -> None:
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE chain_trigger_signals SET trade_id = ? WHERE id = ?", (trade_id, signal_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def release_chain_signal(signal_id: int) -> None:
+    """Undo a claim whose draft creation failed, so the next snapshot can retry."""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM chain_trigger_signals WHERE id = ? AND trade_id IS NULL", (signal_id,))
         conn.commit()
     finally:
         conn.close()

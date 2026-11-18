@@ -451,6 +451,10 @@ One row per (option-chain trigger, side, IST day) that has fired — the `UNIQUE
 
 `UNIQUE (trigger_name, side, ist_date)`. A discarded/published draft does **not** free the day's slot — that is deliberate (one draft per side per day, whatever happens to it).
 
+### `chain_trigger_signals`
+
+Successor of `chain_trigger_fires` for the vertical / diagonal conviction triggers (2026-11-17): one row per (trigger, side, IST day, strike, conviction tier) that fired. `UNIQUE (trigger_name, side, ist_date, strike_key, rank)`; `rank` 1/2/3 = LOW/MEDIUM/HIGH. A strike fires again only at a HIGHER tier than it already fired today (`queries.claim_chain_signal`), so a new strike or a conviction rise = a new draft + Telegram alert. `trade_id` links the draft (used by the Drafts filter and the 09:00 clean-up). Created lazily by `queries._ensure_chain_signals_table` and by `init_db`, so a release needs no `poller.py init`.
+
 ### `strategy_configs`
 
 One row per strategy that's ever had its start date/params confirmed by an admin — read every time `GET .../run` is called (400 if no row exists for that strategy yet).

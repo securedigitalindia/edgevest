@@ -12,8 +12,7 @@ framework (`live/chain_triggers.py`, `config.CHAIN_TRIGGERS`).
 - `credit = 2·sell_ltp − 1·buy_ltp` (points; lot = 65 units).
 
 ## Rule
-Fire once per trigger per side per IST day (`chain_trigger_fires`), at the first snapshot where
-`credit >= 15` **and** both legs' open interest `>= 50,000` (OI read at the same snapshot).
+**Multi-fire (2026-11-17):** fires at every snapshot where `credit >= 15` **and** both legs' open interest `>= 50,000` (OI read at the same snapshot) — once per strike E and conviction tier per IST day (`chain_trigger_signals`): a new E (NIFTY moved) fires again, and so does a higher tier on the same E (note says "up from LOW"); a repeat or lower tier does not. Replaces the earlier one-per-side-per-day rule.
 
 ## Conviction (by credit at the moment of firing)
 | Credit | Conviction |

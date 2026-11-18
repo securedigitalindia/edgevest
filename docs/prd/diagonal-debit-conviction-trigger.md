@@ -12,8 +12,7 @@ Option-chain trigger (framework: `live/chain_triggers.py`, `config.CHAIN_TRIGGER
 - Liquidity: near-leg OI ≥ 50,000 and far-leg OI ≥ 100,000 (the Day view's "thin" thresholds), read at the same snapshot.
 
 ## Rule
-At each snapshot the **lowest liquid debit across the strike range** wins. Fire if it is **< 200**, once per trigger per side per
-IST day (`chain_trigger_fires`). The strike is whichever had the lowest debit at the first snapshot that met the rule.
+**Multi-fire (2026-11-17):** at each snapshot **every liquid strike in the range whose debit is < the threshold fires** (the lowest-debit one is only what the log reports as "best"), once per strike and conviction tier per IST day (`chain_trigger_signals`). A strike that fired LOW fires again when it reaches MEDIUM/HIGH (draft note "up from LOW"); a repeat or lower tier does not. Replaces the earlier one-per-side-per-day, best-strike-only rule. Volume on the stored Sep–Nov chain: 1:3 diagonal ≈6 drafts/day (max 19), 1:4 ≈0.6/day, each vertical ≈1–2/day; all five together ≈11/day (max 33).
 
 ## Conviction (by that debit)
 | Debit | Conviction |

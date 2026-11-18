@@ -296,7 +296,7 @@ def _diagonal_debit_trigger(name: str, *, near_qty: int, far_qty: int, far_offse
     expiry and far_qty @ S -/+ far_offset in the month AFTER (PE below S, CE above). Quantities are SIGNED:
     +n = buy n lots, -n = sell n (same convention as strategies/day_strategies.py).
     debit = near_qty*near_ltp + far_qty*far_ltp (points; negative = a net CREDIT). The strike with the LOWEST
-    liquid debit wins; it fires when that debit is below max_debit_pts, once per side per IST day. Conviction:
+    liquid debit wins; every liquid strike whose debit is below max_debit_pts fires, once per strike and conviction tier per IST day. Conviction:
     HIGH if debit < high_below, MEDIUM if debit < medium_below, else LOW — so a credit rule is written with
     negative numbers (e.g. max_debit_pts=-25, medium_below=-50, high_below=-75 = credit 25+/50+/75+).
     Designs: docs/prd/diagonal-debit-conviction-trigger.md. Every number explicit at the call site.
